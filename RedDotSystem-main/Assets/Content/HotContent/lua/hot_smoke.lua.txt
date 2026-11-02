@@ -1,0 +1,5 @@
+-- 活动包冒烟：P0 热更链路验证用
+local M = { }
+M.name = 'hot_smoke'
+M.version = 'v1 内容（武器A 活动期）'
+return M

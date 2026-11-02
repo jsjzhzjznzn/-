@@ -1,0 +1,1208 @@
+-- arkcards.battle — 方舟卡牌单界面 3D 战斗（照抄 BattleScene 的整份预制体）
+--
+-- 流程：活动页点「开始战斗」→ 加载遮罩 → 实例化热更包里的 arkcards_battle 舞台（含 HUD Canvas）
+--       → 接管主相机、收起其它画布 → 发牌开打 → 退出销毁并原样还原。
+-- 规则：费用每回合 +1（上限 10）、血量 30、场上最多 7、手牌最多 10；攻击=对拼（互相扣攻击力），
+--       嘲讽（Guard）未被沉默时优先成为目标；法术按 cards.json 里的 effects 结算。
+
+local bridge = CS.ActivityBridge
+local V2 = CS.UnityEngine.Vector2
+local V3 = CS.UnityEngine.Vector3
+local GameObject = CS.UnityEngine.GameObject
+
+local RectTransformType = typeof(CS.UnityEngine.RectTransform)
+local ButtonType = typeof(CS.UnityEngine.UI.Button)
+local WorldLabelType = typeof(CS.TMPro.TextMeshPro)
+local SpriteRendererType = typeof(CS.UnityEngine.SpriteRenderer)
+local SceneViewportType = typeof(CS.Game.Activity.ActivitySceneViewport)
+local Color = CS.UnityEngine.Color
+local LuaActivityHostType = CS.LuaActivityHost
+
+local STAGE_LOCATION = "arkcards_battle"
+local CARD_TEMPLATE = "CardTemplate"
+local CONFIG_CARDS = "cards"
+local CONFIG_BATTLE = "battle"
+local BUILD_TAG = "rules-b2"
+
+local MAX_FIELD = 7
+local MAX_HAND = 10
+local MAX_COST = 10
+local INITIAL_HAND = 4
+
+local M = {}
+local checkWin, endTurnForward
+
+local state = {
+    active = false,
+    built = false,
+    player = nil,
+    enemy = nil,
+    current = nil,
+    container = nil,
+    panelParent = nil,
+    stage = nil,
+    viewport = nil,
+    probe = nil,
+    handRoot = nil,
+    cards = {},
+    hiddenNodes = {},
+    dragging = nil,
+    dragZ = 0,
+    cardSeq = 0,
+    pendingBuild = false,
+}
+
+local function log(message)
+    bridge.Log("[arkcards] " .. tostring(message))
+end
+
+-- ──────────────────────────────
+-- 音效 / 简单时间轴 / 飘字
+-- ──────────────────────────────
+local ActivityAudio = CS.Game.Activity.ActivityAudio
+local LuaTweenApi = CS.Game.Activity.LuaTween
+local TextMeshProType = typeof(CS.TMPro.TextMeshPro)
+local anims = {}
+local floats = {}
+
+local function sfx(name, volume)
+    ActivityAudio.PlayEffect(name, volume or 1.0)
+end
+
+local function schedule(delay, fn)
+    table.insert(anims, { t = delay, fn = fn })
+end
+
+local function tickAnims(dt)
+    for i = #anims, 1, -1 do
+        local a = anims[i]
+        a.t = a.t - dt
+        if a.t <= 0 then
+            table.remove(anims, i)
+            a.fn()
+        end
+    end
+end
+
+-- 布局位移/转角由 Lua 自己插值推进：DOTween 的补间在被 Kill/抢占时会停在半路，
+-- 导致卡牌卡在桌面中间。这里每帧推进，保证一定到达目标槽位。
+local movers = {}
+
+local function cancelMove(view)
+    if view == nil then return end
+    for i = #movers, 1, -1 do
+        if movers[i].view == view then table.remove(movers, i) end
+    end
+end
+
+local function moveTo(view, target, angle, duration)
+    if view == nil then return end
+    cancelMove(view)
+    if duration == nil or duration <= 0 then
+        view.localPosition = target
+        if angle ~= nil then view.localEulerAngles = V3(0, 0, angle) end
+        return
+    end
+    table.insert(movers, {
+        view = view,
+        from = view.localPosition,
+        to = target,
+        fromAngle = view.localEulerAngles.z,
+        toAngle = angle,
+        t = 0,
+        dur = duration,
+    })
+end
+
+local function tickMovers(dt)
+    for i = #movers, 1, -1 do
+        local m = movers[i]
+        if m.view == nil then
+            table.remove(movers, i)
+        else
+            m.t = m.t + dt
+            local k = math.min(1, m.t / m.dur)
+            local p = m.from
+            local q = m.to
+            m.view.localPosition = V3(p.x + (q.x - p.x) * k, p.y + (q.y - p.y) * k, p.z + (q.z - p.z) * k)
+            if m.toAngle ~= nil then
+                m.view.localEulerAngles = V3(0, 0, m.fromAngle + (m.toAngle - m.fromAngle) * k)
+            end
+            if k >= 1 then table.remove(movers, i) end
+        end
+    end
+end
+
+local function floatText(worldPos, content, color, font)
+    local go = GameObject("FloatText", TextMeshProType)
+    local label = go:GetComponent(TextMeshProType)
+    label.text = content
+    if font ~= nil then label.font = font end
+    label.fontSize = 6
+    label.color = color
+    label.alignment = CS.TMPro.TextAlignmentOptions.Center
+    go.transform.position = worldPos + V3(0, 0.6, 0)
+    go.layer = 8
+    table.insert(floats, { go = go, label = label, life = 0.8, speed = 1.6 })
+end
+
+local function tickFloats(dt)
+    for i = #floats, 1, -1 do
+        local f = floats[i]
+        f.life = f.life - dt
+        if f.life <= 0 or f.go == nil then
+            if f.go ~= nil then CS.UnityEngine.Object.Destroy(f.go) end
+            table.remove(floats, i)
+        else
+            f.go.transform.position = f.go.transform.position + V3(0, f.speed * dt, 0)
+            local c = f.label.color
+            f.label.color = Color(c.r, c.g, c.b, math.min(1, f.life / 0.8))
+        end
+    end
+end
+
+-- ──────────────────────────────
+-- JSON
+-- ──────────────────────────────
+local function json_decode(text)
+    local pos = 1
+    local function skip()
+        while pos <= #text and string.find(string.sub(text, pos, pos), "[%s,]") do pos = pos + 1 end
+    end
+    local parseValue
+    local function parseString()
+        pos = pos + 1
+        local out = {}
+        while pos <= #text do
+            local c = string.sub(text, pos, pos)
+            if c == "\\" then
+                local n = string.sub(text, pos + 1, pos + 1)
+                if n == "n" then table.insert(out, "\n")
+                elseif n == "t" then table.insert(out, "\t")
+                elseif n == "u" then
+                    table.insert(out, utf8.char(tonumber(string.sub(text, pos + 2, pos + 5), 16) or 63))
+                    pos = pos + 4
+                else table.insert(out, n) end
+                pos = pos + 2
+            elseif c == '"' then
+                pos = pos + 1
+                return table.concat(out)
+            else
+                table.insert(out, c)
+                pos = pos + 1
+            end
+        end
+        return table.concat(out)
+    end
+    local function parseNumber()
+        local s = pos
+        while pos <= #text and string.find(string.sub(text, pos, pos), "[-%d%.eE+]") do pos = pos + 1 end
+        return tonumber(string.sub(text, s, pos - 1)) or 0
+    end
+    parseValue = function()
+        skip()
+        local c = string.sub(text, pos, pos)
+        if c == "{" then
+            pos = pos + 1
+            local obj = {}
+            while true do
+                skip()
+                if string.sub(text, pos, pos) == "}" then pos = pos + 1 break end
+                local key = parseString()
+                skip(); pos = pos + 1
+                obj[key] = parseValue()
+            end
+            return obj
+        elseif c == "[" then
+            pos = pos + 1
+            local arr = {}
+            while true do
+                skip()
+                if string.sub(text, pos, pos) == "]" then pos = pos + 1 break end
+                table.insert(arr, parseValue())
+            end
+            return arr
+        elseif c == '"' then return parseString()
+        elseif string.sub(text, pos, pos + 3) == "true" then pos = pos + 4 return true
+        elseif string.sub(text, pos, pos + 4) == "false" then pos = pos + 5 return false
+        elseif string.sub(text, pos, pos + 3) == "null" then pos = pos + 4 return nil
+        else return parseNumber() end
+    end
+    local ok, data = pcall(parseValue)
+    return ok and data or nil
+end
+
+local function loadConfig(location)
+    local text = bridge.LoadText(location)
+    if (text == nil or text == "") then text = bridge.LoadText(location .. ".json") end
+    if text == nil then return nil end
+    return json_decode(text)
+end
+
+-- ──────────────────────────────
+-- 面板收放
+-- ──────────────────────────────
+local function hidePanelNodes(parent, keep)
+    state.hiddenNodes = {}
+    for i = 0, parent.childCount - 1 do
+        local child = parent:GetChild(i)
+        if child.gameObject ~= keep and child.gameObject.activeSelf then
+            child.gameObject:SetActive(false)
+            table.insert(state.hiddenNodes, child.gameObject)
+        end
+    end
+end
+
+local function restorePanelNodes()
+    for _, go in ipairs(state.hiddenNodes) do
+        if go ~= nil then go:SetActive(true) end
+    end
+    state.hiddenNodes = {}
+end
+
+-- ──────────────────────────────
+-- 卡面
+-- ──────────────────────────────
+local function childText(card, path)
+    local t = card:Find(path)
+    if t == nil then return nil end
+    return t:GetComponent(WorldLabelType)
+end
+
+local function childSprite(card, path)
+    local t = card:Find(path)
+    if t == nil then return nil end
+    return t:GetComponent(SpriteRendererType)
+end
+
+local function fillCard(card, data)
+    if card == nil or data == nil then return end
+
+    local art = childSprite(card, "Front/Image")
+    if art ~= nil then
+        art.color = Color(1, 1, 1, 1)
+        if data.art ~= nil and data.art ~= "" then art.sprite = bridge.LoadSprite(data.art) end
+    end
+
+    local nameText = childText(card, "Front/NameIcon/Text (TMP) (1)")
+    if nameText ~= nil then nameText.text = data.name or "" end
+    local descText = childText(card, "Front/EffectIcon/Text (TMP) (1)")
+    if descText ~= nil then descText.text = data.desc or "" end
+    local costText = childText(card, "Front/CostIcon/Text (TMP) (1)")
+    if costText ~= nil then costText.text = tostring(data.cost or 0) end
+
+    local isMumber = data.type == "MUMBER"
+    local layout = card:Find("Front/mumberLayout")
+    if layout ~= nil then layout.gameObject:SetActive(isMumber) end
+    if isMumber then
+        local atk = childText(card, "Front/mumberLayout/atkIcon/Text (TMP)")
+        if atk ~= nil then atk.text = tostring(data.atk or 0) end
+        local hp = childText(card, "Front/mumberLayout/hpIcon/Text (TMP) (1)")
+        if hp ~= nil then hp.text = tostring(data.hp or 0) end
+    end
+end
+
+local function setCardNumbers(card, instance)
+    if card == nil or instance == nil then return end
+    local atk = childText(card, "Front/mumberLayout/atkIcon/Text (TMP)")
+    if atk ~= nil then atk.text = tostring(instance.atk or 0) end
+    local hp = childText(card, "Front/mumberLayout/hpIcon/Text (TMP) (1)")
+    if hp ~= nil then hp.text = tostring(instance.hp or 0) end
+end
+
+-- ──────────────────────────────
+-- 布局
+-- ──────────────────────────────
+local function layoutHand(duration)
+    local list = state.player.hand
+    local total = #list
+    if state.handRoot == nil then return end
+
+    -- 原版 HandContainer.RefreshCards：DOLocalMove / DOLocalRotate 各 0.5s
+    local dur = duration or 0.5
+    local angleGap = 5
+    local radius = 15
+    local centerY = 15
+    local totalAngle = (total - 1) * angleGap
+    local startAngle = totalAngle / 2
+
+    local snaps = {}
+    for i = 1, total do
+        local entry = list[i]
+        local view = entry.view
+        if view ~= nil and entry ~= state.dragging then
+            local angle = startAngle - (i - 1) * angleGap
+            local rad = angle * math.pi / 180
+            local x = -radius * math.sin(rad)
+            local y = radius * math.cos(rad) - centerY + 0.65
+            if entry.handPlaced then
+                -- 已有位置的手牌滑到新槽位（出牌/抽牌后手牌整体重排）
+                moveTo(view, V3(x, y, 0.6), angle, dur)
+            else
+                view.localPosition = V3(x, y, 0.6)
+                view.localEulerAngles = V3(0, 0, angle)
+                entry.handPlaced = true
+            end
+            local group = view:GetComponent(typeof(CS.UnityEngine.Rendering.SortingGroup))
+            if group ~= nil then group.sortingOrder = i + 50 end
+        end
+    end
+end
+
+local function fieldPosition(side, index, count)
+    -- 原版 FieldController.RefreshCards：按当前牌数居中，间距 2.5
+    -- startX = -((count-1) * spacing) / 2，第 i 张 = startX + (i-1) * spacing
+    -- 牌挂在 Field1(z=-1.58)/Field2(z=+1.55) 下、本地 (x,0,0)，节点自身绕 X 转 90°
+    local z = side == "player" and -1.58 or 1.55
+    local spacing = 2.5
+    local x = (index - 1) * spacing - ((count - 1) * spacing) / 2
+    return V3(x, 0, z)
+end
+
+local layoutFieldCalls = 0
+
+local function layoutField(side, duration)
+    local holder = side == "player" and state.player or state.enemy
+    local count = #holder.field
+    for i, entry in ipairs(holder.field) do
+        if entry.view ~= nil and entry ~= state.lunging then
+            local target = fieldPosition(side, i, count)
+            entry.view.localPosition = target
+            entry.view.localEulerAngles = V3(90, 0, 0)
+            entry.fieldPlaced = true
+            entry.lastTarget = target
+            local group = entry.view:GetComponent(typeof(CS.UnityEngine.Rendering.SortingGroup))
+            if group ~= nil then group.sortingOrder = 100 + i end
+        end
+    end
+    layoutFieldCalls = layoutFieldCalls + 1
+end
+
+-- ──────────────────────────────
+-- HUD 文本
+-- ──────────────────────────────
+local function hudText(path)
+    if state.stage == nil then return nil end
+    local t = state.stage.transform:Find(path)
+    if t == nil then return nil end
+    return t:GetComponent(WorldLabelType)
+end
+
+local costBaseScale = nil
+local enemyCostBaseScale = nil
+
+local function refreshHud()
+    local p = state.player
+    local e = state.enemy
+    local php = hudText("player/PlayerIcon/hpIcon/Text (TMP) (1)")
+    if php ~= nil then php.text = tostring(p.hp) end
+    local ehp = hudText("player2/PlayerIcon/hpIcon/Text (TMP) (1)")
+    if ehp ~= nil then ehp.text = tostring(e.hp) end
+    local pcost = hudText("player/Text (TMP)")
+    if pcost ~= nil then
+        local txt = p.cost .. "/" .. p.costMax
+        if pcost.text ~= txt then
+            -- 原版 UpdateCostUI：数值变化时 DOScale(1.5, 0.3) + Yoyo 跳一下
+            local t = pcost.transform
+            if costBaseScale == nil then costBaseScale = t.localScale end
+            t.localScale = costBaseScale
+            LuaTweenApi.ScalePulse(t, costBaseScale.x * 1.5, 0.3)
+            pcost.text = txt
+        end
+    end
+    local edeck = hudText("player2/Text (TMP)")
+    if edeck ~= nil then
+        -- 原版 PlayerController.UpdateCostUI 对双方都生效：敌方这个标签显示的是费用，不是牌库数
+        local txt = e.cost .. "/" .. e.costMax
+        if edeck.text ~= txt then
+            local t = edeck.transform
+            if enemyCostBaseScale == nil then enemyCostBaseScale = t.localScale end
+            t.localScale = enemyCostBaseScale
+            LuaTweenApi.ScalePulse(t, enemyCostBaseScale.x * 1.5, 0.3)
+            edeck.text = txt
+        end
+    end
+end
+
+-- ──────────────────────────────
+-- 视图
+-- ──────────────────────────────
+local function newCardView(entry, parent)
+    local template = state.stage.transform:Find(CARD_TEMPLATE)
+    if template == nil then return nil end
+    local view = CS.UnityEngine.Object.Instantiate(template.transform, parent)
+    view.gameObject:SetActive(true)
+    state.cardSeq = state.cardSeq + 1
+    view.name = "Card_" .. state.cardSeq
+    fillCard(view, entry.data)
+    entry.view = view
+    state.cards[view.name] = entry
+    return view
+end
+
+local function destroyCardView(entry)
+    if entry ~= nil and entry.view ~= nil then
+        if state.cards[entry.view.name] == entry then state.cards[entry.view.name] = nil end
+        -- 先停掉挂在这张牌上的补间，否则销毁后 DOTween 会刷 "Transform has been destroyed"
+        if LuaTweenApi ~= nil then LuaTweenApi.Stop(entry.view) end
+        CS.UnityEngine.Object.Destroy(entry.view.gameObject)
+        entry.view = nil
+    end
+end
+
+-- 原版：结算/阵亡的牌挂到己方墓地节点并滑到堆上（墓地节点在牌桌两侧，不在桌面中央）
+local function moveToGrave(entry, view, delay)
+    if view == nil then return end
+    if state.cards[view.name] == entry then state.cards[view.name] = nil end
+    entry.view = nil
+
+    local function fly()
+        if view == nil then return end
+        cancelMove(view)
+        local grave = state.stage ~= nil
+            and state.stage.transform:Find(entry.side == "player" and "player/grave" or "player2/grave")
+            or nil
+        if grave == nil then
+            LuaTweenApi.Stop(view)
+            CS.UnityEngine.Object.Destroy(view.gameObject)
+            return
+        end
+        view:SetParent(grave, true)
+        view.localScale = V3(1, 1, 1)
+        moveTo(view, V3(0, 0, 0), 0, 0.5)
+    end
+
+    if delay ~= nil and delay > 0 then
+        schedule(delay, fly)
+    else
+        fly()
+    end
+end
+
+local function spawnDeckVisuals()
+    local stage = state.stage
+    local template = stage.transform:Find(CARD_TEMPLATE)
+    if template == nil then return end
+
+    local function spawnBack(name, x, y, z, rotZ, rotX)
+        local view = CS.UnityEngine.Object.Instantiate(template.transform, stage.transform)
+        view.gameObject:SetActive(true)
+        view.name = name
+        view.localPosition = V3(x, y, z)
+        view.localEulerAngles = V3(rotX or 80, 0, rotZ or 0)
+        local front = view:Find("Front")
+        if front ~= nil then front.gameObject:SetActive(false) end
+        local back = view:Find("CardBack")
+        if back ~= nil then back.gameObject:SetActive(true) end
+    end
+
+    for i = 1, 5 do
+        local offset = i - 3
+        spawnBack("DeckEnemyFan_" .. i, offset * 0.62, 0.35, 4.15, offset * -6)
+    end
+    -- 牌库卡背堆对齐原版 player/Deck(7.95,0,-3.91)、player2/Deck(-7.95,0,3.91)：
+    -- 落在场地图白框外侧、平铺桌面（Deck 节点绕 X 转 90°），不再压住框线
+    spawnBack("DeckEnemyTop", -7.95, 0.02, 3.91, 0, 90)
+    spawnBack("DeckEnemyTop2", -7.9, 0.01, 3.95, -3, 90)
+    spawnBack("DeckPlayer", 7.95, 0.02, -3.91, 0, 90)
+    spawnBack("DeckPlayer2", 7.9, 0.01, -3.95, 3, 90)
+end
+
+-- ──────────────────────────────
+-- 规则
+-- ──────────────────────────────
+local function holderOf(side)
+    return side == "player" and state.player or state.enemy
+end
+
+local function makeSide(name, deck)
+    return { name = name, hp = 30, hpMax = 30, cost = 0, costMax = 0, deck = deck, hand = {}, field = {} }
+end
+
+local function draw(side, count)
+    local holder = holderOf(side)
+    for _ = 1, count do
+        if #holder.deck == 0 then break end
+        if #holder.hand >= MAX_HAND then break end
+        local data = table.remove(holder.deck, 1)
+        local entry = { data = data, side = side, owner = side, inHand = true, inField = false }
+        if side == "player" then
+            local view = newCardView(entry, state.handRoot)
+            if view ~= nil then
+                -- 原版：卡牌从牌库节点摆到手上，再由 RefreshCards 的 0.5s 补间滑进槽位
+                local deck = state.stage.transform:Find("DeckPlayer")
+                if deck ~= nil then
+                    view.localPosition = state.handRoot:InverseTransformPoint(deck.position)
+                else
+                    view.localPosition = V3(3.6, -1.4, 2.0)
+                end
+                entry.handPlaced = true
+            end
+            sfx("draw", 0.7)
+        end
+        table.insert(holder.hand, entry)
+    end
+    if side == "player" then layoutHand(0.5) end
+end
+
+local function damageSide(side, amount)
+    local holder = holderOf(side)
+    holder.hp = math.max(0, holder.hp - amount)
+    refreshHud()
+    sfx("damage")
+    local hpNode = hudText(side == "player" and "player/PlayerIcon/hpIcon/Text (TMP) (1)" or "player2/PlayerIcon/hpIcon/Text (TMP) (1)")
+    if hpNode ~= nil then
+        floatText(hpNode.transform.position, "-" .. tostring(amount), Color(1, 0.3, 0.3, 1), hpNode.font)
+    end
+    log(side .. " 受到 " .. amount .. " 伤害，剩余 " .. holder.hp)
+    checkWin()
+end
+
+local function killCard(entry)
+    local holder = holderOf(entry.side)
+    for i, e in ipairs(holder.field) do
+        if e == entry then table.remove(holder.field, i) break end
+    end
+    sfx("destroyed", 0.8)
+    -- 原版 MumberDied：送进墓地堆（0.5s 滑过去并摆正），牌留在堆里不销毁
+    moveToGrave(entry, entry.view, 0)
+    layoutField(entry.side)
+end
+
+local function damageCard(entry, amount)
+    if entry == nil or entry.instance == nil then return end
+    entry.instance.hp = entry.instance.hp - amount
+    setCardNumbers(entry.view, entry.instance)
+    -- 原版数值即时落地，飘字与音效在冲撞命中时刻（0.4s）出现
+    if entry.view ~= nil then
+        local view = entry.view
+        local font = childText(view, "Front/NameIcon/Text (TMP) (1)")
+        local shown = font ~= nil and font.font or nil
+        schedule(0.35, function()
+            if view == nil then return end
+            sfx("damage")
+            floatText(view.position, "-" .. tostring(amount), Color(1, 0.3, 0.3, 1), shown)
+        end)
+    end
+    if entry.instance.hp <= 0 then killCard(entry) end
+end
+
+local function hasGuard(side)
+    local holder = holderOf(side)
+    for _, e in ipairs(holder.field) do
+        if e.data.passive == "Guard" and not e.silenced then return true end
+    end
+    return false
+end
+
+local function summon(side, handIndex)
+    local holder = holderOf(side)
+    local entry = holder.hand[handIndex]
+    if entry == nil then return false, "手牌不存在" end
+    if #holder.field >= MAX_FIELD then return false, "场上已满" end
+    if holder.cost < (entry.data.cost or 0) then return false, "费用不足" end
+    if entry.data.type ~= "MUMBER" then return false, "法术不能上场" end
+
+    holder.cost = holder.cost - (entry.data.cost or 0)
+    table.remove(holder.hand, handIndex)
+    entry.inHand = false
+    entry.inField = true
+    entry.instance = { atk = entry.data.atk or 0, hp = entry.data.hp or 0 }
+
+    if side == "player" then layoutHand() end
+    entry.view = entry.view or newCardView(entry, state.stage.transform)
+    if entry.view ~= nil then
+        -- 原版 SummonCard：换父节点后由 FieldController.RefreshCards 的 0.5s 补间滑进槽位
+        entry.view:SetParent(state.stage.transform, true)
+        entry.fieldPlaced = true
+    end
+    table.insert(holder.field, entry)
+    layoutField(side, 0.5)
+    setCardNumbers(entry.view, entry.instance)
+    refreshHud()
+    sfx("specialsummon")
+    log(side .. " 召唤 " .. (entry.data.name or "?") .. "，剩余费用 " .. holder.cost)
+    return true
+end
+
+local function attack(attackerSide, attackerEntry, targetEntry)
+    if attackerEntry == nil or attackerEntry.instance == nil then return false, "无攻击者" end
+    local defenderSide = attackerSide == "player" and "enemy" or "player"
+    if targetEntry == nil and hasGuard(defenderSide) then return false, "必须先打嘲讽" end
+
+    if targetEntry ~= nil then
+        local a = attackerEntry.instance.atk
+        local b = targetEntry.instance and targetEntry.instance.atk or 0
+        damageCard(targetEntry, a)
+        damageCard(attackerEntry, b)
+        log(string.format("%s 攻击 %s（%d vs %d）", attackerEntry.data.name, targetEntry.data.name, a, b))
+    else
+        damageSide(defenderSide, attackerEntry.instance.atk)
+        log(attackerEntry.data.name .. " 攻击玩家，造成 " .. attackerEntry.instance.atk)
+    end
+
+    -- 原版攻击演出：DOMove(目标位置, 0.4) + Yoyo + InExpo（冲过去再弹回）
+    if attackerEntry.view ~= nil then
+        local view = attackerEntry.view
+        local targetPos = nil
+        if targetEntry ~= nil and targetEntry.view ~= nil then
+            targetPos = targetEntry.view.position
+        else
+            local iconPath = defenderSide == "enemy" and "player2/PlayerIcon" or "player/PlayerIcon"
+            local icon = state.stage.transform:Find(iconPath)
+            targetPos = icon ~= nil and icon.position or (view.position + V3(0, 0, defenderSide == "enemy" and 2 or -2))
+        end
+        state.lunging = attackerEntry
+        LuaTweenApi.AttackLunge(view, targetPos.x, targetPos.y, targetPos.z, 0.4)
+        local lunging = attackerEntry
+        schedule(0.9, function()
+            if state.lunging == lunging then state.lunging = nil end
+        end)
+    end
+    refreshHud()
+    checkWin()
+    return true
+end
+
+local function applyEffects(side, entry)
+    local holder = holderOf(side)
+    for _, eff in ipairs(entry.data.effects or {}) do
+        local t = eff.type or ""
+        local v = eff.values or {}
+        if string.find(t, "Damage") then
+            local amount = v[1] or 0
+            local targetSide = side == "player" and "enemy" or "player"
+            local targetHolder = holderOf(targetSide)
+            if #targetHolder.field > 0 then
+                damageCard(targetHolder.field[1], amount)
+            else
+                damageSide(targetSide, amount)
+            end
+        elseif string.find(t, "Heal") then
+            holder.hp = math.min(holder.hpMax, holder.hp + (v[1] or 0))
+        elseif string.find(t, "Draw") then
+            draw(side, v[1] or 1)
+        else
+            log("效果暂未实现：" .. t)
+        end
+    end
+    refreshHud()
+    checkWin()
+end
+
+local function castSpell(side, handIndex)
+    local holder = holderOf(side)
+    local entry = holder.hand[handIndex]
+    if entry == nil then return false, "手牌不存在" end
+    if entry.data.type == "MUMBER" then return false, "干员不能施放" end
+    if holder.cost < (entry.data.cost or 0) then return false, "费用不足" end
+
+    holder.cost = holder.cost - (entry.data.cost or 0)
+    table.remove(holder.hand, handIndex)
+    entry.inHand = false
+    if side == "player" then layoutHand() end
+
+    -- 原版 CastSpell：法术牌飞到牌桌中央（0.5s）再结算，结算后飞向墓地
+    local view = entry.view
+    if view ~= nil then
+        view:SetParent(state.stage.transform, false)
+        local group = view:GetComponent(typeof(CS.UnityEngine.Rendering.SortingGroup))
+        if group ~= nil then group.sortingOrder = 100 end
+        if state.cards[view.name] == entry then state.cards[view.name] = nil end
+        entry.view = nil
+        -- 原版 spellPos：牌桌右上方 (4.68, 4.75, -0.98)
+        LuaTweenApi.LocalMove(view, 4.68, 4.75, -0.98, 0.5)
+        LuaTweenApi.LocalRotate(view, 0, 0, 0, 0.5)
+    end
+
+    log(side .. " 施放 " .. (entry.data.name or "?"))
+    applyEffects(side, entry)
+    refreshHud()
+    -- 原版 EffectFinish：结算完把法术牌送进己方墓地堆（不是留在桌面中央）
+    moveToGrave(entry, view, 0.6)
+    return true
+end
+
+-- 胜负面板 / 回合提示（用 BattleScene 自带 Canvas 的 WinPanel / TurnPanel）
+local function showWinPanel(playerWin)
+    local canvas = state.stage ~= nil and state.stage.transform:Find("Canvas") or nil
+    if canvas == nil then return end
+    local panel = canvas:Find("WinPanel")
+    if panel == nil then return end
+
+    local label = panel:Find("Text (TMP)")
+    if label ~= nil then
+        local text = label:GetComponent(typeof(CS.TMPro.TextMeshProUGUI))
+        if text ~= nil then text.text = playerWin and "我方获胜" or "战斗失败" end
+    end
+    panel.gameObject:SetActive(true)
+end
+
+local function showTurnPanel(message)
+    local canvas = state.stage ~= nil and state.stage.transform:Find("Canvas") or nil
+    if canvas == nil then return end
+    local panel = canvas:Find("TurnPanel")
+    if panel == nil then return end
+
+    local label = panel:Find("Text (TMP)")
+    if label ~= nil then
+        local text = label:GetComponent(typeof(CS.TMPro.TextMeshProUGUI))
+        if text ~= nil then text.text = message end
+        -- 原版 TurnPanel：DOLocalMove(right*100, 1f).From()（从右侧滑入）播完收起
+        local rt = label.transform
+        local base = rt.localPosition
+        rt.localPosition = V3(base.x + 100, base.y, base.z)
+        LuaTweenApi.LocalMove(rt, base.x, base.y, base.z, 1.0)
+    end
+    panel.gameObject:SetActive(true)
+    schedule(1.0, function()
+        if panel ~= nil then panel.gameObject:SetActive(false) end
+    end)
+end
+
+checkWin = function()
+    if state.built == false then return true end
+    if state.player.hp <= 0 then
+        log("失败")
+        state.built = false
+        showWinPanel(false)
+        return true
+    end
+    if state.enemy.hp <= 0 then
+        log("胜利")
+        state.built = false
+        showWinPanel(true)
+        return true
+    end
+    return false
+end
+
+local function enemyTurn()
+    local enemy = state.enemy
+    local guard = 0
+    while guard < 10 do
+        guard = guard + 1
+        local bestIndex, bestAtk = nil, -1
+        for i, e in ipairs(enemy.hand) do
+            if e.data.type == "MUMBER" and enemy.cost >= (e.data.cost or 99) then
+                local atk = e.data.atk or 0
+                if atk > bestAtk then bestIndex, bestAtk = i, atk end
+            end
+        end
+        if bestIndex == nil then break end
+        if not summon("enemy", bestIndex) then break end
+    end
+
+    for _, e in ipairs(enemy.field) do
+        if e.instance ~= nil then
+            local target = nil
+            if hasGuard("player") and #state.player.field > 0 then target = state.player.field[1] end
+            attack("enemy", e, target)
+            if state.player.hp <= 0 then return end
+        end
+    end
+end
+
+endTurnForward = function()
+    if state.current ~= "player" or not state.built then return end
+    state.current = "enemy"
+    showTurnPanel("我方回合结束")
+    sfx("nextturn", 0.8)
+    local enemy = state.enemy
+    enemy.costMax = math.min(enemy.costMax + 1, MAX_COST)
+    enemy.cost = enemy.costMax
+    draw("enemy", 1)
+    refreshHud()
+    enemyTurn()
+    if not checkWin() then
+        state.current = "player"
+        local p = state.player
+        p.costMax = math.min(p.costMax + 1, MAX_COST)
+        p.cost = p.costMax
+        draw("player", 1)
+        refreshHud()
+        showTurnPanel("我方回合开始")
+        log("玩家回合开始：费用 " .. p.cost .. "/" .. p.costMax)
+    end
+end
+
+-- ──────────────────────────────
+-- 指针
+-- ──────────────────────────────
+local function handlePointer()
+    local probe = state.probe
+    local viewport = state.viewport
+    if probe == nil or viewport == nil then return end
+
+    -- 原版 CardDisplay.ZoomCard：悬停放大到 1.4（0.3s）并把排序提前 10
+    local function setZoom(entry, on)
+        if entry == nil or entry.view == nil then return end
+        local group = entry.view:GetComponent(typeof(CS.UnityEngine.Rendering.SortingGroup))
+        if on then
+            LuaTweenApi.Scale(entry.view, 1.4, 0.3)
+            if group ~= nil and entry.baseOrder == nil then
+                entry.baseOrder = group.sortingOrder
+                group.sortingOrder = entry.baseOrder + 10
+            end
+        else
+            LuaTweenApi.Scale(entry.view, 1.0, 0.3)
+            if group ~= nil and entry.baseOrder ~= nil then
+                group.sortingOrder = entry.baseOrder
+                entry.baseOrder = nil
+            end
+        end
+    end
+
+    while true do
+        local evt = probe:PopEvent()
+        if evt == nil or evt == "" then break end
+        local kind, coords = string.match(evt, "^(%a+)|(.+)$")
+        if kind ~= nil then
+            local x, y = string.match(coords, "^(.-),(.+)$")
+            if x ~= nil then
+                local point = V2(tonumber(x), tonumber(y))
+                if kind == "down" then
+                    local name = viewport:PickNameAtScreen(point)
+                    local entry = name ~= nil and state.cards[name] or nil
+                    if entry ~= nil and entry.owner == "player" then
+                        state.dragging = entry
+                        state.dragOffset = nil
+                        if entry.view ~= nil then
+                            cancelMove(entry.view)
+                            -- 抓住的位置不跳到指针中心（原版 DragManager 用 offset 保持手感）
+                            local world = viewport:WorldOnPlaneAtScreen(point, 1.3)
+                            state.dragOffset = entry.view.position - world
+                            if entry.inField then
+                                -- 场上卡攻击：卡不动，瞄准图标跟手
+                                local aim = state.stage.transform:Find("attackIcon")
+                                if aim ~= nil then
+                                    aim.gameObject:SetActive(true)
+                                    aim.position = world
+                                    state.aimIcon = aim
+                                end
+                            end
+                        end
+                    end
+                elseif kind == "drag" and state.dragging ~= nil then
+                    local world = viewport:WorldOnPlaneAtScreen(point, 1.3)
+                    state.dragZ = viewport:WorldToStageLocal(world).z
+                    if state.dragging.inHand and state.dragging.view ~= nil then
+                        local offset = state.dragOffset or V3(0, 0, 0)
+                        state.dragging.view.position = V3(world.x + offset.x, world.y + offset.y, world.z + offset.z)
+                    elseif state.aimIcon ~= nil then
+                        state.aimIcon.position = world
+                    end
+                elseif kind == "up" then
+                    local entry = state.dragging
+                    state.dragging = nil
+                    state.dragOffset = nil
+                    if state.aimIcon ~= nil then state.aimIcon.gameObject:SetActive(false) state.aimIcon = nil end
+                    if entry ~= nil then
+                        -- 松手回到正常大小（原版 ZoomCard(false)）
+                        if entry.view ~= nil and entry.inHand then setZoom(entry, false) end
+                    end
+                    if entry ~= nil and state.current == "player" then
+                        local dropName = viewport:PickNameAtScreen(point)
+                        local dropEntry = dropName ~= nil and state.cards[dropName] or nil
+
+                        if entry.inHand then
+                            if state.dragZ < -0.4 then
+                                local index = nil
+                                for i, e in ipairs(state.player.hand) do if e == entry then index = i break end end
+                                if index ~= nil then
+                                    if entry.data.type == "MUMBER" then summon("player", index)
+                                    else castSpell("player", index) end
+                                end
+                            end
+                            layoutHand()
+                        elseif entry.inField then
+                            if dropEntry ~= nil and dropEntry.owner == "enemy" and dropEntry.inField then
+                                attack("player", entry, dropEntry)
+                            elseif state.dragZ > 0.8 then
+                                attack("player", entry, nil)
+                            end
+                            layoutField("player")
+                        end
+                        refreshHud()
+                    end
+                end
+            end
+        end
+    end
+
+    -- 悬停放大（原版 CardDisplay.OnMouseEnter/OnMouseExit）
+    if state.dragging == nil and state.current == "player" and state.stage ~= nil then
+        local where = probe.LastPoint
+        if where ~= nil then
+            local name = viewport:PickNameAtScreen(where)
+            local hover = name ~= nil and state.cards[name] or nil
+            if hover ~= state.hover then
+                if state.hover ~= nil and state.hover.view ~= nil then setZoom(state.hover, false) end
+                state.hover = hover
+                if hover ~= nil and hover.owner == "player" then setZoom(hover, true) end
+            end
+        end
+    end
+end
+
+-- ──────────────────────────────
+-- 构建
+-- ──────────────────────────────
+local function build()
+    local cards = loadConfig(CONFIG_CARDS)
+    local battle = loadConfig(CONFIG_BATTLE)
+    if cards == nil or battle == nil then
+        log("配置加载失败 cards=" .. tostring(cards ~= nil) .. " battle=" .. tostring(battle ~= nil))
+        return false
+    end
+
+    local byId = {}
+    for _, c in ipairs(cards) do byId[c.id] = c end
+
+    local function deckFrom(ids)
+        local deck = {}
+        for _, id in ipairs(ids or {}) do
+            local data = byId[id]
+            if data ~= nil then table.insert(deck, data) end
+        end
+        return deck
+    end
+
+    state.player = makeSide("player", deckFrom(battle.player))
+    state.enemy = makeSide("enemy", deckFrom(battle.enemy))
+    state.player.hp = battle.playerHp or 30
+    state.player.hpMax = state.player.hp
+    state.enemy.hp = battle.enemyHp or 30
+    state.enemy.hpMax = state.enemy.hp
+    state.cards = {}
+    state.cardSeq = 0
+
+    hidePanelNodes(state.panelParent, state.container)
+
+    local stage = LuaActivityHostType.Instance:InstantiateRawFromPackage(STAGE_LOCATION)
+    if stage == nil then
+        log("舞台加载失败：" .. STAGE_LOCATION)
+        return false
+    end
+    state.stage = stage
+
+    local canvas = stage.transform:Find("Canvas")
+    local viewport = state.container:AddComponent(SceneViewportType)
+    viewport:Setup(stage, canvas)
+    state.viewport = viewport
+    state.probe = viewport:EnsureInputProbe()
+
+    state.handRoot = stage.transform:Find("hand")
+    state.handRoot.gameObject:SetActive(true)
+    spawnDeckVisuals()
+
+    if canvas ~= nil then
+        local endTurn = canvas:Find("Button")
+        if endTurn ~= nil then
+            local button = endTurn:GetComponent(ButtonType)
+            if button ~= nil then button.onClick:AddListener(function() endTurnForward() end) end
+        end
+
+        local winPanel = canvas:Find("WinPanel")
+        if winPanel ~= nil then
+            winPanel.gameObject:SetActive(false)
+            local restart = winPanel:Find("Button")
+            if restart ~= nil then
+                local button = restart:GetComponent(ButtonType)
+                if button ~= nil then
+                    button.onClick:AddListener(function()
+                        local parent = state.panelParent
+                        M.close()
+                        M.launch(parent)
+                    end)
+                end
+            end
+            local quit = winPanel:Find("Button (1)")
+            if quit ~= nil then
+                local button = quit:GetComponent(ButtonType)
+                if button ~= nil then
+                    button.onClick:AddListener(function()
+                        M.close()
+                        bridge.CloseActivity()   -- 连活动面板一起收起，回到主页
+                    end)
+                end
+            end
+        end
+
+        local turnPanel = canvas:Find("TurnPanel")
+        if turnPanel ~= nil then turnPanel.gameObject:SetActive(false) end
+
+        -- 敌方根节点绕 Y 转 180°，费用标签沿用 (90,0,0) 会变成倒字（"1/1" 读作 "\Ɩ/Ɩ"）
+        -- 补 (90,180,0) 让世界旋转回到 (90,0,0)，与玩家侧一致
+        local enemyCost = stage.transform:Find("player2/Text (TMP)")
+        if enemyCost ~= nil then enemyCost.localEulerAngles = V3(90, 180, 0) end
+    end
+
+    state.current = "player"
+    state.player.costMax = 1
+    state.player.cost = 1
+    -- 原版 PlayerController.Init 对双方都置 1/1，敌方首回合前不至于显示 0/0
+    state.enemy.costMax = 1
+    state.enemy.cost = 1
+    draw("player", INITIAL_HAND)
+    refreshHud()
+    state.built = true
+    ActivityAudio.PlayBgm("蓑部雄崇 - 游星バトル", 0.6)
+    log("战斗就绪：卡池 " .. #cards .. " 张，玩家卡组 " .. (#state.player.deck + #state.player.hand))
+    return true
+end
+
+-- ──────────────────────────────
+-- 对外
+-- ──────────────────────────────
+function M.launch(parent)
+    if state.active then return end
+    state.active = true
+    state.built = false
+    state.pendingBuild = true
+    state.panelParent = parent
+
+    local containerGo = GameObject("ArkCardsBattle", RectTransformType)
+    local containerRt = containerGo:GetComponent(RectTransformType)
+    containerRt:SetParent(parent, false)
+    containerRt.anchorMin = V2(0, 0)
+    containerRt.anchorMax = V2(1, 1)
+    containerRt.offsetMin = V2(0, 0)
+    containerRt.offsetMax = V2(0, 0)
+    state.container = containerGo
+
+    CS.Game.Activity.ActivityLoadingUi.Show("方舟卡牌")
+    CS.Game.Activity.ActivityLoadingUi.SetProgress(0.15)
+    log("开始加载战斗 tag=" .. BUILD_TAG)
+end
+
+function M.on_update(dt)
+    if not state.active then return end
+
+    if state.hideLoadingAt ~= nil then
+        if CS.UnityEngine.Time.realtimeSinceStartup >= state.hideLoadingAt then
+            state.hideLoadingAt = nil
+            CS.Game.Activity.ActivityLoadingUi.Hide()
+        end
+    end
+
+    if state.pendingBuild then
+        state.pendingBuild = false
+        CS.Game.Activity.ActivityLoadingUi.SetProgress(0.5)
+        build()
+        CS.Game.Activity.ActivityLoadingUi.SetProgress(1)
+        -- 加载遮罩至少停留 0.35 秒，避免只闪一帧
+        state.hideLoadingAt = CS.UnityEngine.Time.realtimeSinceStartup + 0.35
+        return
+    end
+    tickAnims(dt)
+    tickFloats(dt)
+    tickMovers(dt)
+    handlePointer()
+end
+
+function M.close()
+    if not state.active then return end
+    state.active = false
+    state.built = false
+    state.pendingBuild = false
+    state.cards = {}
+
+    -- 先摘掉自己加在 BattleScene HUD 上的 C# 按钮回调，
+    -- 否则宿主拆 LuaEnv 时会报 "try to dispose a LuaEnv with C# callback!"
+    if state.stage ~= nil then
+        local canvas = state.stage.transform:Find("Canvas")
+        if canvas ~= nil then
+            for _, path in ipairs({ "Button", "WinPanel/Button", "WinPanel/Button (1)" }) do
+                local node = canvas:Find(path)
+                if node ~= nil then
+                    local button = node:GetComponent(ButtonType)
+                    if button ~= nil then button.onClick:RemoveAllListeners() end
+                end
+            end
+        end
+    end
+
+    if state.probe ~= nil then
+        state.probe:ClearEvents()
+        state.probe = nil
+    end
+    if state.viewport ~= nil then
+        state.viewport:Dispose()
+        state.viewport = nil
+    end
+    if state.container ~= nil then
+        CS.UnityEngine.Object.Destroy(state.container)
+        state.container = nil
+    end
+    state.stage = nil
+    state.handRoot = nil
+    restorePanelNodes()
+    CS.Game.Activity.ActivityLoadingUi.Hide()
+    log("战斗界面已关闭")
+end
+
+function M.isActive()
+    return state.active
+end
+
+-- 联调/自动化
+function M.debugState()
+    if not state.built then return "not built" end
+    local p, e = state.player, state.enemy
+    return string.format("player hp=%d cost=%d/%d hand=%d field=%d || enemy hp=%d cost=%d/%d field=%d",
+        p.hp, p.cost, p.costMax, #p.hand, #p.field, e.hp, e.cost, e.costMax, #e.field)
+end
+
+function M.debugSummon(index) return tostring(summon("player", index)) end
+function M.debugHand()
+    local out = {}
+    for i, e in ipairs(state.player.hand) do
+        table.insert(out, i .. ":" .. (e.data.name or "?") .. "/" .. (e.data.type or "?") .. "/" .. tostring(e.data.cost or 0))
+    end
+    return table.concat(out, " | ")
+end
+function M.debugSummonBest()
+    local bestIndex, bestCost = nil, 99
+    for i, e in ipairs(state.player.hand) do
+        if e.data.type == "MUMBER" and (e.data.cost or 99) <= state.player.cost and (e.data.cost or 99) < bestCost then
+            bestIndex, bestCost = i, e.data.cost or 99
+        end
+    end
+    if bestIndex == nil then return "无可召唤干员（费用 " .. state.player.cost .. "）" end
+    return tostring(summon("player", bestIndex)) .. " @" .. bestIndex
+end
+function M.debugCast(index) return tostring(castSpell("player", index)) end
+function M.debugAttack(index)
+    local entry = state.player.field[index]
+    if entry == nil then return "no card" end
+    return tostring(attack("player", entry, nil))
+end
+function M.debugDamageEnemy(amount)
+    damageSide("enemy", amount or 30)
+    return M.debugState()
+end
+function M.debugDamagePlayer(amount)
+    damageSide("player", amount or 30)
+    return M.debugState()
+end
+function M.debugMovers()
+    local sb = "layoutFieldCalls=" .. tostring(layoutFieldCalls) .. " movers=" .. tostring(#movers)
+    for _, side in ipairs({ "player", "enemy" }) do
+        local holder = holderOf(side)
+        for i, e in ipairs(holder.field) do
+            sb = sb .. " | " .. side .. "#" .. i ..
+                " pos=" .. (e.view ~= nil and tostring(e.view.localPosition) or "nil") ..
+                " target=" .. (e.lastTarget ~= nil and tostring(e.lastTarget) or "nil") ..
+                " viewName=" .. (e.view ~= nil and e.view.name or "nil")
+        end
+    end
+    return sb
+end
+
+function M.debugEndTurn()
+    endTurnForward()
+    return M.debugState()
+end
+
+return M

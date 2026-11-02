@@ -1,0 +1,724 @@
+[
+  {
+    "id": 1001,
+    "name": "德克萨斯",
+    "type": "MUMBER",
+    "cls": "Vanguard",
+    "clsText": "先锋",
+    "cost": 2,
+    "atk": 3,
+    "hp": 2,
+    "art": "立绘_德克萨斯_skin1",
+    "desc": "冲锋\n退场：加1部署点上限",
+    "condition": "None",
+    "passive": "Rush",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Died",
+        "type": "AddCostMax",
+        "values": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1002,
+    "name": "推进之王",
+    "type": "MUMBER",
+    "cls": "Vanguard",
+    "clsText": "先锋",
+    "cost": 3,
+    "atk": 2,
+    "hp": 3,
+    "art": "立绘_推进之王_1",
+    "desc": "横扫\\n回合开始自身+1攻",
+    "condition": "None",
+    "passive": "Swingle",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Start",
+        "type": "BuffSelf",
+        "values": [
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1003,
+    "name": "蛇屠箱",
+    "type": "MUMBER",
+    "cls": "Defender",
+    "clsText": "重装",
+    "cost": 3,
+    "atk": 1,
+    "hp": 3,
+    "art": "立绘_蛇屠箱_1",
+    "desc": "守护\\n受伤时抽1张牌",
+    "condition": "None",
+    "passive": "Guard",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Hurt",
+        "type": "Draw",
+        "values": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1004,
+    "name": "星熊",
+    "type": "MUMBER",
+    "cls": "Defender",
+    "clsText": "重装",
+    "cost": 5,
+    "atk": 4,
+    "hp": 5,
+    "art": "立绘_星熊_2",
+    "desc": "守护\\n受伤时自身+1/+1",
+    "condition": "None",
+    "passive": "Guard",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Hurt",
+        "type": "BuffSelf",
+        "values": [
+          1,
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1005,
+    "name": "能天使",
+    "type": "MUMBER",
+    "cls": "Sniper",
+    "clsText": "狙击",
+    "cost": 4,
+    "atk": 5,
+    "hp": 3,
+    "art": "立绘_能天使_2",
+    "desc": "取胜：对随机1名敌方干员造成2点伤害",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "BeatDown",
+        "type": "DealDamageToRandomEnemy",
+        "values": [
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1006,
+    "name": "W",
+    "type": "MUMBER",
+    "cls": "Sniper",
+    "clsText": "狙击",
+    "cost": 7,
+    "atk": 8,
+    "hp": 5,
+    "art": "立绘_W_2",
+    "desc": "回合结束：对随机2名敌方干员造成3点伤害",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "End",
+        "type": "DealDamageToRandomEnemy",
+        "values": [
+          2,
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1007,
+    "name": "阿米娅",
+    "type": "MUMBER",
+    "cls": "Caster",
+    "clsText": "术师",
+    "cost": 8,
+    "atk": 8,
+    "hp": 6,
+    "art": "立绘_阿米娅_1+",
+    "desc": "取胜：自身+2/+1",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "阿米娅作战中3",
+    "enterAudio": "阿米娅选中干员2",
+    "effects": [
+      {
+        "trigger": "BeatDown",
+        "type": "BuffSelf",
+        "values": [
+          2,
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1008,
+    "name": "艾雅法拉",
+    "type": "MUMBER",
+    "cls": "Caster",
+    "clsText": "术师",
+    "cost": 9,
+    "atk": 7,
+    "hp": 7,
+    "art": "立绘_艾雅法拉_skin2",
+    "desc": "登场：对所有敌方干员造成5点伤害",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "艾雅法拉作战中2",
+    "enterAudio": "艾雅法拉作战中3",
+    "effects": [
+      {
+        "trigger": "Enter",
+        "type": "DamageAllEnemy",
+        "values": [
+          5
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1009,
+    "name": "华法琳",
+    "type": "MUMBER",
+    "cls": "Medic",
+    "clsText": "医疗",
+    "cost": 4,
+    "atk": 3,
+    "hp": 4,
+    "art": "立绘_华法琳_skin1",
+    "desc": "退场：选择1名敌人-4/-0",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Died",
+        "type": "BuffEnemy",
+        "values": [
+          -4,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1010,
+    "name": "闪灵",
+    "type": "MUMBER",
+    "cls": "Medic",
+    "clsText": "医疗",
+    "cost": 8,
+    "atk": 6,
+    "hp": 8,
+    "art": "立绘_闪灵_skin1",
+    "desc": "回合开始时，治疗随机1名友方干员3点生命值",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Start",
+        "type": "HeallRandomAllies",
+        "values": [
+          1,
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1011,
+    "name": "拉普兰德",
+    "type": "MUMBER",
+    "cls": "Guard",
+    "clsText": "近卫",
+    "cost": 4,
+    "atk": 5,
+    "hp": 4,
+    "art": "立绘_拉普兰德_2",
+    "desc": "登场：选择1名敌方干员效果无效化",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "拉普兰德作战中2",
+    "enterAudio": "拉普兰德作战中3",
+    "effects": [
+      {
+        "trigger": "Enter",
+        "type": "SlienceEnemy",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1012,
+    "name": "史尔特尔",
+    "type": "MUMBER",
+    "cls": "Guard",
+    "clsText": "近卫",
+    "cost": 6,
+    "atk": 4,
+    "hp": 2,
+    "art": "立绘_史尔特尔_2",
+    "desc": "释放：对1名敌方干员造成10点伤害",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Cast",
+        "type": "DealDamageToEnemy",
+        "values": [
+          10
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1013,
+    "name": "阿消",
+    "type": "MUMBER",
+    "cls": "Specialist",
+    "clsText": "特种",
+    "cost": 1,
+    "atk": 1,
+    "hp": 1,
+    "art": "立绘_阿消_1",
+    "desc": "登场：选择1名其他干员返回手牌",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Enter",
+        "type": "OtherBackHand",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1014,
+    "name": "砾",
+    "type": "MUMBER",
+    "cls": "Specialist",
+    "clsText": "特种",
+    "cost": 2,
+    "atk": 1,
+    "hp": 1,
+    "art": "立绘_砾_1",
+    "desc": "退场：选择己方墓地中1张干员牌加入手牌",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Died",
+        "type": "DigMumber",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1015,
+    "name": "空",
+    "type": "MUMBER",
+    "cls": "Supporter",
+    "clsText": "辅助",
+    "cost": 3,
+    "atk": 0,
+    "hp": 2,
+    "art": "立绘_空_2",
+    "desc": "回合结束时：所有友方干员+1/+0",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "End",
+        "type": "BuffAlliesAll",
+        "values": [
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1016,
+    "name": "安洁莉娜",
+    "type": "MUMBER",
+    "cls": "Supporter",
+    "clsText": "辅助",
+    "cost": 2,
+    "atk": 1,
+    "hp": 2,
+    "art": "立绘_安洁莉娜_1",
+    "desc": "登场：对手随机丢弃1张手牌",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "Enter",
+        "type": "DropEnemyHand",
+        "values": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1101,
+    "name": "两面包夹芝士",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 2,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3516",
+    "desc": "我方场上有2名干员时才能发动，破坏敌方1名干员",
+    "condition": "TwoMumber",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "DestoryEnemy",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1102,
+    "name": "超大杯",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 4,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3511",
+    "desc": "从卡组里选1名部署费8以上的干员加入手牌",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "SearchMumberCostUp",
+        "values": [
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1103,
+    "name": "GET ALL",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 10,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3513",
+    "desc": "对敌方1名干员造成5点伤害，友方博士治疗5点，抽5张牌",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "GetAll",
+        "values": [
+          5,
+          5,
+          5
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1104,
+    "name": "德克萨斯做的到吗？",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 1,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3512",
+    "desc": "选择1名敌方干员效果无效化",
+    "condition": "HasEnemy",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "SlienceEnemy",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1105,
+    "name": "猛猛氪金",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 3,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3520",
+    "desc": "从卡组里将1名登场效果的干员加入手牌",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "SearchMumberTrigger",
+        "values": [
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1106,
+    "name": "异格变身",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 2,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3517",
+    "desc": "选择友方场上1名干员，变为异格形态（生命值回满）",
+    "condition": "HasAmiya",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "Henshin",
+        "values": [
+          1007,
+          1017
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1107,
+    "name": "抢救一下",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 7,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3519",
+    "desc": "复活1名友方干员",
+    "condition": "HasDiedMumber",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "Revive",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1108,
+    "name": "烈火拔刀",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 5,
+    "atk": 0,
+    "hp": 0,
+    "art": "火刀",
+    "desc": "选择友方场上1名血量2点以下的干员，攻击力+10",
+    "condition": "HasAlly",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "BuffLowHpAlly",
+        "values": [
+          10,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1109,
+    "name": "希望之花",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 2,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3509",
+    "desc": "选择1名敌方干员返回手牌",
+    "condition": "HasEnemy",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "EnemyBackHand",
+        "values": []
+      }
+    ]
+  },
+  {
+    "id": 1110,
+    "name": "下午茶时间",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 0,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3514",
+    "desc": "将我方1名干员返回手牌，补充2点部署点",
+    "condition": "HasAlly",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "BackHandAddCost",
+        "values": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1111,
+    "name": "无敌的小火龙",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 6,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3510",
+    "desc": "对所有干员造成7点伤害",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "DamageAll",
+        "values": [
+          7
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1112,
+    "name": "你醒啦",
+    "type": "SPELL",
+    "cls": "None",
+    "clsText": "",
+    "cost": 2,
+    "atk": 0,
+    "hp": 0,
+    "art": "IMG_3515",
+    "desc": "丢弃2张手牌，抽3张牌",
+    "condition": "ThreeMoreHand",
+    "passive": "None",
+    "attackAudio": "",
+    "enterAudio": "",
+    "effects": [
+      {
+        "trigger": "None",
+        "type": "DropAndDraw",
+        "values": [
+          2,
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "id": 1017,
+    "name": "近卫阿米娅",
+    "type": "MUMBER",
+    "cls": "Guard",
+    "clsText": "近卫",
+    "cost": 8,
+    "atk": 6,
+    "hp": 8,
+    "art": "立绘_阿米娅(近卫)_2",
+    "desc": "得胜：可以再攻击1次",
+    "condition": "None",
+    "passive": "None",
+    "attackAudio": "剑米亚作战中1",
+    "enterAudio": "剑米亚部署1",
+    "effects": [
+      {
+        "trigger": "BeatDown",
+        "type": "AttackAgain",
+        "values": []
+      }
+    ]
+  }
+]

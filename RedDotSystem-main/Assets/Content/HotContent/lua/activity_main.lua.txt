@@ -1,0 +1,1229 @@
+-- activity_main.lua —— 活动中心（鸣潮式：左侧活动栏 + 多内容页）
+--
+-- 分工：
+--   * 长什么样 = Assets/Content/HotContent/UI/ActivityPanel.prefab（Editor 里搭好，打进同一个热更包）
+--       TopBar(选中活动标题/倒计时) + Sidebar(活动栏模板) + GachaPage(唤取) + SignInPage(签到)
+--       + ResultPage/HistoryPage(唤取的全屏覆盖层)
+--   * 怎么动   = 本文件（按活动列表克隆侧栏、切页、绑点击、填数据、走倒计时）
+-- 改版式不用改 Lua、改逻辑不用重编客户端——两者都在热更包里，服务器发一版新包立即生效。
+--
+-- 启动协议：宿主（LuaActivityHost）require 本模块并调用 M.launch(ctx)，之后每帧泵 M.on_update(dt)
+--   ctx = { activity_id, banner_id, title, subtitle, content_version, start_ms, end_ms, server_now_ms }
+--   完整活动列表不再走 ctx（只含第一个），用 bridge.GetActivityCount()/GetActivityInfoAt(i) 取。
+--
+-- 活动类型 → 内容页映射（与 activity_config.type 对齐）：
+--   1 = 武器唤取 → GachaPage；2 = 每日签到 → SignInPage；其余 → 占位提示
+--
+-- 可用固定层 API（热更层唯一对外面）：
+--   CS.ActivityBridge : Log/GetActivityCount/GetActivityInfoAt/GetItemCount/RefreshBag/Draw/RequestHistory/
+--                       RequestSignInList/ClaimSignIn/RequestActivityList/CloseActivity/Instantiate/LoadSprite/GetRemainMs...
+--   CS.ActivityUi     : Hex/Find*/BindButton/Clone/SetBar/Group/Rounded/Circle/Ring/Star/SoftGlow/ItemIcon/NewButton/NewLabel...
+--
+-- 注意：C# 数组在 xLua 里是 **0 基**（StaticLuaCallbacks.ArrayIndexer），遍历写 for i = 0, count - 1。
+
+local bridge = CS.ActivityBridge
+local ui = CS.ActivityUi
+
+local MEDIA_ITEM_ID = 2001          -- 唤取媒介（与服务端 item_config 同源）
+local PREFAB_ADDRESS = "ActivityPanel"
+local BANNER_ADDRESS = "ActivityBanner"
+
+-- 星级配色（鸣潮：金 / 紫 / 蓝）
+local RARITY_COLOR = {
+    [5] = "#E8C46A",
+    [4] = "#B07FE8",
+    [3] = "#6FA8DC",
+}
+local COLOR_DIM = "#8A9AA8"
+local COLOR_MAIN = "#E6EDF3"
+local COLOR_GOLD = "#E8C46A"
+local COLOR_WHITE = "#FFFFFF"
+
+-- 侧栏配色（选中 = 金底深字；未选中 = 暗底灰字）
+local SIDEBAR_BG_SELECTED = "#E8C46A"
+local SIDEBAR_BG_NORMAL = "#233241"
+
+-- 联调开关：面板左上角多一个"点一下发唤取媒介"的测试按钮（不在预制体里，纯热更层补的）
+-- 上线前把它置 false 再发一版热更包即可消失——不用重编客户端
+local DEV_TOOLS = true
+local DEV_GRANT_COUNT = 10
+
+local M = {}
+
+-- 运行时状态
+local root                  -- 面板根物体（热更包 prefab 实例）
+local nodes = {}            -- 按名字缓存的控件
+local templates = {}        -- 模板（卡牌/详单行/侧栏按钮/签到格子），克隆后不销毁
+local clones = {}           -- 覆盖层克隆体（结果卡 / 详单行），换页时整批销毁
+local sidebarButtons = {}   -- 侧栏按钮克隆体 { button, label, bg, index }
+local dayCells = {}         -- 签到格子克隆体 { rect, glow, cellBg, dayBadge, icon, countText, stateText, doneMark }
+local activities = {}       -- 活动条目缓存（bridge.GetActivityInfoAt，1 基 Lua 表）
+local state = {}
+
+-- ──────────────────────────────
+-- 小工具
+-- ──────────────────────────────
+
+local function log(message)
+    bridge.Log("[activity_main] " .. tostring(message))
+end
+
+local function fmtRemain(ms)
+    if ms <= 0 then return "已结束" end
+    local sec = math.floor(ms / 1000)
+    local d = math.floor(sec / 86400)
+    local h = math.floor((sec % 86400) / 3600)
+    local m = math.floor((sec % 3600) / 60)
+    local s = sec % 60
+    if d > 0 then
+        return string.format("%d天 %02d:%02d:%02d", d, h, m, s)
+    end
+    return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+local function fmtTime(ms)
+    if not ms or ms <= 0 then return "--" end
+    return os.date("%m-%d %H:%M", math.floor(ms / 1000))
+end
+
+local function stars(rarity)
+    rarity = rarity or 3
+    local text = ""
+    for _ = 1, rarity do text = text .. "★" end
+    return text
+end
+
+--- 取模板（第一次调用时查找并缓存）
+local function template(name, path)
+    if templates[name] == nil then
+        templates[name] = ui.FindGo(root.transform, path)
+        if templates[name] == nil then log("模板缺失：" .. path) end
+    end
+    return templates[name]
+end
+
+--- 销毁上一批覆盖层克隆体（模板本身不在此列；侧栏按钮与签到格子各自管理）
+local function clearClones()
+    for index = 1, #clones do
+        if clones[index] ~= nil then CS.UnityEngine.Object.Destroy(clones[index]) end
+    end
+    clones = {}
+end
+
+-- ──────────────────────────────
+-- 通用提示 / 唤取忙碌态
+-- ──────────────────────────────
+
+local function toast(message, seconds)
+    if nodes.toast == nil then return end
+    nodes.toast.text = tostring(message or "")
+    nodes.toast.color = ui.Hex(COLOR_MAIN, 1)
+    state.toastTimer = seconds or 2.6
+end
+
+local function setBusy(busy)
+    state.busy = busy
+    if nodes.loading ~= nil then nodes.loading:SetActive(busy) end
+    if nodes.btnDrawOne ~= nil then nodes.btnDrawOne.interactable = not busy end
+    if nodes.btnDrawTen ~= nil then nodes.btnDrawTen.interactable = not busy end
+end
+
+-- ──────────────────────────────
+-- 唤取页（GachaPage）
+-- ──────────────────────────────
+
+local function refreshPity()
+    if nodes.pityText ~= nil then
+        -- 大保底 = 上一次 5★ 歪了，下一次 5★ 必为 UP（服务端权威状态）
+        local suffix = state.guaranteedUp and " · 大保底" or ""
+        nodes.pityText.text = string.format("%d / %d%s", state.pityCount, state.pityThreshold, suffix)
+    end
+    if nodes.pityBarFill ~= nil and nodes.pityBarBg ~= nil then
+        local percent = state.pityThreshold > 0 and (state.pityCount / state.pityThreshold) or 0
+        ui.SetBar(nodes.pityBarFill.rectTransform, nodes.pityBarBg.rectTransform, percent)
+    end
+end
+
+local function refreshMedia(force)
+    local count = bridge.GetItemCount(MEDIA_ITEM_ID)
+    if force or count ~= state.mediaCount then
+        state.mediaCount = count
+        if nodes.mediaText ~= nil then
+            nodes.mediaText.text = "唤取媒介 ×" .. tostring(count)
+        end
+    end
+end
+
+--- 覆盖层切页（唤取结果 / 唤取详单是全屏覆盖层；"main" = 回到内容页）
+local function setPage(page)
+    state.page = page
+    if nodes.resultPage ~= nil then nodes.resultPage:SetActive(page == "result") end
+    if nodes.historyPage ~= nil then nodes.historyPage:SetActive(page == "history") end
+    if page ~= "result" then clearClones() end
+end
+
+local function buildResultCards(result, requestedCount)
+    local cardArea = nodes.cardArea
+    if cardArea == nil then return end
+    clearClones()
+
+    local count = result.count
+    local single = count <= 1
+    local columns = single and 1 or 5
+
+    -- C# 数组 0 基：for index = 0, count - 1
+    for index = 0, count - 1 do
+        local clone = ui.Clone(template("card", "ResultPage/CardArea/CardTemplate"), cardArea)
+        if clone ~= nil then
+            clones[#clones + 1] = clone
+
+            local rarity = result.rarities[index]
+            local color = ui.Hex(RARITY_COLOR[rarity] or COLOR_DIM)
+            local rect = clone.transform
+
+            local frame = ui.FindImage(rect, "Frame")
+            if frame ~= nil then
+                frame.sprite = ui.Rounded(18)
+                frame.type = CS.UnityEngine.UI.Image.Type.Sliced
+                frame.color = ui.WithAlpha(color, rarity >= 4 and 0.30 or 0.18)
+            end
+            local glow = ui.FindImage(rect, "Glow")
+            if glow ~= nil then
+                glow.sprite = ui.SoftGlow(128)
+                glow.color = ui.WithAlpha(color, rarity >= 4 and 0.42 or 0.16)
+            end
+
+            local icon = ui.FindImage(rect, "Icon")
+            if icon ~= nil then
+                local sprite = ui.ItemIcon(result.iconKeys[index])
+                icon.sprite = sprite
+                icon.enabled = sprite ~= nil
+            end
+
+            local starLabel = ui.FindLabel(rect, "Stars")
+            if starLabel ~= nil then
+                starLabel.text = stars(rarity)
+                starLabel.color = color
+            end
+            local nameLabel = ui.FindLabel(rect, "Name")
+            if nameLabel ~= nil then
+                nameLabel.text = result.itemNames[index]
+                nameLabel.color = ui.Hex(rarity >= 4 and COLOR_MAIN or COLOR_DIM)
+            end
+            ui.SetActive(rect, "BadgeNew", result.isNew[index] == true)
+
+            -- 保底类型：1=5★计数 2=十连4★ 3=大保底（旧服务端没有该字段时退回 isPity 的"保底"）
+            local pityKind = result.pityKinds ~= nil and result.pityKinds[index] or 0
+            local badge = ui.FindLabel(rect, "BadgePity")
+            if badge ~= nil then
+                badge.text = pityKind == 3 and "UP保底"
+                    or pityKind == 2 and "十连4★"
+                    or pityKind == 1 and "5★保底"
+                    or "保底"
+            end
+            ui.SetActive(rect, "BadgePity", pityKind ~= 0 or result.isPity[index] == true)
+
+            if single then
+                rect.anchoredPosition = CS.UnityEngine.Vector2(0, 0)
+            else
+                local column = index % columns
+                local row = math.floor(index / columns)
+                rect.anchoredPosition = CS.UnityEngine.Vector2((column - 2) * 330, 200 - row * 400)
+            end
+        end
+    end
+
+    if nodes.resultTitle ~= nil then
+        nodes.resultTitle.text = (requestedCount or count) > 1 and "唤取十次结果" or "唤取结果"
+    end
+    if nodes.resultHint ~= nil then
+        nodes.resultHint.text = string.format("5★保底 %d/%d ・ 累计 %d 抽 ・ 媒介剩余 %d",
+            state.pityCount, state.pityThreshold, state.totalDraws, state.mediaCount)
+    end
+    setPage("result")
+end
+
+local function buildHistoryRows(result)
+    local content = nodes.historyContent
+    if content == nil then return end
+
+    for index = 1, #clones do
+        if clones[index] ~= nil then CS.UnityEngine.Object.Destroy(clones[index]) end
+    end
+    clones = {}
+
+    local count = result.count
+    if count <= 0 then
+        if nodes.historySummary ~= nil then
+            nodes.historySummary.text = "暂无唤取记录"
+        end
+        ui.SetScrollHeight(nodes.historyScroll, 100)
+        return
+    end
+
+    for index = 0, count - 1 do
+        local clone = ui.Clone(template("row", "HistoryPage/HistoryScroll/Viewport/Content/RowTemplate"), content)
+        if clone ~= nil then
+            clones[#clones + 1] = clone
+            local rect = clone.transform
+            rect.anchoredPosition = CS.UnityEngine.Vector2(0, -index * 70)
+
+            local rarity = result.rarities[index]
+            local timeLabel = ui.FindLabel(rect, "RowTime")
+            if timeLabel ~= nil then timeLabel.text = fmtTime(result.createdAtMs[index]) end
+
+            local starLabel = ui.FindLabel(rect, "RowStars")
+            if starLabel ~= nil then
+                starLabel.text = stars(rarity)
+                starLabel.color = ui.Hex(RARITY_COLOR[rarity] or COLOR_DIM)
+            end
+            local nameLabel = ui.FindLabel(rect, "RowName")
+            if nameLabel ~= nil then
+                nameLabel.text = result.itemNames[index]
+                nameLabel.color = ui.Hex(rarity >= 4 and COLOR_MAIN or COLOR_DIM)
+            end
+            local tagLabel = ui.FindLabel(rect, "RowTag")
+            if tagLabel ~= nil then
+                local pityKind = result.pityKinds ~= nil and result.pityKinds[index] or 0
+                tagLabel.text = pityKind == 3 and "UP保底"
+                    or pityKind == 2 and "十连4★"
+                    or pityKind == 1 and "5★保底"
+                    or (result.isPity[index] and "保底" or "")
+            end
+        end
+    end
+
+    ui.SetScrollHeight(nodes.historyScroll, count * 70 + 16)
+    if nodes.historySummary ~= nil then
+        nodes.historySummary.text = string.format("累计 %d 抽 ・ 5★保底 %d/%d ・ 共 %d 条记录",
+            result.totalDraws, state.pityCount, state.pityThreshold, count)
+    end
+end
+
+local function openHistory()
+    setPage("history")
+    clearClones()
+    if nodes.historySummary ~= nil then nodes.historySummary.text = "正在读取唤取记录…" end
+    if nodes.historyContent ~= nil then ui.SetScrollHeight(nodes.historyScroll, 100) end
+
+    local accepted = bridge.RequestHistory(state.bannerId, function(result)
+        local ok, err = pcall(function()
+            if result.success then
+                state.totalDraws = result.totalDraws
+                state.pityCount = result.pityCount
+                state.guaranteedUp = result.guaranteedUp == true
+                refreshPity()
+                buildHistoryRows(result)
+                log(string.format("详单已加载：%d 条，累计 %d 抽，保底 %d/%d",
+                    result.count, result.totalDraws, result.pityCount, state.pityThreshold))
+            else
+                if nodes.historySummary ~= nil then nodes.historySummary.text = "读取失败：" .. tostring(result.message) end
+                log("详单读取失败：" .. tostring(result.message))
+            end
+        end)
+        if not ok then
+            if nodes.historySummary ~= nil then nodes.historySummary.text = "读取异常：" .. tostring(err) end
+            log("详单渲染异常：" .. tostring(err))
+        end
+        ui.ScrollToTop(nodes.historyScroll)
+    end)
+    if not accepted then toast("上一笔请求还在处理中，稍后再试", 2) end
+end
+
+--- 应用一次唤取回执（新抽与重试共用，避免两套状态更新逻辑漂移）
+local function applyDrawResult(result)
+    setBusy(false)
+
+    if not result.success then
+        if result.retryable then
+            -- 传输层失败（超时/断线）：服务端可能已结算，下一次点击必须走 RetryDraw 找回原结果
+            state.retryPending = true
+            toast(tostring(result.message or "网络中断，可重试"), 3.6)
+            log("唤取可重试（未确认失败）：" .. tostring(result.message))
+        else
+            state.retryPending = false
+            toast(tostring(result.message), 2.6)
+            log("唤取失败：" .. tostring(result.message))
+        end
+        return
+    end
+
+    state.retryPending = false
+    state.pityCount = result.pityCount
+    state.pityThreshold = result.pityThreshold > 0 and result.pityThreshold or state.pityThreshold
+    state.guaranteedUp = result.guaranteedUp == true
+    state.totalDraws = result.totalDraws
+    refreshPity()
+    refreshMedia(true)
+
+    if result.replayed then toast("已恢复上次唤取结果（未重复扣费）", 3) end
+
+    local ok, err = pcall(function()
+        buildResultCards(result, result.count)
+        local highest = 3
+        for index = 0, result.count - 1 do
+            if result.rarities[index] > highest then highest = result.rarities[index] end
+        end
+        log(string.format("唤取完成 ×%d：最高 %d★，保底 %d/%d 大保底=%s，累计 %d 抽，媒介剩余 %d%s",
+            result.count, highest, state.pityCount, state.pityThreshold,
+            tostring(state.guaranteedUp), state.totalDraws, state.mediaCount,
+            result.replayed and "（重放）" or ""))
+    end)
+    if not ok then
+        toast("唤取结果展示异常，请看日志", 3)
+        log("结果页渲染异常：" .. tostring(err))
+    end
+end
+
+local function doDraw(count)
+    if state.busy then
+        toast("唤取处理中，请稍候", 1.6)
+        return
+    end
+    if state.bannerId <= 0 then
+        toast("当前没有进行中的唤取活动", 2)
+        return
+    end
+
+    setBusy(true)
+
+    -- 上一笔是传输层失败：无论点哪个按钮都先找回那一笔（服务端幂等重放，不会重复扣费）
+    local retrying = state.retryPending and bridge.CanRetryDraw()
+    if state.retryPending and not retrying then state.retryPending = false end
+    if retrying then
+        log(string.format("重试上一笔唤取（卡池 %d，媒介 %d）", state.bannerId, bridge.GetItemCount(MEDIA_ITEM_ID)))
+        local accepted = bridge.RetryDraw(function(result) applyDrawResult(result) end)
+        if not accepted then
+            setBusy(false)
+            toast("上一笔还在处理中，稍后再试", 2)
+        end
+        return
+    end
+
+    log(string.format("请求唤取 ×%d（卡池 %d，媒介 %d）", count, state.bannerId, bridge.GetItemCount(MEDIA_ITEM_ID)))
+    local accepted = bridge.Draw(state.bannerId, count, function(result) applyDrawResult(result) end)
+    if not accepted then
+        setBusy(false)
+        toast("上一笔唤取还在处理中", 2)
+    end
+end
+
+-- ──────────────────────────────
+-- 签到页（SignInPage）
+-- ──────────────────────────────
+
+local function refreshSignInButton()
+    local button = nodes.btnSignIn
+    if button == nil then return end
+    local label = ui.NewButtonLabel(button)
+    local total = state.signTotalDays or 0
+    local signed = state.signSignedDays or 0
+    local today = state.signTodaySigned == true
+
+    if total > 0 and signed >= total then
+        if label ~= nil then label.text = "签到已完成" end
+        ui.SetInteractable(button, false, ui.Hex(COLOR_GOLD))
+        state.signButtonEnabled = false
+    elseif today then
+        if label ~= nil then label.text = "今日已签到" end
+        ui.SetInteractable(button, false, ui.Hex(COLOR_GOLD))
+        state.signButtonEnabled = false
+    else
+        if label ~= nil then label.text = "签 到" end
+        ui.SetInteractable(button, true, ui.Hex(COLOR_GOLD))
+        state.signButtonEnabled = true
+    end
+end
+
+local function renderSignInPage()
+    if nodes.signInSummary ~= nil then
+        nodes.signInSummary.text = string.format("已签到 %d / %d 天", state.signSignedDays or 0, state.signTotalDays or 0)
+    end
+
+    for index = 1, #dayCells do
+        if dayCells[index] ~= nil then CS.UnityEngine.Object.Destroy(dayCells[index].rect.gameObject) end
+    end
+    dayCells = {}
+
+    local result = state.signData
+    if result == nil or result.count <= 0 then
+        refreshSignInButton()
+        return
+    end
+
+    local count = result.count
+    local nextDay = (state.signSignedDays or 0) + 1
+    local today = state.signTodaySigned == true
+    local spacing = 216
+
+    -- C# 数组 0 基：天次快照按 days 升序，第 index 项 = 第 index+1 天
+    for index = 0, count - 1 do
+        local clone = ui.Clone(template("dayCell", "SignInPage/DayArea/DayCellTemplate"), nodes.dayArea)
+        if clone ~= nil then
+            local rect = clone.transform
+            rect.anchoredPosition = CS.UnityEngine.Vector2((index - (count - 1) / 2) * spacing, 0)
+
+            local cell = {
+                rect = rect,
+                glow = ui.FindImage(rect, "Glow"),
+                cellBg = ui.FindImage(rect, "CellBg"),
+                dayBadge = ui.FindLabel(rect, "DayBadge"),
+                icon = ui.FindImage(rect, "Icon"),
+                countText = ui.FindLabel(rect, "CountText"),
+                stateText = ui.FindLabel(rect, "StateText"),
+                doneMark = ui.FindLabel(rect, "DoneMark"),
+            }
+            dayCells[#dayCells + 1] = cell
+
+            local day = result.days[index]
+            local claimed = result.claimed[index] == true
+            local isNext = day == nextDay
+            local canClaim = isNext and (not today) and (state.signSignedDays or 0) < (state.signTotalDays or 0)
+
+            if cell.dayBadge ~= nil then cell.dayBadge.text = "第" .. tostring(day) .. "天" end
+            if cell.icon ~= nil then
+                local sprite = ui.ItemIcon(result.iconKeys[index])
+                cell.icon.sprite = sprite
+                cell.icon.enabled = sprite ~= nil
+            end
+            if cell.countText ~= nil then cell.countText.text = "×" .. tostring(result.counts[index]) end
+            if cell.glow ~= nil then cell.glow.sprite = ui.SoftGlow(128) end
+
+            -- 状态配色：已领=暗格+已领角标 / 今日可领=金框呼吸光 / 未解锁=半透明暗格
+            if claimed then
+                if cell.stateText ~= nil then
+                    cell.stateText.text = "已领取"
+                    cell.stateText.color = ui.Hex(COLOR_DIM)
+                end
+                if cell.doneMark ~= nil then cell.doneMark.gameObject:SetActive(true) end
+                if cell.glow ~= nil then cell.glow.gameObject:SetActive(false) end
+                if cell.cellBg ~= nil then cell.cellBg.color = ui.Hex("#242E38", 0.72) end
+                if cell.icon ~= nil then cell.icon.color = ui.Hex(COLOR_WHITE, 0.55) end
+            elseif canClaim then
+                if cell.stateText ~= nil then
+                    cell.stateText.text = "今日可领"
+                    cell.stateText.color = ui.Hex(COLOR_GOLD)
+                end
+                if cell.doneMark ~= nil then cell.doneMark.gameObject:SetActive(false) end
+                if cell.glow ~= nil then cell.glow.gameObject:SetActive(true) end
+                if cell.cellBg ~= nil then cell.cellBg.color = ui.Hex("#2C3E4E") end
+                if cell.icon ~= nil then cell.icon.color = ui.Hex(COLOR_WHITE) end
+            else
+                if cell.stateText ~= nil then
+                    cell.stateText.text = (today and isNext) and "明日可领" or "未解锁"
+                    cell.stateText.color = ui.Hex(today and isNext and COLOR_MAIN or COLOR_DIM)
+                end
+                if cell.doneMark ~= nil then cell.doneMark.gameObject:SetActive(false) end
+                if cell.glow ~= nil then cell.glow.gameObject:SetActive(false) end
+                if cell.cellBg ~= nil then cell.cellBg.color = ui.Hex("#1B242D", 0.85) end
+                if cell.icon ~= nil then cell.icon.color = ui.Hex(COLOR_WHITE, 0.7) end
+            end
+        end
+    end
+
+    refreshSignInButton()
+end
+
+--- 应用一次签到状态/结果快照（SignInResultData），并重渲染
+local function applySignData(result)
+    state.signTotalDays = result.totalDays
+    state.signSignedDays = result.signedDays
+    state.signTodaySigned = result.todaySigned
+    state.signData = result
+    renderSignInPage()
+end
+
+local function requestSignInList()
+    if (state.signId or 0) <= 0 then return end
+    if nodes.signInSummary ~= nil then nodes.signInSummary.text = "签到数据读取中…" end
+
+    local accepted = bridge.RequestSignInList(state.signId, function(result)
+        local ok, err = pcall(function()
+            if result.success then
+                applySignData(result)
+                log(string.format("签到状态已加载：已签 %d/%d 天，今日已签=%s",
+                    result.signedDays, result.totalDays, tostring(result.todaySigned)))
+            else
+                -- 失败也常带状态快照（如"今日已签到"被并发触发时），有就照常渲染
+                if result.count > 0 then
+                    applySignData(result)
+                elseif nodes.signInSummary ~= nil then
+                    nodes.signInSummary.text = "读取失败：" .. tostring(result.message)
+                end
+                log("签到状态读取失败：" .. tostring(result.message))
+            end
+        end)
+        if not ok then
+            if nodes.signInSummary ~= nil then nodes.signInSummary.text = "读取异常：" .. tostring(err) end
+            log("签到状态渲染异常：" .. tostring(err))
+        end
+    end)
+    if not accepted then
+        -- 单在途限制：上一笔还在路上，保留"读取中"文案等它回来
+        log("签到状态请求未受理（上一笔在途）")
+    end
+end
+
+local function doSignIn()
+    if state.signBusy then
+        toast("签到处理中，请稍候", 1.6)
+        return
+    end
+    if state.signButtonEnabled == false then
+        if state.signTodaySigned == true then
+            toast("今日已签到，明天再来吧", 2)
+        elseif (state.signSignedDays or 0) >= (state.signTotalDays or 0) then
+            toast("签到奖励已全部领取", 2)
+        else
+            toast("签到未就绪，请稍候", 2)
+        end
+        return
+    end
+    if (state.signId or 0) <= 0 then
+        toast("签到活动未就绪", 2)
+        return
+    end
+
+    state.signBusy = true
+    log(string.format("请求签到（活动 %d，已签 %d/%d）", state.signId, state.signSignedDays or 0, state.signTotalDays or 0))
+
+    local accepted = bridge.ClaimSignIn(state.signId, function(result)
+        state.signBusy = false
+        local ok, err = pcall(function()
+            if not result.success then
+                toast(tostring(result.message), 2.6)
+                log("签到失败：" .. tostring(result.message))
+                if result.count > 0 then applySignData(result) end
+                return
+            end
+
+            applySignData(result)
+            toast(tostring(result.message), 3)
+            refreshMedia(true)      -- 若奖励是唤取媒介，余量显示立即对齐（周期刷新兜底）
+            log(string.format("签到完成：第 %d 天，已签 %d/%d，%s",
+                result.day, result.signedDays, result.totalDays, tostring(result.message)))
+        end)
+        if not ok then
+            toast("签到结果展示异常，请看日志", 3)
+            log("签到渲染异常：" .. tostring(err))
+        end
+    end)
+
+    if not accepted then
+        state.signBusy = false
+        toast("上一笔签到还在处理中", 2)
+    end
+end
+
+-- ──────────────────────────────
+-- 活动中心侧栏
+-- ──────────────────────────────
+
+local function loadActivities()
+    activities = {}
+    local count = bridge.GetActivityCount()
+    -- GetActivityInfoAt 是 C# 方法（0 基下标参数），返回 ActivityEntryData
+    for index = 0, count - 1 do
+        local entry = bridge.GetActivityInfoAt(index)
+        if entry ~= nil then
+            activities[#activities + 1] = entry
+        end
+    end
+    return #activities
+end
+
+-- 前置声明：buildSidebar 的点击闭包要引用 selectActivity（定义在后面，不前置声明会捕获成 nil 全局）
+local selectActivity
+
+local function buildSidebar()
+    for index = 1, #sidebarButtons do
+        if sidebarButtons[index] ~= nil then CS.UnityEngine.Object.Destroy(sidebarButtons[index].button.gameObject) end
+    end
+    sidebarButtons = {}
+    if nodes.sidebar == nil then return end
+
+    for index = 1, #activities do
+        local clone = ui.Clone(template("sidebarButton", "Sidebar/SidebarButtonTemplate"), nodes.sidebar)
+        if clone ~= nil then
+            local rect = clone.transform
+            rect.anchoredPosition = CS.UnityEngine.Vector2(0, -16 - (index - 1) * 96)
+
+            local item = {
+                button = clone:GetComponent(typeof(CS.UnityEngine.UI.Button)),
+                label = ui.FindLabel(rect, "Label"),
+                bg = ui.FindImage(rect, "ButtonBg"),
+                index = index,
+            }
+            sidebarButtons[#sidebarButtons + 1] = item
+            if item.label ~= nil then item.label.text = tostring(activities[index].title) end
+            ui.OnClick(item.button, function() selectActivity(index) end)
+        end
+    end
+end
+
+local function refreshSidebarVisuals()
+    for index = 1, #sidebarButtons do
+        local item = sidebarButtons[index]
+        if item ~= nil then
+            local selected = item.index == state.selectedIndex
+            if item.bg ~= nil then
+                item.bg.color = selected and ui.Hex(SIDEBAR_BG_SELECTED) or ui.Hex(SIDEBAR_BG_NORMAL)
+            end
+            if item.label ~= nil then
+                item.label.color = selected and ui.Hex("#0C141B") or ui.Hex(COLOR_DIM)
+            end
+        end
+    end
+end
+
+-- ──────────────────────────────
+-- 活动切换（活动中心核心交互）
+-- ──────────────────────────────
+
+------------------------------------------------------------------------
+-- 迷雾信标（活动类型 3）：左侧预览 + 右侧描述 + 开始按钮
+-- 进入游戏走 C# 的 MiniGameBridge（关面板 + SceneLoader 带加载条）
+------------------------------------------------------------------------
+local fogHuntPage = nil
+local refreshFogHuntRuns = nil
+
+local FOGHUNT_DESC = [[限时 3 分钟 · 每日 3 次
+
+你是一名侦察兵。要塞被雾吞掉了，
+只能看清身边一小圈；走过的地形会记住，
+但雾里的守卫会一直移动。
+
+目标：找齐 3 枚信标，回到起点撤离。
+被发现 5 次即失败。
+
+草丛可以藏身，投石能引开守卫。
+
+WASD 移动 · Q 蹲伏 · E 投石 · Esc 设置]]
+
+local function buildFogHuntPage()
+    if fogHuntPage ~= nil then return fogHuntPage end
+
+    local parent = root.transform
+    if nodes.gachaPage ~= nil and nodes.gachaPage.transform.parent ~= nil then
+        parent = nodes.gachaPage.transform.parent
+    end
+
+    local page = ui.NewRect(parent, "FogHuntPage")
+    ui.Stretch(page, 0, 0, 0, 0)
+
+    local desc = ui.NewLabel(page, "Desc", FOGHUNT_DESC, 26)
+    ui.Place(ui.RectOf(desc), 0, 1, 430, -150, 620, 470)
+    desc.color = ui.Hex("#C9D4DF")
+
+    local start = ui.NewButton(page, "BtnStart", "开始探索", 30, 320, 76)
+    ui.Place(ui.RectOf(start), 0, 1, 430, -650, 320, 76)
+    local bg = ui.NewGraphic(start)
+    if bg ~= nil then
+        ui.SetRounded(bg, 14)
+        bg.color = ui.Hex("#E8622B")
+    end
+
+    local runs = ui.NewLabel(page, "RunsLeft", "", 22)
+    ui.Place(ui.RectOf(runs), 0, 1, 430, -730, 320, 36)
+    runs.color = ui.Hex("#8FA3B8")
+
+    local function refreshRuns()
+        local remain = CS.Game.MiniGame.MiniGameBridge.GetRemainRuns()
+        runs.text = string.format("今日剩余 %d / %d 次", remain, CS.Game.MiniGame.MiniGameBridge.FogHuntDailyLimit)
+    end
+    refreshFogHuntRuns = refreshRuns
+    refreshRuns()
+
+    ui.OnClick(start, function()
+        if CS.Game.MiniGame.MiniGameBridge.GetRemainRuns() <= 0 then
+            toast("今日次数已用完，明天再来", 2)
+            return
+        end
+        local ok = CS.Game.MiniGame.MiniGameBridge.EnterFogHunt()
+        if ok then
+            toast("正在进入迷雾…", 1.5)
+        else
+            toast("暂时无法进入（次数或加载中）", 2)
+        end
+    end)
+
+    page.gameObject:SetActive(false)
+    fogHuntPage = page
+    return page
+end
+
+local function showFogHuntPage(active)
+    if active and fogHuntPage == nil then buildFogHuntPage() end
+    if fogHuntPage ~= nil then fogHuntPage.gameObject:SetActive(active) end
+    if active and refreshFogHuntRuns ~= nil then refreshFogHuntRuns() end
+end
+
+------------------------------------------------------------------------
+-- 方舟卡牌（活动类型 4）：右侧描述 + 进入按钮
+-- 进场景走 C# 侧 Game.MiniGame.ArkCardsActivityBridge（关面板 + SceneLoader 带加载条）
+------------------------------------------------------------------------
+local arkCardsPage = nil
+
+local ARKCARDS_DESC = [[明日方舟主题回合制卡牌对战
+
+选一副卡组，与对手轮流部署干员、施放法术，
+把对面生命值打到 0 就赢下这一局。
+
+主界面：选关 / 卡组编辑器（卡组存在 StreamingAssets/Decks 下的 JSON）
+战斗：拖拽出牌、费用与部署点、伤害飘字
+
+卡牌主界面左上角有「退出活动」，点了回到主页。]]
+
+local function buildArkCardsPage()
+    if arkCardsPage ~= nil then return arkCardsPage end
+
+    local parent = root.transform
+    if nodes.gachaPage ~= nil and nodes.gachaPage.transform.parent ~= nil then
+        parent = nodes.gachaPage.transform.parent
+    end
+
+    local page = ui.NewRect(parent, "ArkCardsPage")
+    ui.Stretch(page, 0, 0, 0, 0)
+
+    local desc = ui.NewLabel(page, "Desc", ARKCARDS_DESC, 26)
+    ui.Place(ui.RectOf(desc), 0, 1, 430, -150, 620, 470)
+    desc.color = ui.Hex("#C9D4DF")
+
+    local enter = ui.NewButton(page, "BtnEnterArkCards", "开始战斗", 30, 320, 76)
+    ui.Place(ui.RectOf(enter), 0, 1, 430, -650, 320, 76)
+    local bg = ui.NewGraphic(enter)
+    if bg ~= nil then
+        ui.SetRounded(bg, 14)
+        bg.color = ui.Hex("#E8622B")
+    end
+
+    ui.OnClick(enter, function()
+        local ok, err = pcall(function()
+            local battle = require("arkcards.battle")
+            state.battleModule = battle
+            battle.launch(root.transform)
+        end)
+        if not ok then
+            toast("战斗启动失败：" .. tostring(err), 3)
+            log("战斗启动失败：" .. tostring(err))
+        end
+    end)
+
+    page.gameObject:SetActive(false)
+    arkCardsPage = page
+    return page
+end
+
+local function showArkCardsPage(active)
+    if active and arkCardsPage == nil then buildArkCardsPage() end
+    if arkCardsPage ~= nil then arkCardsPage.gameObject:SetActive(active) end
+end
+
+selectActivity = function(index)
+    if index < 1 or index > #activities then return end
+    local entry = activities[index]
+    state.selectedIndex = index
+    showFogHuntPage(false)
+    showArkCardsPage(false)
+
+    -- 换活动 = 换卡池/换页：上一笔的重试目标不再适用，清掉以免误点重试
+    if state.bannerId ~= (entry.bannerId or 0) then state.retryPending = false end
+
+    -- 顶栏 = 选中活动的标题/副标题/内容版本/剩余时间（每个活动独立走表）
+    if nodes.title ~= nil then nodes.title.text = tostring(entry.title or "") end
+    if nodes.subtitle ~= nil then nodes.subtitle.text = tostring(entry.subtitle or "") end
+    if nodes.versionTag ~= nil then nodes.versionTag.text = "内容版本 " .. tostring(entry.contentVersion or "") end
+    state.remainMs = math.max(0, (entry.endAtMs or 0) - (state.serverNowMs or 0))
+    if nodes.countdown ~= nil then nodes.countdown.text = "剩余 " .. fmtRemain(state.remainMs) end
+
+    refreshSidebarVisuals()
+    setPage("main")        -- 覆盖层收回
+
+    local pageType = entry.type or 0
+    if pageType == 1 then
+        -- 唤取页
+        state.bannerId = entry.bannerId or 0
+        if nodes.gachaPage ~= nil then nodes.gachaPage:SetActive(true) end
+        if nodes.signInPage ~= nil then nodes.signInPage:SetActive(false) end
+        state.page = "main"
+        refreshPity()
+        refreshMedia(true)
+
+        -- 首次进入唤取页拉一次详单：拿"累计抽数 / 5★保底进度"（服务端权威口径；换卡池才重拉）
+        if state.bannerId > 0 and state.historyLoadedFor ~= state.bannerId then
+            state.historyLoadedFor = state.bannerId
+            bridge.RequestHistory(state.bannerId, function(result)
+                local ok, err = pcall(function()
+                    if result.success then
+                        state.totalDraws = result.totalDraws
+                        state.pityCount = result.pityCount
+                        state.guaranteedUp = result.guaranteedUp == true
+                        refreshPity()
+                        log(string.format("唤取页首屏数据：累计 %d 抽，5★保底 %d/%d",
+                            result.totalDraws, result.pityCount, state.pityThreshold))
+                    else
+                        log("唤取页首屏详单读取失败：" .. tostring(result.message))
+                    end
+                end)
+                if not ok then log("唤取页首屏数据异常：" .. tostring(err)) end
+            end)
+        end
+    elseif pageType == 2 then
+        -- 签到页
+        state.bannerId = 0
+        state.signId = entry.activityId or 0
+        if nodes.gachaPage ~= nil then nodes.gachaPage:SetActive(false) end
+        if nodes.signInPage ~= nil then nodes.signInPage:SetActive(true) end
+        state.page = "sign"
+        requestSignInList()
+    elseif pageType == 3 then
+        -- 迷雾信标：右侧描述 + 左侧预览 + 开始按钮（进场景走 C# MiniGameBridge）
+        state.bannerId = 0
+        state.signId = 0
+        if nodes.gachaPage ~= nil then nodes.gachaPage:SetActive(false) end
+        if nodes.signInPage ~= nil then nodes.signInPage:SetActive(false) end
+        state.page = "fog"
+        showFogHuntPage(true)
+    elseif pageType == 4 then
+        -- 方舟卡牌：右侧描述 + 进入按钮（进场景走 C# ArkCardsActivityBridge）；本地常驻活动无时间窗
+        state.bannerId = 0
+        state.signId = 0
+        if nodes.gachaPage ~= nil then nodes.gachaPage:SetActive(false) end
+        if nodes.signInPage ~= nil then nodes.signInPage:SetActive(false) end
+        if nodes.countdown ~= nil then nodes.countdown.text = "长期开放" end
+        state.page = "arkcards"
+        showArkCardsPage(true)
+    else
+        -- 未支持的活动类型：两页都收起，占位提示
+        state.bannerId = 0
+        state.signId = 0
+        if nodes.gachaPage ~= nil then nodes.gachaPage:SetActive(false) end
+        if nodes.signInPage ~= nil then nodes.signInPage:SetActive(false) end
+        state.page = "main"
+        toast("该活动类型暂不支持，敬请期待", 2.6)
+    end
+
+    log(string.format("切换到活动 #%d [%s]（type=%d）", entry.activityId or 0, tostring(entry.title), pageType))
+end
+
+-- ──────────────────────────────
+-- 界面搭建
+-- ──────────────────────────────
+
+local function cacheNodes()
+    local r = root.transform
+    nodes.title = ui.FindLabel(r, "TopBar/Title")
+    nodes.subtitle = ui.FindLabel(r, "TopBar/Subtitle")
+    nodes.countdown = ui.FindLabel(r, "TopBar/Countdown")
+    nodes.versionTag = ui.FindLabel(r, "VersionTag")
+    nodes.background = ui.FindImage(r, "Background")
+
+    nodes.sidebar = ui.FindRect(r, "Sidebar")
+
+    nodes.gachaPage = ui.FindGo(r, "GachaPage")
+    nodes.pityText = ui.FindLabel(r, "GachaPage/LeftInfo/PityText")
+    nodes.pityBarBg = ui.FindImage(r, "GachaPage/LeftInfo/PityBarBg")
+    nodes.pityBarFill = ui.FindImage(r, "GachaPage/LeftInfo/PityBarBg/PityBarFill")
+    nodes.mediaIcon = ui.FindImage(r, "GachaPage/LeftInfo/MediaIcon")
+    nodes.mediaText = ui.FindLabel(r, "GachaPage/LeftInfo/MediaText")
+
+    nodes.btnDrawOne = ui.FindButton(r, "GachaPage/RightActions/BtnDrawOne")
+    nodes.btnDrawTen = ui.FindButton(r, "GachaPage/RightActions/BtnDrawTen")
+    nodes.btnHistory = ui.FindButton(r, "GachaPage/RightActions/BtnHistory")
+
+    nodes.signInPage = ui.FindGo(r, "SignInPage")
+    nodes.signInSummary = ui.FindLabel(r, "SignInPage/SignInSummary")
+    nodes.dayArea = ui.FindRect(r, "SignInPage/DayArea")
+    nodes.btnSignIn = ui.FindButton(r, "SignInPage/BtnSignIn")
+
+    nodes.toast = ui.FindLabel(r, "Toast")
+    nodes.loading = ui.FindGo(r, "Loading")
+    nodes.loadingRing = ui.FindImage(r, "Loading/Ring")
+
+    nodes.resultPage = ui.FindGo(r, "ResultPage")
+    nodes.resultTitle = ui.FindLabel(r, "ResultPage/ResultTitle")
+    nodes.resultHint = ui.FindLabel(r, "ResultPage/ResultHint")
+    nodes.cardArea = ui.FindRect(r, "ResultPage/CardArea")
+    nodes.btnConfirm = ui.FindButton(r, "ResultPage/BtnConfirm")
+
+    nodes.historyPage = ui.FindGo(r, "HistoryPage")
+    nodes.historySummary = ui.FindLabel(r, "HistoryPage/HistorySummary")
+    nodes.historyScroll = ui.FindScroll(r, "HistoryPage/HistoryScroll")
+    nodes.historyContent = ui.FindRect(r, "HistoryPage/HistoryScroll/Viewport/Content")
+    nodes.btnBack = ui.FindButton(r, "HistoryPage/BtnBack")
+end
+
+-- ──────────────────────────────
+-- 联调测试按钮（程序化创建，不在预制体里；上线把 DEV_TOOLS 置 false 再发一版热更包即消失）
+-- ──────────────────────────────
+
+local function buildDevTools()
+    if not DEV_TOOLS or root == nil then return end
+
+    local button = ui.NewButton(root.transform, "DevGrantMedia",
+        "测试：领取 " .. DEV_GRANT_COUNT .. " 唤取媒介", 22, 340, 56)
+    local image = ui.NewGraphic(button)
+    if image ~= nil then
+        ui.SetRounded(image, 12)
+        image.color = ui.Hex("#3C5164")            -- 冷灰蓝，与正式按钮区分开
+    end
+    ui.Place(ui.RectOf(button), 0, 1, 296, -170, 340, 56)
+
+    ui.OnClick(button, function()
+        bridge.GrantItem(MEDIA_ITEM_ID, DEV_GRANT_COUNT)      -- 走服务端 BagGrant
+        log(string.format("测试发放：唤取媒介 ×%d", DEV_GRANT_COUNT))
+        toast(string.format("已发放唤取媒介 ×%d（服务端入包后余量自动刷新）", DEV_GRANT_COUNT), 2.4)
+        bridge.RefreshBag()
+    end)
+
+    nodes.devGrantButton = button
+    log("联调测试按钮已就绪：DevGrantMedia（每次 +" .. DEV_GRANT_COUNT .. " 媒介）")
+end
+
+local function bindActions()
+    local r = root.transform
+    ui.BindButton(r, "TopBar/CloseButton", function()
+        log("关闭活动面板")
+        bridge.CloseActivity()
+    end)
+    ui.BindButton(r, "GachaPage/RightActions/BtnDrawOne", function() doDraw(1) end)
+    ui.BindButton(r, "GachaPage/RightActions/BtnDrawTen", function() doDraw(10) end)
+    ui.BindButton(r, "GachaPage/RightActions/BtnHistory", function() openHistory() end)
+    ui.BindButton(r, "SignInPage/BtnSignIn", function() doSignIn() end)
+    ui.BindButton(r, "ResultPage/BtnConfirm", function()
+        setPage("main")
+        toast("已放入背包", 1.8)
+    end)
+    ui.BindButton(r, "HistoryPage/BtnBack", function() setPage("main") end)
+end
+
+function M.launch(ctx)
+    state = {
+        activityId = ctx.activity_id,
+        serverNowMs = ctx.server_now_ms,
+        selectedIndex = 0,
+        page = "main",
+        remainMs = math.max(0, (ctx.end_ms or 0) - (ctx.server_now_ms or 0)),
+
+        -- 唤取页状态
+        bannerId = ctx.banner_id or 0,
+        pityCount = 0,
+        pityThreshold = 30,
+        guaranteedUp = false,      -- 大保底：下一次 5★ 必 UP（服务端权威）
+        totalDraws = 0,
+        mediaCount = -1,
+        busy = false,
+        retryPending = false,      -- 上一笔传输失败待重试（重试复用同一幂等键）
+        historyLoadedFor = 0,
+
+        -- 签到页状态
+        signId = 0,
+        signTotalDays = 0,
+        signSignedDays = 0,
+        signTodaySigned = false,
+        signData = nil,
+        signBusy = false,
+        signButtonEnabled = false,
+        signPulse = 0,
+
+        toastTimer = 0,
+        countdownTick = 0,
+    }
+    nodes = {}
+    templates = {}
+    clones = {}
+    sidebarButtons = {}
+    dayCells = {}
+    activities = {}
+
+    root = bridge.Instantiate(PREFAB_ADDRESS)
+    if root == nil then
+        log("预制体实例化失败：" .. PREFAB_ADDRESS .. "（检查热更包是否已构建发布）")
+        return
+    end
+
+    cacheNodes()
+    loadActivities()
+    buildSidebar()
+    bindActions()
+    buildDevTools()                      -- 联调测试按钮（DEV_TOOLS=false 时为空操作）
+
+    -- 主视觉（热更包里的图片；缺图就退化成深色底，不影响功能）
+    local banner = bridge.LoadSprite(BANNER_ADDRESS)
+    if nodes.background ~= nil then
+        if banner ~= nil then
+            nodes.background.sprite = banner
+            nodes.background.color = ui.Hex(COLOR_WHITE, 0.88)
+        else
+            nodes.background.color = ui.Hex("#1B2A36")
+        end
+    end
+
+    -- 程序化贴图（预制体里留空的部分在这里补上：环、进度条圆角）
+    if nodes.loadingRing ~= nil then nodes.loadingRing.sprite = ui.Ring(110, 6) end
+    if nodes.pityBarBg ~= nil then
+        nodes.pityBarBg.sprite = ui.Rounded(8)
+        nodes.pityBarBg.type = CS.UnityEngine.UI.Image.Type.Sliced
+    end
+    if nodes.pityBarFill ~= nil then
+        nodes.pityBarFill.sprite = ui.Rounded(8)
+        nodes.pityBarFill.type = CS.UnityEngine.UI.Image.Type.Sliced
+        nodes.pityBarFill.color = ui.Hex(COLOR_GOLD)
+    end
+    if nodes.mediaIcon ~= nil then
+        -- 图标键来自服务端 item_config（随背包列表下发），不在这里硬编码图标名
+        local iconKey = bridge.GetItemIconKey(MEDIA_ITEM_ID)
+        local icon = (iconKey ~= nil and iconKey ~= "") and ui.ItemIcon(iconKey) or nil
+        nodes.mediaIcon.sprite = icon
+        nodes.mediaIcon.enabled = icon ~= nil
+    end
+
+    -- 卡牌模板的光晕贴图（克隆体会继承）
+    local cardTemplate = template("card", "ResultPage/CardArea/CardTemplate")
+    if cardTemplate ~= nil then
+        local templateGlow = ui.FindImage(cardTemplate.transform, "Glow")
+        if templateGlow ~= nil then templateGlow.sprite = ui.SoftGlow(128) end
+    end
+
+    setPage("main")
+    setBusy(false)
+    bridge.RefreshBag()                 -- 背包是"按需拉取"的缓存，先把媒介余量刷出来
+
+    -- 默认选中第一个活动（服务端排序 = 侧栏顺序；唤取在前、签到在后）
+    if #activities > 0 then
+        selectActivity(1)
+    else
+        if nodes.title ~= nil then nodes.title.text = "活动中心" end
+        if nodes.subtitle ~= nil then nodes.subtitle.text = "" end
+        toast("当前没有进行中的活动", 3)
+    end
+
+    log(string.format("活动中心已就绪：%d 个活动（%s）",
+        #activities, table.concat(
+            (function()
+                local names = {}
+                for index = 1, #activities do names[#names + 1] = tostring(activities[index].title) end
+                return names
+            end)(), "、")))
+end
+
+-- 宿主每帧泵一次（倒计时 / 加载环旋转 / 提示淡出 / 媒介余量刷新 / 签到呼吸光）
+function M.on_update(dt)
+    if root == nil then return end
+
+    -- 方舟卡牌战斗界面在面板内运行，帧泵交由它自己处理指针事件
+    if state.battleModule ~= nil then state.battleModule.on_update(dt) end
+
+    -- 倒计时（选中活动的剩余时间走表；本地只负责把剩余时间"走表"）
+    if state.remainMs > 0 then
+        state.remainMs = math.max(0, state.remainMs - dt * 1000)
+    end
+    state.countdownTick = state.countdownTick + dt
+    if state.countdownTick >= 0.5 then
+        state.countdownTick = 0
+        if nodes.countdown ~= nil then nodes.countdown.text = "剩余 " .. fmtRemain(state.remainMs) end
+        refreshPity()                       -- 顺带对齐进度条（首帧布局完成前 rect 宽度可能为 0）
+    end
+
+    -- 唤取加载环旋转
+    if state.busy and nodes.loadingRing ~= nil then
+        nodes.loadingRing.rectTransform:Rotate(0, 0, -dt * 320)
+    end
+
+    -- 媒介余量（抽卡扣媒介、背包快照到达后自动对齐）
+    if nodes.mediaText ~= nil then refreshMedia(false) end
+
+    -- 签到"今日可领"格子的呼吸光
+    if state.page == "sign" then
+        state.signPulse = state.signPulse + dt
+        local alpha = 0.30 + 0.16 * (0.5 + 0.5 * math.sin(state.signPulse * 2.6))
+        for index = 1, #dayCells do
+            local cell = dayCells[index]
+            if cell ~= nil and cell.glow ~= nil and cell.glow.gameObject.activeSelf then
+                cell.glow.color = ui.Hex(COLOR_GOLD, alpha)
+            end
+        end
+    end
+
+    -- 提示淡出
+    if state.toastTimer > 0 and nodes.toast ~= nil then
+        state.toastTimer = math.max(0, state.toastTimer - dt)
+        local alpha = math.min(1, state.toastTimer / 0.6)
+        nodes.toast.color = ui.Hex(COLOR_MAIN, alpha)
+    end
+end
+
+-- ──────────────────────────────
+-- E2E 辅助（脚本/编辑器直调；正常玩法走界面按钮）
+-- ──────────────────────────────
+
+function M.e2e_state()
+    local entry = activities[state.selectedIndex]
+    local signInLabel = ""
+    if nodes.btnSignIn ~= nil then
+        local label = ui.NewButtonLabel(nodes.btnSignIn)
+        if label ~= nil then signInLabel = label.text end
+    end
+    return {
+        ready = root ~= nil,
+        activityCount = #activities,
+        selected = state.selectedIndex,
+        selectedType = entry ~= nil and (entry.type or 0) or 0,
+        bannerId = state.bannerId,
+        page = state.page,
+        pityCount = state.pityCount,
+        pityThreshold = state.pityThreshold,
+        guaranteedUp = state.guaranteedUp == true,
+        totalDraws = state.totalDraws,
+        mediaCount = bridge.GetItemCount(MEDIA_ITEM_ID),
+        cardCount = #clones,
+        busy = state.busy,
+        retryPending = state.retryPending == true,
+        gachaPageActive = nodes.gachaPage ~= nil and nodes.gachaPage.activeSelf,
+        signInPageActive = nodes.signInPage ~= nil and nodes.signInPage.activeSelf,
+        signId = state.signId,
+        signTotalDays = state.signTotalDays,
+        signSignedDays = state.signSignedDays,
+        signTodaySigned = state.signTodaySigned,
+        signDayCellCount = #dayCells,
+        signButtonEnabled = state.signButtonEnabled,
+        signButtonLabel = signInLabel,
+    }
+end
+
+function M.e2e_draw(count)
+    doDraw(count or 1)
+end
+
+function M.e2e_open_history()
+    openHistory()
+end
+
+function M.e2e_select_activity(index)
+    selectActivity(index)
+end
+
+function M.e2e_sign_in()
+    doSignIn()
+end
+
+
+-- 联调/自动化：把战斗模块的内部状态与操作暴露给 C#（LuaActivityHost.CallEntry）
+function M.e2e_battle(cmd, arg)
+    local battle = state.battleModule
+    if battle == nil then return "no battle module" end
+    if cmd == "state" then return battle.debugState() end
+    if cmd == "hand" then return battle.debugHand() end
+    if cmd == "summonbest" then return battle.debugSummonBest() end
+    if cmd == "summon" then return tostring(battle.debugSummon(arg or 1)) end
+    if cmd == "cast" then return tostring(battle.debugCast(arg or 1)) end
+    if cmd == "attack" then return tostring(battle.debugAttack(arg or 1)) end
+    if cmd == "killenemy" then return battle.debugDamageEnemy(arg or 30) end
+    if cmd == "killplayer" then return battle.debugDamagePlayer(arg or 30) end
+    if cmd == "end" then battle.debugEndTurn() return battle.debugState() end
+    if cmd == "movers" then return battle.debugMovers() end
+    if cmd == "close" then battle.close() return "closed" end
+    return "unknown cmd"
+end
+
+return M
