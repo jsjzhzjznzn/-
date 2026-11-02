@@ -1,0 +1,106 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 本文件服务「场景存档」：玩家在带 3D 世界/对话的场景里退出后，
+// 下次进入同一场景时恢复位置、朝向、相机与对话节点（服务端权威存储）
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 SaveStatePacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 场景存档快照
+/// 一个玩家在一个场景里只保留一行（服务端按 player_id + scene_name UPSERT）。
+/// 位置/相机由客户端采集上报，服务端只做范围护栏；对话节点用于「回到当前这一句」。
+/// </summary>
+message SceneSaveSnapshot {
+  /// <summary>场景名（当前白名单："duihua" / "fuben"，长度 ≤ 64）</summary>
+  string scene_name = 1;
+
+  /// <summary>玩家根节点世界坐标</summary>
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+
+  /// <summary>玩家朝向（绕 Y 轴欧拉角，单位：度）</summary>
+  float rot_y = 5;
+
+  /// <summary>第三人称相机水平角（CinemachinePOV m_HorizontalAxis.Value）</summary>
+  float cam_yaw = 6;
+
+  /// <summary>第三人称相机垂直角（CinemachinePOV m_VerticalAxis.Value）</summary>
+  float cam_pitch = 7;
+
+  /// <summary>第三人称距离（FramingTransposer m_CameraDistance；0 = 未初始化，恢复时用场景默认）</summary>
+  float cam_distance = 8;
+
+  /// <summary>退出时是否正处在对话中</summary>
+  bool dialogue_active = 9;
+
+  /// <summary>对话图资产名（DialogueGraph.AssetName，仅 dialogue_active 时有意义）</summary>
+  string dialogue_graph = 10;
+
+  /// <summary>当前对话节点 ConfigId（0 = 无；恢复到该节点并从头播放这一句）</summary>
+  int32 dialogue_node_id = 11;
+
+  /// <summary>对话变量快照（JSON，前向兼容用；事实类变量由客户端重新播种，见方案 D4）</summary>
+  string dialogue_vars_json = 12;
+
+  /// <summary>本段对话已发布过的 eventKey 列表（JSON 数组，恢复时抑制重复推进叙事任务）</summary>
+  string dialogue_fired_json = 13;
+
+  /// <summary>服务端写入时间（客户端上报时填 0，回执里由服务端填写）</summary>
+  int64 updated_at_ms = 14;
+}
+
+/// <summary>
+/// 存档拉取请求
+/// 进入场景时调用；身份由会话绑定（session.PlayerId），消息体不带玩家ID
+/// </summary>
+message SaveStatePullRequest {
+  /// <summary>要拉取的场景名</summary>
+  string scene_name = 1;
+}
+
+/// <summary>
+/// 存档拉取响应
+/// has_save=false 表示该玩家在该场景没有存档（首次进入），客户端按场景默认开局
+/// </summary>
+message SaveStatePullResponse {
+  /// <summary>是否成功（查询失败/未登录时为 false）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因等）</summary>
+  string message = 2;
+
+  /// <summary>是否存在存档</summary>
+  bool has_save = 3;
+
+  /// <summary>存档快照（has_save=false 时字段无意义）</summary>
+  SceneSaveSnapshot snapshot = 4;
+}
+
+/// <summary>
+/// 存档上报请求
+/// 事件点触发（对话节点变更/选项/对话结束/打开设置/返回主页/退出/重连补发），覆盖式写入
+/// </summary>
+message SaveStatePushRequest {
+  /// <summary>本次要落库的完整快照（不是增量）</summary>
+  SceneSaveSnapshot snapshot = 1;
+}
+
+/// <summary>
+/// 存档上报响应
+/// 仅作确认与排障用；客户端不依赖它推进任何玩法
+/// </summary>
+message SaveStatePushResponse {
+  /// <summary>是否成功（校验不通过/未登录时为 false）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因等）</summary>
+  string message = 2;
+
+  /// <summary>服务端权威写入时间（毫秒）</summary>
+  int64 server_updated_at_ms = 3;
+}

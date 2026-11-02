@@ -1,0 +1,271 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 成就系统与任务系统（QuestPacket.proto）解耦：任务负责引导/交付，成就负责长期收集/里程碑
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 AchievementPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 成就条件（服务端按玩家实时计算 current 后下发）
+/// 一条成就包含 1..N 个条件，默认全部满足（AND）
+/// </summary>
+message AchievementConditionInfo {
+  /// <summary>条件序号（从 1 开始，越小越先展示）</summary>
+  int32 seq = 1;
+
+  /// <summary>条件类型：1统计值 2持有物品 3好友数量 4账号注册天数 5指定日期前注册</summary>
+  int32 condition_type = 2;
+
+  /// <summary>参数1：统计ID / 物品ID / 日期（yyyyMMdd）</summary>
+  int32 param1 = 3;
+
+  /// <summary>参数2：预留（当前未使用）</summary>
+  int32 param2 = 4;
+
+  /// <summary>目标值</summary>
+  int32 target = 5;
+
+  /// <summary>当前值（服务端按玩家实时计算；布尔条件为 0/1）</summary>
+  int32 current = 6;
+
+  /// <summary>展示文案（服务端生成，客户端直接显示）</summary>
+  string text = 7;
+}
+
+/// <summary>
+/// 成就奖励条目
+/// </summary>
+message AchievementRewardInfo {
+  /// <summary>奖励物品ID（对应 item_config.item_id）</summary>
+  int32 item_id = 1;
+
+  /// <summary>奖励数量（≥1）</summary>
+  int32 count = 2;
+
+  /// <summary>物品名（服务端补齐；物品不存在时为空串）</summary>
+  string name = 3;
+}
+
+/// <summary>
+/// 成就静态配置
+/// </summary>
+message AchievementCfgInfo {
+  /// <summary>成就ID（全服唯一；旧任务成就沿用 4001 等原ID）</summary>
+  int32 achievement_id = 1;
+
+  /// <summary>成就名</summary>
+  string name = 2;
+
+  /// <summary>描述/达成提示</summary>
+  string description = 3;
+
+  /// <summary>系列（战斗/成长/社交/活动/隐藏，直接作为分组标题）</summary>
+  string series = 4;
+
+  /// <summary>稀有度：1铜 2银 3金 4白金（客户端边框/角标）</summary>
+  int32 rarity = 5;
+
+  /// <summary>成就点（仅展示，不做货币）</summary>
+  int32 points = 6;
+
+  /// <summary>是否隐藏：未解锁前列表显示 ???、详情不可点</summary>
+  bool hidden = 7;
+
+  /// <summary>阶段链上一阶段ID（0=无前置；上一阶段领取后才激活本阶段）</summary>
+  int32 prev_achievement_id = 8;
+
+  /// <summary>排序权重（越小越靠前；同系列内生效）</summary>
+  int32 sort = 9;
+
+  /// <summary>条件列表（AND）</summary>
+  repeated AchievementConditionInfo conditions = 10;
+
+  /// <summary>奖励列表</summary>
+  repeated AchievementRewardInfo rewards = 11;
+}
+
+/// <summary>
+/// 玩家成就状态
+/// state：1进行中 2已解锁待领取 3已领取；没有行时客户端按锁定（0）处理
+/// </summary>
+message PlayerAchievementInfo {
+  /// <summary>成就ID</summary>
+  int32 achievement_id = 1;
+
+  /// <summary>状态：1进行中 2已解锁待领取 3已领取</summary>
+  int32 state = 2;
+
+  /// <summary>主条件当前值（列表显示；多条件时取第一个未完成条件）</summary>
+  int32 progress = 3;
+
+  /// <summary>主条件目标值</summary>
+  int32 target = 4;
+
+  /// <summary>解锁时间（毫秒时间戳；0=未解锁）</summary>
+  int64 unlocked_at_ms = 5;
+
+  /// <summary>领取时间（毫秒时间戳；0=未领取）</summary>
+  int64 claimed_at_ms = 6;
+}
+
+/// <summary>
+/// 成就汇总（顶部总览 + 红点数据源）
+/// </summary>
+message AchievementSummary {
+  /// <summary>成就总数（含隐藏）</summary>
+  int32 total = 1;
+
+  /// <summary>已解锁数（state 2 + 3）</summary>
+  int32 unlocked = 2;
+
+  /// <summary>已领取数（state 3）</summary>
+  int32 claimed = 3;
+
+  /// <summary>可领取数（state 2）</summary>
+  int32 claimable = 4;
+
+  /// <summary>已获得成就点（state 2 + 3）</summary>
+  int32 points = 5;
+
+  /// <summary>成就点上限（全部成就点数之和）</summary>
+  int32 total_points = 6;
+}
+
+/// <summary>
+/// 成就列表请求（消息体为空，身份由会话绑定）
+/// </summary>
+message AchievementListRequest {
+}
+
+/// <summary>
+/// 成就列表响应
+/// </summary>
+message AchievementListResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>提示文案</summary>
+  string message = 2;
+
+  /// <summary>成就静态配置</summary>
+  repeated AchievementCfgInfo configs = 3;
+
+  /// <summary>玩家成就状态（只含已激活的行）</summary>
+  repeated PlayerAchievementInfo achievements = 4;
+
+  /// <summary>汇总</summary>
+  AchievementSummary summary = 5;
+}
+
+/// <summary>
+/// 领取成就奖励请求
+/// </summary>
+message AchievementClaimRequest {
+  /// <summary>要领取的成就ID（首期只传 1 个；空 + claim_all=true 时由客户端顺序调用）</summary>
+  repeated int32 achievement_ids = 1;
+
+  /// <summary>预留：true=领取全部可领取（首期客户端顺序实现，服务端按 achievement_ids 处理）</summary>
+  bool claim_all = 2;
+}
+
+/// <summary>
+/// 领取成就奖励响应
+/// </summary>
+message AchievementClaimResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>提示文案（"已领取"/"尚未解锁"/奖励明细等）</summary>
+  string message = 2;
+
+  /// <summary>本次实际领取的成就ID</summary>
+  repeated int32 claimed_ids = 3;
+
+  /// <summary>本次发放明细（含转入邮箱的部分在 message 说明）</summary>
+  repeated AchievementRewardInfo granted = 4;
+
+  /// <summary>操作后的玩家成就快照</summary>
+  repeated PlayerAchievementInfo achievements = 5;
+
+  /// <summary>操作后的汇总</summary>
+  AchievementSummary summary = 6;
+
+  /// <summary>领取奖励引发的连锁解锁（服务端已同时推送 3405）</summary>
+  repeated AchievementCfgInfo cascaded_unlocks = 7;
+}
+
+/// <summary>
+/// 单条解锁信息
+/// </summary>
+message AchievementUnlockedInfo {
+  /// <summary>成就ID</summary>
+  int32 achievement_id = 1;
+
+  /// <summary>成就名</summary>
+  string name = 2;
+
+  /// <summary>成就点</summary>
+  int32 points = 3;
+
+  /// <summary>稀有度（客户端横幅配色）</summary>
+  int32 rarity = 4;
+}
+
+/// <summary>
+/// 成就解锁推送（服务端主动；在线才推，离线靠下次拉列表补齐）
+/// </summary>
+message AchievementUnlockedNotify {
+  /// <summary>本次解锁的成就</summary>
+  repeated AchievementUnlockedInfo items = 1;
+
+  /// <summary>最新汇总</summary>
+  AchievementSummary summary = 2;
+}
+
+/// <summary>
+/// 成就进度推送（节流；用于面板打开时进度条实时刷新）
+/// </summary>
+message AchievementProgressNotify {
+  /// <summary>发生变化的玩家成就</summary>
+  repeated PlayerAchievementInfo achievements = 1;
+
+  /// <summary>最新汇总</summary>
+  AchievementSummary summary = 2;
+}
+
+/// <summary>
+/// GM/联调：改进度、强制解锁、重置
+/// </summary>
+message AchievementGmRequest {
+  /// <summary>成就ID</summary>
+  int32 achievement_id = 1;
+
+  /// <summary>目标进度（progress 模式使用）</summary>
+  int32 progress = 2;
+
+  /// <summary>true=直接置为已解锁待领取</summary>
+  bool unlock = 3;
+
+  /// <summary>true=重置为未激活（删行）</summary>
+  bool reset = 4;
+}
+
+/// <summary>
+/// GM/联调响应
+/// </summary>
+message AchievementGmResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>提示文案</summary>
+  string message = 2;
+
+  /// <summary>操作后的玩家成就快照</summary>
+  repeated PlayerAchievementInfo achievements = 3;
+
+  /// <summary>操作后的汇总</summary>
+  AchievementSummary summary = 4;
+}

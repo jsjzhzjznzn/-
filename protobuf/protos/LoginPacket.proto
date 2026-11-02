@@ -1,0 +1,341 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 LoginPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 登录请求数据类
+/// </summary>
+message LoginRequest {
+  /// <summary>
+  /// 账号
+  /// 类型：string
+  /// 用途：玩家登录时输入的账号名称
+  /// </summary>
+  string account = 1;
+
+  /// <summary>
+  /// 密码
+  /// 类型：string
+  /// 用途：玩家登录时输入的密码
+  /// </summary>
+  string password = 2;
+
+  /// <summary>
+  /// 下次自动登录
+  /// 类型：bool
+  /// 用途：true=登录成功后服务器签发自动登录令牌（客户端本地保存，下次免密码换会话）
+  /// </summary>
+  bool remember_me = 3;
+}
+
+/// <summary>
+/// 登录响应数据类
+/// </summary>
+message LoginResponse {
+  /// <summary>
+  /// 是否登录成功
+  /// 类型：bool
+  /// 用途：true表示登录成功，false表示登录失败
+  /// </summary>
+  bool success = 1;
+
+  /// <summary>
+  /// 玩家ID
+  /// 类型：int32
+  /// 用途：登录成功后返回的玩家唯一标识符（失败时为0）
+  /// </summary>
+  int32 player_id = 2;
+
+  /// <summary>
+  /// 提示信息
+  /// 类型：string
+  /// 用途：失败原因或欢迎语
+  /// </summary>
+  string message = 3;
+
+  /// <summary>
+  /// 自动登录令牌
+  /// 类型：string
+  /// 用途：remember_me=true 登录成功、或令牌登录滑动续期时下发的令牌（服务端只存哈希；空=本次登录不续期）
+  /// </summary>
+  string auto_login_token = 4;
+
+  /// <summary>
+  /// 自动登录令牌过期时间
+  /// 类型：int64
+  /// 用途：Unix 毫秒；客户端存令牌时一并保存，超过该时间的令牌不再尝试自动登录
+  /// </summary>
+  int64 auto_login_token_expire_ms = 5;
+}
+
+/// <summary>
+/// 自动登录请求数据类（令牌换会话：客户端用上次 remember_me 登录时保存的令牌免密码登录）
+/// </summary>
+message TokenLoginRequest {
+  /// <summary>
+  /// 账号
+  /// 类型：string
+  /// 用途：上次登录的账号名（服务端以其定位玩家并校验令牌归属，不匹配即失败）
+  /// </summary>
+  string account = 1;
+
+  /// <summary>
+  /// 自动登录令牌
+  /// 类型：string
+  /// 用途：上次登录响应里下发的 auto_login_token 明文
+  /// </summary>
+  string token = 2;
+}
+
+/// <summary>
+/// 注册请求数据类
+/// </summary>
+message RegisterRequest {
+  /// <summary>
+  /// 账号
+  /// 类型：string
+  /// 用途：玩家注册时输入的账号名称
+  /// </summary>
+  string account = 1;
+
+  /// <summary>
+  /// 密码
+  /// 类型：string
+  /// 用途：玩家注册时输入的密码
+  /// </summary>
+  string password = 2;
+}
+
+/// <summary>
+/// 注册响应数据类
+/// </summary>
+message RegisterResponse {
+  /// <summary>
+  /// 是否注册成功
+  /// 类型：bool
+  /// 用途：true表示注册成功，false表示注册失败
+  /// </summary>
+  bool success = 1;
+
+  /// <summary>
+  /// 提示信息
+  /// 类型：string
+  /// 用途：失败原因（如账号已被注册）或成功提示
+  /// </summary>
+  string message = 2;
+}
+
+/// <summary>
+/// 好友列表请求数据类（空消息：身份由服务端会话绑定，无需携带字段）
+/// </summary>
+message FriendListRequest {
+}
+
+/// <summary>
+/// 好友信息条目
+/// </summary>
+message FriendInfo {
+  /// <summary>
+  /// 好友的玩家ID
+  /// 类型：int32
+  /// 用途：好友的唯一标识（accounts.Id）
+  /// </summary>
+  int32 player_id = 1;
+
+  /// <summary>
+  /// 好友的账号名
+  /// 类型：string
+  /// 用途：好友列表显示用
+  /// </summary>
+  string name = 2;
+
+  /// <summary>
+  /// 是否在线
+  /// 类型：bool
+  /// 用途：好友当前是否在线（服务端 PlayerManager 实时判断）
+  /// </summary>
+  bool online = 3;
+
+  /// <summary>
+  /// 未读消息数
+  /// 类型：int32
+  /// 用途：与该好友的未读聊天消息数（对方发我且未读），客户端红点角标数据源
+  /// </summary>
+  int32 unread_count = 4;
+
+  /// <summary>
+  /// 最后一次消息时间
+  /// 类型：int64
+  /// 用途：与该好友最近一条消息的 UTC 毫秒时间戳（0=从未聊过）；
+  ///       客户端据此只预热"确实有历史"的会话，并按最近活跃排序
+  /// </summary>
+  int64 last_message_at_ms = 5;
+}
+
+/// <summary>
+/// 好友列表响应数据类
+/// </summary>
+message FriendListResponse {
+  /// <summary>
+  /// 好友数量
+  /// 类型：int32
+  /// 用途：好友条目数量
+  /// </summary>
+  int32 count = 1;
+
+  /// <summary>
+  /// 好友列表
+  /// 类型：repeated FriendInfo
+  /// 用途：所有好友的详细信息
+  /// </summary>
+  repeated FriendInfo friends = 2;
+}
+
+/// <summary>
+/// 查询玩家请求数据类
+/// </summary>
+message QueryPlayerRequest {
+  /// <summary>
+  /// 要查询的玩家ID
+  /// 类型：int32
+  /// 用途：按 accounts.Id 精确查找
+  /// </summary>
+  int32 player_id = 1;
+}
+
+/// <summary>
+/// 查询玩家响应数据类
+/// </summary>
+message QueryPlayerResponse {
+  /// <summary>
+  /// 是否找到
+  /// 类型：bool
+  /// 用途：true表示该玩家ID存在
+  /// </summary>
+  bool found = 1;
+
+  /// <summary>
+  /// 玩家ID
+  /// 类型：int32
+  /// 用途：找到时回传（便于客户端核对）
+  /// </summary>
+  int32 player_id = 2;
+
+  /// <summary>
+  /// 账号名
+  /// 类型：string
+  /// 用途：展示用
+  /// </summary>
+  string name = 3;
+}
+
+/// <summary>
+/// 好友申请请求数据类
+/// </summary>
+message FriendAddRequest {
+  /// <summary>
+  /// 目标玩家ID
+  /// 类型：int32
+  /// 用途：要申请添加的对方（accounts.Id）
+  /// </summary>
+  int32 target_id = 1;
+}
+
+/// <summary>
+/// 好友申请响应数据类
+/// </summary>
+message FriendAddResponse {
+  /// <summary>
+  /// 是否发送成功
+  /// 类型：bool
+  /// 用途：true表示申请已写入数据库等待对方同意
+  /// </summary>
+  bool success = 1;
+
+  /// <summary>
+  /// 提示信息
+  /// 类型：string
+  /// 用途：失败原因（不存在/已是好友/重复申请）或成功提示
+  /// </summary>
+  string message = 2;
+}
+
+/// <summary>
+/// 好友申请回应请求数据类
+/// </summary>
+message FriendRespondRequest {
+  /// <summary>
+  /// 申请人ID
+  /// 类型：int32
+  /// 用途：谁发来的申请（accounts.Id）
+  /// </summary>
+  int32 from_player_id = 1;
+
+  /// <summary>
+  /// 是否同意
+  /// 类型：bool
+  /// 用途：true=接受并成为好友，false=拒绝并删除申请
+  /// </summary>
+  bool accept = 2;
+}
+
+/// <summary>
+/// 好友申请回应响应数据类
+/// </summary>
+message FriendRespondResponse {
+  /// <summary>
+  /// 是否处理成功
+  /// 类型：bool
+  /// 用途：true表示同意/拒绝已生效
+  /// </summary>
+  bool success = 1;
+
+  /// <summary>
+  /// 提示信息
+  /// 类型：string
+  /// 用途：处理结果说明
+  /// </summary>
+  string message = 2;
+}
+
+/// <summary>
+/// 待处理申请列表请求数据类（空消息：身份由服务端会话绑定，无需携带字段）
+/// </summary>
+message FriendRequestsRequest {
+}
+
+/// <summary>
+/// 待处理申请列表响应数据类
+/// </summary>
+message FriendRequestsResponse {
+  /// <summary>
+  /// 待处理申请数量
+  /// 类型：int32
+  /// 用途：条目数量
+  /// </summary>
+  int32 count = 1;
+
+  /// <summary>
+  /// 待处理申请列表
+  /// 类型：repeated FriendInfo
+  /// 用途：所有申请者的信息（player_id=申请人Id，name=申请人账号）
+  /// </summary>
+  repeated FriendInfo requests = 2;
+}
+
+/// <summary>
+/// 被顶下线推送数据类（服务端主动推送，非请求-响应）
+/// </summary>
+message KickoutNotify {
+  /// <summary>
+  /// 踢线原因
+  /// 类型：string
+  /// 用途：客户端可直接展示的文案，如"账号在其它设备登录"；将来封号/维护/安全踢复用本消息
+  /// </summary>
+  string reason = 1;
+}

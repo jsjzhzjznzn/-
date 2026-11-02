@@ -1,0 +1,38 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+package common.network;
+
+// 生成的 C# 命名空间
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 心跳请求数据类
+/// </summary>
+message PingRequest {
+  /// <summary>
+  /// 客户端发送时的本地时间戳
+  /// 类型：int64
+  /// 用途：UTC毫秒，服务端原样带回，客户端据此估算往返时延
+  /// </summary>
+  int64 client_ms = 1;
+}
+
+/// <summary>
+/// 心跳响应数据类
+/// </summary>
+message PongResponse {
+  /// <summary>
+  /// 客户端发送时的本地时间戳回显
+  /// 类型：int64
+  /// </summary>
+  int64 client_ms = 1;
+
+  /// <summary>
+  /// 服务端当前时间
+  /// 类型：int64
+  /// 用途：UTC毫秒，供客户端校准时钟（活动倒计时用）
+  /// </summary>
+  int64 server_ms = 2;
+}

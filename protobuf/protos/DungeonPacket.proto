@@ -1,0 +1,81 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 LoginPacket.proto / BagPacket.proto 等同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 DungeonPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 副本掉落条目
+/// 形态A（鸣潮式直接入包）：服务端已把物品放入背包，DropToken 为空
+/// 形态B（世界掉落+靠近拾取）：物品已按掉落规则 roll 出但尚未入包，
+///   DropToken 是 60 秒限时拾取令牌（归属绑定玩家），走近掉落物时凭令牌请求入包
+/// </summary>
+message DungeonDropInfo {
+  /// <summary>物品ID（对应 item_config.item_id）</summary>
+  int32 item_id = 1;
+
+  /// <summary>数量</summary>
+  int32 count = 2;
+
+  /// <summary>物品名（服务端补齐，客户端直接展示免查配置表）</summary>
+  string item_name = 3;
+
+  /// <summary>拾取令牌（仅形态B：击杀回执时生成；形态A恒为空）</summary>
+  string drop_token = 4;
+
+  /// <summary>令牌过期时间（UTC毫秒，仅形态B；过期后掉落物不可拾取，服务端拒绝）</summary>
+  int64 expire_ms = 5;
+}
+
+/// <summary>
+/// 击杀上报请求
+/// 客户端只报"击杀了哪类敌人"（enemy_type 1=直接入包型 2=世界掉落型），
+/// 掉什么、掉多少全部由服务端按掉落规则表裁决，客户端无法指定物品与数量
+/// </summary>
+message DungeonKillReportRequest {
+  /// <summary>敌人类型（1=直接入包型 2=世界掉落型）</summary>
+  int32 enemy_type = 1;
+}
+
+/// <summary>
+/// 击杀上报响应
+/// 形态A：drops 为已放入背包的物品（背包放不下的部分已自动转邮件，见 message）
+/// 形态B：drops 为待拾取条目（带限时令牌），客户端据此在世界中刷出掉落物
+/// </summary>
+message DungeonKillReportResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因 / 满包转邮件提示）</summary>
+  string message = 2;
+
+  /// <summary>掉落条目（形态A=已入包物品，形态B=带令牌的待拾取物品）</summary>
+  repeated DungeonDropInfo drops = 3;
+}
+
+/// <summary>
+/// 拾取请求
+/// 玩家走近世界掉落物时自动触发；服务端校验令牌存在、归属本人且未过期后才入包
+/// </summary>
+message DungeonPickupRequest {
+  /// <summary>击杀回执下发的拾取令牌</summary>
+  string drop_token = 1;
+}
+
+/// <summary>
+/// 拾取响应
+/// </summary>
+message DungeonPickupResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（已过期/已领取/满包转邮件等）</summary>
+  string message = 2;
+
+  /// <summary>拾取到的物品条目（成功时填充）</summary>
+  DungeonDropInfo item = 3;
+}

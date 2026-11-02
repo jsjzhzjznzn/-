@@ -1,0 +1,198 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+package common.network;
+
+// 生成的 C# 命名空间
+option csharp_namespace = "Common.Network";
+
+// AI Agent 助手（阿福）协议
+// 链路：客户端 →(3101/3105) .NET 游戏服网关 → HTTP → Python Agent(:8898 LangGraph)
+// 主动提醒：服务端事件 →(3107 推送) 悬浮球（一个 Agent 两个用法，2026-10-17 设计文档）
+// 号段说明：3101-3107（3104=登录简报推送，3107=主动提醒推送）；3001/3002 已被心跳 Ping/Pong 占用，勿混用
+
+/// <summary>
+/// Agent 聊天请求数据类
+/// 用途：玩家在 AgentPanel 输入的消息（发送者身份由服务端会话绑定，客户端不传 ID）
+/// </summary>
+message AgentChatRequest {
+  /// <summary>
+  /// 玩家输入的消息内容
+  /// 类型：string
+  /// 用途：≤500 字（网关校验），原样转发给 Agent 服务（违禁词/贝叶斯审核已于 2026-10-16 按用户决策取消）
+  /// </summary>
+  string content = 1;
+}
+
+/// <summary>
+/// Agent 聊天响应数据类
+/// 用途：阿福的整段最终回复（流式模式下 3103 分片全部收齐后由网关补发本消息做权威校准）
+/// </summary>
+message AgentChatResponse {
+  /// <summary>
+  /// 本次对话是否成功（Agent 服务可达且正常产出回复）
+  /// 类型：bool
+  /// </summary>
+  bool ok = 1;
+
+  /// <summary>
+  /// 阿福的最终回复正文（纯文本，无 Markdown/emoji）
+  /// 类型：string
+  /// </summary>
+  string reply = 2;
+
+  /// <summary>
+  /// 失败原因（ok=false 时给客户端展示：如"阿福暂时不在家，请稍后再试"）
+  /// 类型：string
+  /// </summary>
+  string error = 3;
+
+  /// <summary>
+  /// 服务端处理耗时（毫秒，含 LLM 与工具调用）
+  /// 类型：int64
+  /// </summary>
+  int64 elapsed_ms = 4;
+}
+
+/// <summary>
+/// Agent 流式分片数据类（打字机效果，Phase 5 已实现）
+/// 用途：Agent 服务流式产出的增量文本分片，随 3102 最终回执收尾校准
+/// </summary>
+message AgentChatChunk {
+  /// <summary>
+  /// 分片序号（从 0 递增）
+  /// 类型：int32
+  /// </summary>
+  int32 seq = 1;
+
+  /// <summary>
+  /// 本分片的增量文本
+  /// 类型：string
+  /// </summary>
+  string delta = 2;
+
+  /// <summary>
+  /// 是否为最后一个分片（true 后客户端收尾渲染）
+  /// 类型：bool
+  /// </summary>
+  bool done = 3;
+
+  /// <summary>
+  /// 作废重置信号（true=此前累计的流式文本全部作废，客户端清空重等；工具调用轮的前导噪声用）
+  /// 类型：bool
+  /// </summary>
+  bool reset = 4;
+}
+
+/// <summary>
+/// Agent 登录简报推送数据类（Phase 5 ②：阿福上线问好）
+/// 用途：登录成功后服务端主动推送的"未读邮件/可提交任务/保底进度"一条汇总
+/// （确定性文案组装，零 LLM 成本；同时归档进 Agent 会话历史，面板重开可回看）
+/// </summary>
+message AgentBriefNotify {
+  /// <summary>
+  /// 简报正文（阿福口吻，纯文本）
+  /// 类型：string
+  /// </summary>
+  string content = 1;
+
+  /// <summary>
+  /// 生成时间（UTC 毫秒）
+  /// 类型：int64
+  /// </summary>
+  int64 created_ms = 2;
+}
+
+/// <summary>
+/// Agent 历史回放请求数据类
+/// 用途：打开 AgentPanel 时拉取与阿福的最近对话（跨会话记忆的可见入口）；
+/// 上拉加载更早时带 before_ms 游标（与首页整表拉取区分，返回早于该时间的更早一页）
+/// </summary>
+message AgentHistoryRequest {
+  /// <summary>
+  /// 拉取条数上限（默认 20）
+  /// 类型：int32
+  /// </summary>
+  int32 limit = 1;
+
+  /// <summary>
+  /// 游标时间（UTC 毫秒）：>0 表示取"早于该时间"的更早一页（前置插入）；0=首页拉最近 N 条
+  /// 类型：int64
+  /// </summary>
+  int64 before_ms = 2;
+}
+
+/// <summary>
+/// Agent 历史回放响应数据类
+/// 用途：按时间正序（旧→新）返回的最近对话列表
+/// </summary>
+message AgentHistoryResponse {
+  /// <summary>
+  /// 消息条目列表（旧→新；before_ms 游标请求时为本页窗口内的条目）
+  /// 类型：repeated AgentChatMessage
+  /// </summary>
+  repeated AgentChatMessage items = 1;
+
+  /// <summary>
+  /// 拉取是否成功
+  /// 类型：bool
+  /// </summary>
+  bool ok = 2;
+
+  /// <summary>
+  /// 是否还有更早的历史可翻（上拉分页据此停手/继续）
+  /// 类型：bool
+  /// </summary>
+  bool has_more = 3;
+}
+
+/// <summary>
+/// Agent 聊天消息条目数据类
+/// 用途：历史回放的单条消息（role: 0=玩家 1=阿福）
+/// </summary>
+message AgentChatMessage {
+  /// <summary>
+  /// 消息归属（0=玩家发的，1=阿福回的）
+  /// 类型：int32
+  /// </summary>
+  int32 role = 1;
+
+  /// <summary>
+  /// 消息正文（纯文本）
+  /// 类型：string
+  /// </summary>
+  string content = 2;
+
+  /// <summary>
+  /// 消息时间戳（UTC 毫秒）
+  /// 类型：int64
+  /// </summary>
+  int64 created_ms = 3;
+}
+
+/// <summary>
+/// Agent 主动提醒推送数据类（悬浮球 · 一个 Agent 两个用法）
+/// 用途：服务端检测到事件（如邮件附件未领取）时，让阿福主动发消息提醒玩家；
+/// 文案由 Python Agent（共用 LangGraph 主图与玩家已选风格）生成，同时归档进对话历史（面板可见、可追问）；
+/// 客户端面板关着 → 悬浮球右侧弹气泡（7 秒自动消失）；面板开着 → 进聊天流
+/// </summary>
+message AgentProactiveNotify {
+  /// <summary>
+  /// 提醒类型（1=邮件附件未领取；后续预留 2=任务可提交 3=保底临近 4=好友申请）
+  /// 类型：int32
+  /// </summary>
+  int32 kind = 1;
+
+  /// <summary>
+  /// 阿福口吻的提醒正文（纯文本，无 Markdown/emoji）
+  /// 类型：string
+  /// </summary>
+  string content = 2;
+
+  /// <summary>
+  /// 生成时间（UTC 毫秒）
+  /// 类型：int64
+  /// </summary>
+  int64 created_ms = 3;
+}

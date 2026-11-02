@@ -1,0 +1,137 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 BagPacket.proto / QuestPacket.proto 同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 EquipmentPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 装备配置（"这一类装备"的静态定义，与 item_config 同主键一对一扩展）
+/// slot_type / weapon_type / 属性白名单全在服务端裁决，客户端只用于展示与筛选
+/// </summary>
+message EquipConfigInfo {
+  /// <summary>物品ID（对应 item_config.item_id）</summary>
+  int32 item_id = 1;
+
+  /// <summary>槽位类型（1=武器；2/3 预留给护甲/饰品）</summary>
+  int32 slot_type = 2;
+
+  /// <summary>武器类型（1 长刃 / 2 迅刀 / 3 佩枪 / 4 臂铠 / 5 音感仪）</summary>
+  int32 weapon_type = 3;
+
+  /// <summary>可用角色白名单（空 = 全部角色；否则逗号分隔的 char_id，如 "0,1"）</summary>
+  string allowed_chars = 4;
+
+  /// <summary>属性加成（JSON 数组，如 [{"type":3,"value":32}]；type 是 AttrType 的整数值）</summary>
+  string attr_json = 5;
+
+  /// <summary>武器外观模型键（本期为空，预留挂点扩展）</summary>
+  string model_key = 6;
+}
+
+/// <summary>
+/// 装备实例（玩家真正拥有的那一件）
+/// 名称/图标/稀有度仍从 item_config 取（item_id 关联），实例只描述"这一件"的差异
+/// </summary>
+message EquipInstanceInfo {
+  /// <summary>实例唯一ID（player_items.instance_id 指向它）</summary>
+  int64 instance_id = 1;
+
+  /// <summary>物品ID</summary>
+  int32 item_id = 2;
+
+  /// <summary>强化等级（本期恒 0）</summary>
+  int32 enhance_level = 3;
+
+  /// <summary>词条（JSON 数组，本期为 "[]"，字段先行）</summary>
+  string affix_json = 4;
+
+  /// <summary>穿在哪个角色身上（-1 = 未装备）</summary>
+  int32 equipped_char = 5;
+
+  /// <summary>穿在哪个槽位（0 = 未装备）</summary>
+  int32 equipped_slot = 6;
+}
+
+/// <summary>
+/// 穿戴关系（角色 × 槽位 → 实例）
+/// 服务端以表 (player_id, char_id, slot_type) 为唯一真相，客户端据此渲染角色身上的装备
+/// </summary>
+message EquipSlotInfo {
+  /// <summary>角色ID（0 安比 / 1 艾莲）</summary>
+  int32 char_id = 1;
+
+  /// <summary>槽位类型（1=武器）</summary>
+  int32 slot_type = 2;
+
+  /// <summary>该槽位上的实例ID（0 = 空槽）</summary>
+  int64 instance_id = 3;
+}
+
+/// <summary>
+/// 装备列表请求
+/// 打开角色页时发送，一次拿全配置 + 本人实例 + 本人槽位（数量级几十条，不分页）
+/// </summary>
+message EquipmentListRequest {
+}
+
+/// <summary>
+/// 装备列表响应
+/// </summary>
+message EquipmentListResponse {
+  /// <summary>是否成功（false = 未登录等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>装备静态配置表</summary>
+  repeated EquipConfigInfo configs = 3;
+
+  /// <summary>本人全部装备实例（含已穿戴的）</summary>
+  repeated EquipInstanceInfo instances = 4;
+
+  /// <summary>本人全部穿戴关系（空槽不下发）</summary>
+  repeated EquipSlotInfo slots = 5;
+}
+
+/// <summary>
+/// 穿戴/卸下请求（两者同一入口：instance_id=0 表示卸下该槽）
+/// 服务端在单事务内完成归属校验、角色校验与跨角色原子转移，客户端只负责发出意图
+/// </summary>
+message EquipRequest {
+  /// <summary>角色ID</summary>
+  int32 char_id = 1;
+
+  /// <summary>槽位类型（1=武器）</summary>
+  int32 slot_type = 2;
+
+  /// <summary>要穿上的实例ID（0 = 卸下当前槽）</summary>
+  int64 instance_id = 3;
+}
+
+/// <summary>
+/// 穿戴/卸下响应（回带最新槽位与实例，客户端整表刷新）
+/// </summary>
+message EquipResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（跨角色转移时说明"已从XX卸下"）</summary>
+  string message = 2;
+
+  /// <summary>结果码（0 成功 / 1 未登录 / 2 实例不存在或不属于你 / 3 不是装备 / 4 槽位类型不匹配 / 5 角色不可用 / 6 存储错误）</summary>
+  int32 code = 3;
+
+  /// <summary>幂等命中（同一角色同槽重复穿同一件，数据未变）</summary>
+  bool unchanged = 4;
+
+  /// <summary>操作后的全部穿戴关系</summary>
+  repeated EquipSlotInfo slots = 5;
+
+  /// <summary>操作后的全部装备实例</summary>
+  repeated EquipInstanceInfo instances = 6;
+}

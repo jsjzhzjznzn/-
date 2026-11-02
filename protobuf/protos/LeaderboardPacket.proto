@@ -1,0 +1,94 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 LoginPacket.proto / ChatPacket.proto 同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 LeaderboardPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 成绩上报请求
+/// 客户端挑战结束后发送；成绩按"只保留个人最高分"入账（低于历史最高则不覆盖）
+/// </summary>
+message ScoreSubmitRequest {
+  /// <summary>挑战ID（不同挑战各自独立排榜；当前默认 1）</summary>
+  int32 challenge_id = 1;
+
+  /// <summary>本次挑战成绩（非负整数；高于历史最高才刷新纪录）</summary>
+  int64 score = 2;
+}
+
+/// <summary>
+/// 成绩上报响应
+/// 入账结果 + 入账后的实时最高分与排名（数据来自 Valkey ZSET，实时）
+/// </summary>
+message ScoreSubmitResponse {
+  /// <summary>是否入账成功（false = 未登录/成绩非法等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（如"新纪录！"/"未超过最高分"）</summary>
+  string message = 2;
+
+  /// <summary>入账后的个人最高分</summary>
+  int64 best_score = 3;
+
+  /// <summary>入账后的实时排名（1 起始；0 = 未上榜/榜单暂不可用）</summary>
+  int64 my_rank = 4;
+
+  /// <summary>是否刷新了个人最高分纪录</summary>
+  bool new_record = 5;
+}
+
+/// <summary>
+/// 排行榜查询请求
+/// 查询者身份由服务端会话绑定，响应用于附带"我的排名"
+/// </summary>
+message LeaderboardRequest {
+  /// <summary>挑战ID</summary>
+  int32 challenge_id = 1;
+
+  /// <summary>取前 N 名（服务端上限 100；0 按默认 10 处理）</summary>
+  int32 top_n = 2;
+}
+
+/// <summary>
+/// 排行榜单条
+/// </summary>
+message LeaderboardEntry {
+  /// <summary>名次（1 起始，按分数降序）</summary>
+  int64 rank = 1;
+
+  /// <summary>玩家ID（accounts.Id）</summary>
+  int32 player_id = 2;
+
+  /// <summary>玩家名字（服务端从账号库补齐，ZSET 里只存 playerId）</summary>
+  string name = 3;
+
+  /// <summary>最高分</summary>
+  int64 score = 4;
+}
+
+/// <summary>
+/// 排行榜查询响应
+/// </summary>
+message LeaderboardResponse {
+  /// <summary>是否查询成功（false = 未登录/榜单暂不可用）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>挑战ID（回显）</summary>
+  int32 challenge_id = 3;
+
+  /// <summary>TopN 条目（分数降序）</summary>
+  repeated LeaderboardEntry entries = 4;
+
+  /// <summary>查询者自己的实时排名（1 起始；0 = 未上榜）</summary>
+  int64 my_rank = 5;
+
+  /// <summary>查询者自己的最高分（未上榜为 0）</summary>
+  int64 my_score = 6;
+}

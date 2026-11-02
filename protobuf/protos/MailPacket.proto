@@ -1,0 +1,263 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 LoginPacket.proto / ChatPacket.proto / LeaderboardPacket.proto / BagPacket.proto / QuestPacket.proto 同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 MailPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 邮件附件条目
+/// 设计取舍：本项目物品无实例属性（player_items 只存 item_id + count），因此附件只需 物品ID+数量，
+/// 不需要完整物品结构（大项目的装备随机属性问题在这里不存在）；服务端随响应补齐物品名，客户端无需依赖背包配置
+/// </summary>
+message MailItemInfo {
+  /// <summary>物品ID（对应 item_config.item_id）</summary>
+  int32 item_id = 1;
+
+  /// <summary>数量（≥1；单件上限与背包发放一致，由服务端校验）</summary>
+  int32 count = 2;
+
+  /// <summary>物品名（服务端补齐；物品不存在时为空串）</summary>
+  string name = 3;
+}
+
+/// <summary>
+/// 邮件条目
+/// 本期只做系统邮件（不做玩家互发——盗号转移/刷邮件的风控面不引入，参照 DNF 的做法）；
+/// 服务端 mails 表的 state 是位掩码（1 已读 / 2 已删），item_mask 是附件领取掩码（逐附件防重放），
+/// 协议层简化为两个 bool：已删邮件不出现在任何响应里，领取为"一键领取全部附件"
+/// </summary>
+message MailInfo {
+  /// <summary>邮件ID（服务端自增，全局唯一）</summary>
+  int32 mail_id = 1;
+
+  /// <summary>标题</summary>
+  string title = 2;
+
+  /// <summary>正文</summary>
+  string body = 3;
+
+  /// <summary>发件人显示名（系统邮件为固定文案）</summary>
+  string sender_name = 4;
+
+  /// <summary>创建时间（服务端 UTC 毫秒时间戳，客户端时钟不可信一律以服务端为准）</summary>
+  int64 create_time_ms = 5;
+
+  /// <summary>过期时间（服务端 UTC 毫秒时间戳；0 = 永不过期；过期邮件自动从列表过滤）</summary>
+  int64 expire_time_ms = 6;
+
+  /// <summary>是否已读（打开详情即置位；领取附件也会顺带置位）</summary>
+  bool read = 7;
+
+  /// <summary>附件是否已领取（无附件邮件恒为 false，客户端以 items 是否为空决定是否显示领取按钮）</summary>
+  bool claimed = 8;
+
+  /// <summary>附件列表（可为空 = 纯文本邮件）</summary>
+  repeated MailItemInfo items = 9;
+}
+
+/// <summary>
+/// 邮件列表请求
+/// 打开邮件面板时发送，一次拿全部有效邮件（未删除且未过期，新邮件在前）；
+/// 邮件量小不做分页，客户端整表替换
+/// </summary>
+message MailListRequest {
+}
+
+/// <summary>
+/// 邮件列表响应
+/// </summary>
+message MailListResponse {
+  /// <summary>是否成功（false = 未登录等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>邮箱容量上限（客户端显示"x/N 封"用）</summary>
+  int32 capacity = 3;
+
+  /// <summary>全部有效邮件（按邮件ID降序 = 新邮件在前）</summary>
+  repeated MailInfo mails = 4;
+}
+
+/// <summary>
+/// 标记已读请求
+/// 客户端点开邮件详情时发送（服务端幂等：已读再标不报错）
+/// </summary>
+message MailReadRequest {
+  /// <summary>邮件ID</summary>
+  int32 mail_id = 1;
+}
+
+/// <summary>
+/// 标记已读响应（返回操作后的完整邮件快照，客户端整表刷新）
+/// </summary>
+message MailReadResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的有效邮件快照</summary>
+  repeated MailInfo mails = 3;
+}
+
+/// <summary>
+/// 领取附件请求
+/// 一键领取全部附件：服务端在单事务内校验归属/过期/重复领取，并模拟背包空间——
+/// 全部放得下才落账（放不下整单拒绝，不做部分发放），成功后自动置已读
+/// </summary>
+message MailClaimRequest {
+  /// <summary>邮件ID</summary>
+  int32 mail_id = 1;
+}
+
+/// <summary>
+/// 领取附件响应
+/// 物品进包后背包快照已过期，客户端领取成功后自行重拉背包（与任务提交同款处理）
+/// </summary>
+message MailClaimResponse {
+  /// <summary>是否成功（false = 附件已领过 / 背包空间不足 / 已删除等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（成功时含领取明细，如"已领取：铁矿 x5、治疗药剂 x2"）</summary>
+  string message = 2;
+
+  /// <summary>操作后的有效邮件快照</summary>
+  repeated MailInfo mails = 3;
+}
+
+/// <summary>
+/// 删除邮件请求
+/// 软删除（置状态位，不物理删行）：附件未领取也允许删，作废与否由客户端确认框提示
+/// </summary>
+message MailDeleteRequest {
+  /// <summary>邮件ID</summary>
+  int32 mail_id = 1;
+}
+
+/// <summary>
+/// 删除邮件响应
+/// </summary>
+message MailDeleteResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的有效邮件快照（被删邮件从列表消失）</summary>
+  repeated MailInfo mails = 3;
+}
+
+/// <summary>
+/// 测试发件请求
+/// GM/联调指令（风险面同 BagGrant，审计 P1-1 待产品决策统一收口）：
+/// 本期邮件唯一来源，可发纯文本邮件或带附件邮件；收件人可以是自己（面板测试键）或指定玩家
+/// </summary>
+message MailGrantRequest {
+  /// <summary>收件玩家ID（0 = 发给当前会话玩家自己）</summary>
+  int32 target_player_id = 1;
+
+  /// <summary>邮件标题</summary>
+  string title = 2;
+
+  /// <summary>邮件正文</summary>
+  string body = 3;
+
+  /// <summary>附件（可为空 = 纯文本邮件）</summary>
+  repeated MailItemInfo items = 4;
+}
+
+/// <summary>
+/// 测试发件响应
+/// 只返回结果不回邮箱快照：收件人在线时由 MailReceiveNotify 推送刷新，
+/// 发给自己的场景客户端收到响应后再拉一次列表即可
+/// </summary>
+message MailGrantResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（含收件人ID）</summary>
+  string message = 2;
+}
+
+/// <summary>
+/// 收到新邮件推送
+/// 服务端主动推给在线收件人（非请求的响应）：GM 发件时收件人在线即推送，供邮件面板与红点实时刷新
+/// </summary>
+message MailReceiveNotify {
+  /// <summary>新到达的邮件</summary>
+  MailInfo mail = 1;
+
+  /// <summary>可选的提示文案（如"收到来自系统的邮件"）</summary>
+  string message = 2;
+}
+
+/// <summary>
+/// GM 发公共邮件请求
+/// 运营邮件：写全局表，不直接写全服玩家邮箱（延迟创建/读裂变）——
+/// 玩家拉取邮件列表时，服务端才把"符合条件且未实例化"的公共邮件实例化到个人邮箱并记录去重；
+/// 这样避免大规模写库与僵尸号无效写入，也让撤回成为可能（已发放的邮件不宜撤回）
+/// </summary>
+message MailPublicGrantRequest {
+  /// <summary>运营标签（撤回按 tag 匹配；同 tag 可多次发送、一次全撤）</summary>
+  string tag = 1;
+
+  /// <summary>邮件标题</summary>
+  string title = 2;
+
+  /// <summary>邮件正文</summary>
+  string body = 3;
+
+  /// <summary>附件（可为空 = 纯文本邮件）</summary>
+  repeated MailItemInfo items = 4;
+
+  /// <summary>注册时间筛选下限（UTC 毫秒，0 = 不限；只发给注册晚于此时间的玩家，如新玩家礼包）</summary>
+  int64 min_register_ms = 5;
+
+  /// <summary>注册时间筛选上限（UTC 毫秒，0 = 不限；只发给注册早于此时间的玩家，如存量补偿）</summary>
+  int64 max_register_ms = 6;
+}
+
+/// <summary>
+/// GM 发公共邮件响应
+/// 只返回创建结果：不逐个推送给在线玩家（延迟创建设计——玩家下次拉列表时自然收到，运营邮件无需实时）
+/// </summary>
+message MailPublicGrantResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>新公共邮件ID（成功时 > 0）</summary>
+  int32 public_mail_id = 3;
+}
+
+/// <summary>
+/// GM 撤回公共邮件请求
+/// 撤回 = 标记失效（软标记，可逆可溯源），不物理删除；
+/// 已实例化到个人邮箱但尚未领取附件的邮件会在"拉取列表"时被软删、在"领取"时被拒绝；
+/// 已领取附件的邮件保留（物品已到手，撤回无意义也撤不回）
+/// </summary>
+message MailPublicRevokeRequest {
+  /// <summary>要撤回的运营标签</summary>
+  string tag = 1;
+}
+
+/// <summary>
+/// GM 撤回公共邮件响应
+/// </summary>
+message MailPublicRevokeResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（含撤回的公共邮件数）</summary>
+  string message = 2;
+}

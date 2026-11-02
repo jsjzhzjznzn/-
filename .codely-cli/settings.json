@@ -1,0 +1,22 @@
+{
+  "contentGenerator": {
+    "authType": "codely-oauth",
+    "wireApi": "chat",
+    "overrides": {
+      "model": {
+        "authType": "openai",
+        "wireApi": "chat"
+      },
+      "flashModel": {
+        "authType": "codely-oauth"
+      },
+      "multimodalModel": {
+        "authType": "codely-oauth"
+      }
+    }
+  },
+  "selectedAuthType": "codely-oauth",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "flashModel": "codely-flash",
+  "multimodalModel": "codely-vl"
+}

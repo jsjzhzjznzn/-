@@ -1,0 +1,219 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义
+// 与 LoginPacket/ChatPacket 同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 BattlePacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+// ────────────────────────── 对战好友邀请 ──────────────────────────
+// 定位：只做「信令」。对战流量仍由房主进程的 NGO Listen Server（7777）承载，
+// 游戏服（8888）只负责 谁在邀请谁 / 凭据是否有效 / 把结果通知对方。
+// 安全模型与聊天一致：发送者身份只认会话绑定，客户端的 playerId 一律不可信。
+
+/// <summary>
+/// 发送对战邀请请求（房主 → 服务端）
+/// 服务端会校验：登录态、好友关系、目标在线、房主配额与冷却
+/// </summary>
+message BattleInviteRequest {
+  /// <summary>
+  /// 被邀请的好友玩家ID
+  /// 类型：int32
+  /// 用途：目标玩家（accounts.Id）
+  /// </summary>
+  int32 target_player_id = 1;
+
+  /// <summary>
+  /// 房主本次房间的标识
+  /// 类型：string
+  /// 用途：GUID；用于取消邀请与日志排查（服务端不校验其唯一性）
+  /// </summary>
+  string room_id = 2;
+
+  /// <summary>
+  /// 房主自报的对战地址
+  /// 类型：string
+  /// 用途：好友同意后用它直连 7777（私网 IP 只能同局域网可达，与手填 IP 加入同口径）
+  /// </summary>
+  string host_address = 3;
+
+  /// <summary>
+  /// 房主对战端口
+  /// 类型：int32
+  /// 用途：当前固定 7777，留字段是为了将来可配置
+  /// </summary>
+  int32 host_port = 4;
+}
+
+/// <summary>
+/// 发送对战邀请响应（服务端 → 房主）
+/// 只表示「邀请已送达」，好友是否同意由 BattleInviteResultNotify 另行推送
+/// </summary>
+message BattleInviteResponse {
+  /// <summary>是否成功创建邀请</summary>
+  bool success = 1;
+
+  /// <summary>失败原因（中文，可直接显示）</summary>
+  string message = 2;
+
+  /// <summary>
+  /// 邀请ID
+  /// 类型：int64
+  /// 用途：服务端生成的唯一凭据，取消/回应时原样带回
+  /// </summary>
+  int64 invite_id = 3;
+
+  /// <summary>
+  /// 邀请过期时间
+  /// 类型：int64
+  /// 用途：Unix 毫秒；客户端倒计时用它，不要用本地时长推算（防时钟漂移）
+  /// </summary>
+  int64 expire_at_ms = 4;
+
+  /// <summary>本次房间标识（回显，便于客户端对齐）</summary>
+  string room_id = 5;
+}
+
+/// <summary>
+/// 对战邀请推送（服务端 → 被邀请好友，主动推送）
+/// 好友客户端据此弹出邀请卡片
+/// </summary>
+message BattleInviteNotify {
+  /// <summary>邀请ID（同意/拒绝时原样带回）</summary>
+  int64 invite_id = 1;
+
+  /// <summary>邀请人玩家ID</summary>
+  int32 from_player_id = 2;
+
+  /// <summary>邀请人昵称（服务端解析，客户端不回查）</summary>
+  string from_player_name = 3;
+
+  /// <summary>房主对战地址（好友同意后直连）</summary>
+  string host_address = 4;
+
+  /// <summary>房主对战端口</summary>
+  int32 host_port = 5;
+
+  /// <summary>邀请过期时间（Unix 毫秒）</summary>
+  int64 expire_at_ms = 6;
+
+  /// <summary>房主本次房间标识</summary>
+  string room_id = 7;
+}
+
+/// <summary>
+/// 回应对战邀请请求（被邀请好友 → 服务端）
+/// 归属校验：只有该邀请的 target_player_id 能回应
+/// </summary>
+message BattleInviteRespondRequest {
+  /// <summary>邀请ID</summary>
+  int64 invite_id = 1;
+
+  /// <summary>true=同意 false=拒绝</summary>
+  bool accept = 2;
+
+  /// <summary>
+  /// 客户端拒绝原因
+  /// 类型：string
+  /// 用途：如"正在对战中"，服务端原样转给房主（为空时用默认文案）
+  /// </summary>
+  string reason = 3;
+}
+
+/// <summary>
+/// 回应对战邀请响应（服务端 → 被邀请好友）
+/// 同意时携带房主地址，客户端据此发起 NGO 连接
+/// </summary>
+message BattleInviteRespondResponse {
+  /// <summary>是否处理成功（同意但仍会因邀请失效而失败）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（中文）</summary>
+  string message = 2;
+
+  /// <summary>房主对战地址（仅同意成功时有值）</summary>
+  string host_address = 3;
+
+  /// <summary>房主对战端口</summary>
+  int32 host_port = 4;
+
+  /// <summary>房主玩家ID</summary>
+  int32 host_player_id = 5;
+
+  /// <summary>房主昵称</summary>
+  string host_player_name = 6;
+
+  /// <summary>房主本次房间标识</summary>
+  string room_id = 7;
+}
+
+/// <summary>
+/// 邀请结果推送（服务端 → 邀请方，主动推送）
+/// 覆盖 同意 / 拒绝 / 过期 / 取消 四种终态
+/// </summary>
+message BattleInviteResultNotify {
+  /// <summary>邀请ID</summary>
+  int64 invite_id = 1;
+
+  /// <summary>被邀请好友的玩家ID</summary>
+  int32 target_player_id = 2;
+
+  /// <summary>被邀请好友的昵称</summary>
+  string target_player_name = 3;
+
+  /// <summary>
+  /// 结果类型
+  /// 类型：int32
+  /// 用途：1=accepted 2=declined 3=expired 4=cancelled
+  /// </summary>
+  int32 result = 4;
+
+  /// <summary>结果文案（中文，可直接显示）</summary>
+  string message = 5;
+
+  /// <summary>本次房间标识</summary>
+  string room_id = 6;
+}
+
+/// <summary>
+/// 取消对战邀请请求（房主 → 服务端）
+/// invite_id=0 时按 room_id 取消该房间的全部待回应邀请
+/// </summary>
+message BattleInviteCancelRequest {
+  /// <summary>房间标识（invite_id=0 时使用）</summary>
+  string room_id = 1;
+
+  /// <summary>要取消的邀请ID（0=按房间全部取消）</summary>
+  int64 invite_id = 2;
+}
+
+/// <summary>
+/// 取消对战邀请响应（服务端 → 房主）
+/// </summary>
+message BattleInviteCancelResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（中文）</summary>
+  string message = 2;
+
+  /// <summary>实际取消的邀请条数</summary>
+  int32 cancelled = 3;
+}
+
+/// <summary>
+/// 邀请失效推送（服务端 → 被邀请好友，主动推送）
+/// 房主取消 / 邀请超时 / 房主下线时推送，客户端据此立刻收起弹窗（不必等本地倒计时）
+/// </summary>
+message BattleInviteCancelledNotify {
+  /// <summary>邀请ID</summary>
+  int64 invite_id = 1;
+
+  /// <summary>房主本次房间标识</summary>
+  string room_id = 2;
+
+  /// <summary>失效原因（中文，可直接显示）</summary>
+  string message = 3;
+}

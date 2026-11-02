@@ -1,0 +1,224 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 LoginPacket.proto / ChatPacket.proto / BagPacket.proto 同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 QuestPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 任务奖励条目
+/// 服务端随任务配置一并补齐物品名，客户端无需依赖背包配置即可直接展示奖励
+/// </summary>
+message QuestRewardInfo {
+  /// <summary>奖励物品ID（对应 item_config.item_id）</summary>
+  int32 item_id = 1;
+
+  /// <summary>奖励数量（≥1）</summary>
+  int32 count = 2;
+
+  /// <summary>物品名（服务端补齐；物品不存在时为空串）</summary>
+  string name = 3;
+}
+
+/// <summary>
+/// 任务静态配置
+/// 设计取舍（每任务只含一个目标）：把"目标"合并进任务本身，用组合任务代替组合目标，
+/// 从而让目标直接复用任务天然具备的发奖/扣道具能力（详见任务系统设计文档）
+/// </summary>
+message QuestCfgInfo {
+  /// <summary>任务ID</summary>
+  int32 quest_id = 1;
+
+  /// <summary>任务名</summary>
+  string name = 2;
+
+  /// <summary>任务描述</summary>
+  string description = 3;
+
+  /// <summary>任务分类（1 主线 / 2 支线 / 3 成就）</summary>
+  int32 category = 4;
+
+  /// <summary>目标类型（1 挑战成绩 / 2 收集物品 / 3 加好友 / 4 发消息 / 5 章节步骤容器 / 6 生涯分数）</summary>
+  int32 goal_type = 5;
+
+  /// <summary>目标参数1（1 挑战成绩=挑战ID，0 表示任意挑战；2 收集物品=物品ID；6 生涯分数=scoreId）</summary>
+  int32 goal_param1 = 6;
+
+  /// <summary>目标参数2（1 挑战成绩=分数阈值，0 表示不限制分数；其余忽略）</summary>
+  int32 goal_param2 = 7;
+
+  /// <summary>目标进度（达成所需的次数/数量；章节任务=步骤总数，仅供展示，服务端以实际子任务数为准）</summary>
+  int32 target_progress = 8;
+
+  /// <summary>前置任务ID（0 = 无前置；前置任务提交后才可接取）</summary>
+  int32 prev_quest_id = 9;
+
+  /// <summary>任务奖励（提交时发放）</summary>
+  repeated QuestRewardInfo rewards = 10;
+
+  /// <summary>父任务ID（0 = 顶层任务；非 0 表示本任务是该章节任务的步骤，不独立出现在任务列表）</summary>
+  int32 parent_quest_id = 11;
+}
+
+/// <summary>
+/// 生涯数据条目（成就任务的进度来源）
+/// 服务端从玩法事件持续累计（挑战次数/发消息数/获得物品数/提交任务数/历史最高分等），
+/// 客户端据此展示成就进度与生涯概况
+/// </summary>
+message CareerScoreInfo {
+  /// <summary>生涯指标ID</summary>
+  int32 score_id = 1;
+
+  /// <summary>当前累计值</summary>
+  int32 value = 2;
+}
+
+/// <summary>
+/// 玩家任务状态
+/// 只下发"已接取过"的任务（未接取 = 服务端无记录，由客户端按前置条件推导是否可接取）
+/// </summary>
+message PlayerQuestInfo {
+  /// <summary>任务ID</summary>
+  int32 quest_id = 1;
+
+  /// <summary>任务状态（1 进行中 / 2 已完成可提交 / 3 已提交）</summary>
+  int32 state = 2;
+
+  /// <summary>当前进度（累计类来自存档；收集类为服务端实时统计的持有量）</summary>
+  int32 progress = 3;
+}
+
+/// <summary>
+/// 任务列表请求
+/// 打开任务面板时发送，一次拿全任务配置表 + 玩家任务状态（身份由服务端会话绑定）
+/// </summary>
+message QuestListRequest {
+}
+
+/// <summary>
+/// 任务列表响应
+/// </summary>
+message QuestListResponse {
+  /// <summary>是否成功（false = 未登录等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>任务静态配置表（客户端建运行时表用）</summary>
+  repeated QuestCfgInfo configs = 3;
+
+  /// <summary>玩家已接取任务的状态快照</summary>
+  repeated PlayerQuestInfo quests = 4;
+
+  /// <summary>生涯数据（成就进度来源；打开任务面板时一并下发）</summary>
+  repeated CareerScoreInfo career_scores = 5;
+}
+
+/// <summary>
+/// 接取任务请求
+/// </summary>
+message QuestAcceptRequest {
+  /// <summary>要接取的任务ID</summary>
+  int32 quest_id = 1;
+}
+
+/// <summary>
+/// 接取任务响应（返回操作后的完整任务状态快照，客户端整表刷新）
+/// </summary>
+message QuestAcceptResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的任务状态快照</summary>
+  repeated PlayerQuestInfo quests = 3;
+}
+
+/// <summary>
+/// 提交任务请求
+/// 收集类任务为"交付"语义：服务端在提交时重新校验持有量，足够才扣除物品并发放奖励
+/// </summary>
+message QuestSubmitRequest {
+  /// <summary>要提交的任务ID</summary>
+  int32 quest_id = 1;
+}
+
+/// <summary>
+/// 提交任务响应
+/// </summary>
+message QuestSubmitResponse {
+  /// <summary>是否成功（false = 未完成 / 物品不足等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（含发放的奖励描述）</summary>
+  string message = 2;
+
+  /// <summary>操作后的任务状态快照</summary>
+  repeated PlayerQuestInfo quests = 3;
+}
+
+/// <summary>
+/// 放弃任务请求（仅进行中的任务可放弃，放弃后回到未接取状态）
+/// </summary>
+message QuestAbandonRequest {
+  /// <summary>要放弃的任务ID</summary>
+  int32 quest_id = 1;
+}
+
+/// <summary>
+/// 放弃任务响应
+/// </summary>
+message QuestAbandonResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的任务状态快照</summary>
+  repeated PlayerQuestInfo quests = 3;
+}
+
+/// <summary>
+/// 调试：设置任务进度请求
+/// 任务进度以存档缓存为准，因此可直接改写以便联调（GM 指令，其他系统无需配合）
+/// </summary>
+message QuestGmSetProgressRequest {
+  /// <summary>目标任务ID（须已接取）</summary>
+  int32 quest_id = 1;
+
+  /// <summary>要写入的进度值（按目标值截断为完成态）</summary>
+  int32 progress = 2;
+}
+
+/// <summary>
+/// 调试：设置任务进度响应
+/// </summary>
+message QuestGmSetProgressResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的任务状态快照</summary>
+  repeated PlayerQuestInfo quests = 3;
+}
+
+/// <summary>
+/// 任务进度推送
+/// 服务端主动推给在线玩家（非请求的响应）：玩法事件推进了任务进度时下发，供任务面板与红点实时刷新
+/// </summary>
+message QuestProgressNotify {
+  /// <summary>发生变化的任务状态（只含本次变化的任务）</summary>
+  repeated PlayerQuestInfo quests = 1;
+
+  /// <summary>可选的提示文案（如"任务【初次挑战】可提交"）</summary>
+  string message = 2;
+}

@@ -1,0 +1,76 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义
+// 本文件服务「新手引导进度」：按账号存「下一步该播哪一步」，
+// 让玩家在任何一步退出后，下次登录从同一步继续（服务端权威，换机/换号都不丢）
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 GuidePacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 引导进度拉取请求
+/// 进入主页时调用；身份由会话绑定（session.PlayerId），消息体不带玩家ID
+/// </summary>
+message GuidePullRequest {
+  /// <summary>引导标识（当前仅 "zhuye"，长度 1..32）</summary>
+  string guide_key = 1;
+}
+
+/// <summary>
+/// 引导进度拉取响应
+/// has_record=false 表示该账号从未开始过这条引导（客户端再按"新号/老号"规则决定是否自动开场）
+/// </summary>
+message GuidePullResponse {
+  /// <summary>是否成功（查询失败/未登录时为 false）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因等）</summary>
+  string message = 2;
+
+  /// <summary>是否存在进度记录</summary>
+  bool has_record = 3;
+
+  /// <summary>下一次要播放的步骤下标（0 = 从头；has_record=false 时无意义）</summary>
+  int32 step = 4;
+
+  /// <summary>是否已完成或已跳过（true 时客户端不再自动开场）</summary>
+  bool completed = 5;
+}
+
+/// <summary>
+/// 引导进度上报请求
+/// 每推进一步或结束时覆盖式写入（不是增量）
+/// </summary>
+message GuidePushRequest {
+  /// <summary>引导标识</summary>
+  string guide_key = 1;
+
+  /// <summary>下一次要播放的步骤下标（服务端钳制到 0..64）</summary>
+  int32 step = 2;
+
+  /// <summary>是否已完成或已跳过</summary>
+  bool completed = 3;
+}
+
+/// <summary>
+/// 引导进度上报响应
+/// 仅作确认与排障用；客户端不依赖它推进任何流程
+/// </summary>
+message GuidePushResponse {
+  /// <summary>是否成功（校验不通过/未登录时为 false）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>服务端落库后的步骤下标（已钳制）</summary>
+  int32 step = 3;
+
+  /// <summary>服务端落库后的完成标记</summary>
+  bool completed = 4;
+
+  /// <summary>服务端权威写入时间（毫秒）</summary>
+  int64 server_updated_at_ms = 5;
+}

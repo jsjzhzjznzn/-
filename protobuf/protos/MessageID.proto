@@ -1,0 +1,1299 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息ID定义层
+// 注意：消息ID与消息体分属不同 package，
+// 避免枚举值 LoginRequest/LoginResponse 与同名消息类型冲突（protobuf 的 C++ 作用域规则）
+package common.messageid;
+
+// 生成的 C# 命名空间（protoc 生成 MessageID.cs 中枚举的归属）
+option csharp_namespace = "Common.Enum";
+
+/// <summary>
+/// 网络消息ID枚举
+/// 用于标识客户端与服务器之间通信的消息类型
+/// </summary>
+enum MessageID {
+  // ────────────────────────── 未知 ──────────────────────────
+  /// <summary>
+  /// 未知消息
+  /// 类型：MessageID (枚举)
+  /// 用途：占位值，proto3 要求枚举首值必须为 0，不应在网络中发送
+  /// 值：0
+  /// </summary>
+  Unknown = 0;
+
+  // ────────────────────────── 登录 ──────────────────────────
+  /// <summary>
+  /// 登录请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端向服务器发送登录请求，携带账号密码
+  /// 对应数据结构：LoginRequest
+  /// 值：1001
+  /// </summary>
+  LoginRequest = 1001;
+
+  /// <summary>
+  /// 登录响应
+  /// 类型：MessageID (枚举)
+  /// 用途：服务器向客户端返回登录结果，包含玩家基本信息
+  /// 对应数据结构：LoginResponse
+  /// 值：1002
+  /// </summary>
+  LoginResponse = 1002;
+
+  /// <summary>
+  /// 自动登录请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端用保存的自动登录令牌免密码换会话，携带账号与令牌
+  /// 对应数据结构：TokenLoginRequest
+  /// 值：1003
+  /// </summary>
+  TokenLoginRequest = 1003;
+
+  /// <summary>
+  /// 自动登录响应
+  /// 类型：MessageID (枚举)
+  /// 用途：服务器返回自动登录结果（复用 LoginResponse 消息体，成功时滑动续期下发新过期时间）
+  /// 对应数据结构：LoginResponse
+  /// 值：1004
+  /// </summary>
+  TokenLoginResponse = 1004;
+
+  /// <summary>
+  /// 被顶下线推送
+  /// 类型：MessageID (枚举)
+  /// 用途：同一账号在别处登录成功时，服务端主动向旧会话推送"账号在其它设备登录"，随后关闭其连接（占登录段段尾，属服务端主动推送）
+  /// 对应数据结构：KickoutNotify
+  /// 值：1005
+  /// </summary>
+  KickoutNotify = 1005;
+
+  // ────────────────────────── 注册 ──────────────────────────
+  /// <summary>
+  /// 注册请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端向服务器发送注册请求，携带账号密码
+  /// 对应数据结构：RegisterRequest
+  /// 值：2001
+  /// </summary>
+  RegisterRequest = 2001;
+
+  /// <summary>
+  /// 注册响应
+  /// 类型：MessageID (枚举)
+  /// 用途：服务器向客户端返回注册结果
+  /// 对应数据结构：RegisterResponse
+  /// 值：2002
+  /// </summary>
+  RegisterResponse = 2002;
+
+  // ────────────────────────── 好友 ──────────────────────────
+  /// <summary>
+  /// 好友列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端请求查询自己的好友列表（消息体为空，身份由会话绑定）
+  /// 对应数据结构：（空）
+  /// 值：2103
+  /// </summary>
+  FriendListRequest = 2103;
+
+  /// <summary>
+  /// 好友列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：服务器返回好友数量与好友列表
+  /// 对应数据结构：FriendListResponse
+  /// 值：2104
+  /// </summary>
+  FriendListResponse = 2104;
+
+  /// <summary>
+  /// 查询玩家请求
+  /// 类型：MessageID (枚举)
+  /// 用途：按玩家ID查询账号信息（添加朋友前先查询确认对方存在）
+  /// 对应数据结构：QueryPlayerRequest
+  /// 值：2105
+  /// </summary>
+  QueryPlayerRequest = 2105;
+
+  /// <summary>
+  /// 查询玩家响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回查询到的玩家信息（或未找到）
+  /// 对应数据结构：QueryPlayerResponse
+  /// 值：2106
+  /// </summary>
+  QueryPlayerResponse = 2106;
+
+  /// <summary>
+  /// 好友申请请求
+  /// 类型：MessageID (枚举)
+  /// 用途：向目标玩家发送好友申请（写入 friendships 表，Status=0 待同意）
+  /// 对应数据结构：FriendAddRequest
+  /// 值：2107
+  /// </summary>
+  FriendAddRequest = 2107;
+
+  /// <summary>
+  /// 好友申请响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回申请发送结果
+  /// 对应数据结构：FriendAddResponse
+  /// 值：2108
+  /// </summary>
+  FriendAddResponse = 2108;
+
+  /// <summary>
+  /// 好友申请回应请求
+  /// 类型：MessageID (枚举)
+  /// 用途：对收到的好友申请做出回应（同意/拒绝）
+  /// 对应数据结构：FriendRespondRequest
+  /// 值：2109
+  /// </summary>
+  FriendRespondRequest = 2109;
+
+  /// <summary>
+  /// 好友申请回应响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回回应处理结果
+  /// 对应数据结构：FriendRespondResponse
+  /// 值：2110
+  /// </summary>
+  FriendRespondResponse = 2110;
+
+  /// <summary>
+  /// 待处理申请列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：查询谁申请了我（Status=0 的申请者列表）
+  /// 对应数据结构：（空）
+  /// 值：2111
+  /// </summary>
+  FriendRequestsRequest = 2111;
+
+  /// <summary>
+  /// 待处理申请列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回所有待处理申请的申请者信息
+  /// 对应数据结构：FriendRequestsResponse
+  /// 值：2112
+  /// </summary>
+  FriendRequestsResponse = 2112;
+
+  // ────────────────────────── 聊天 ──────────────────────────
+  /// <summary>
+  /// 发送聊天消息请求
+  /// 类型：MessageID (枚举)
+  /// 用途：向好友发送一条聊天消息（只带目标ID与内容，发送者身份由服务端会话绑定）
+  /// 对应数据结构：ChatSendRequest
+  /// 值：2201
+  /// </summary>
+  ChatSendRequest = 2201;
+
+  /// <summary>
+  /// 发送聊天消息响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回发送结果与落库后的消息回显（含服务端ID与时间戳）
+  /// 对应数据结构：ChatSendResponse
+  /// 值：2202
+  /// </summary>
+  ChatSendResponse = 2202;
+
+  /// <summary>
+  /// 聊天历史请求
+  /// 类型：MessageID (枚举)
+  /// 用途：点击好友时拉取其与自己的历史消息（身份由服务端会话绑定）
+  /// 对应数据结构：ChatHistoryRequest
+  /// 值：2203
+  /// </summary>
+  ChatHistoryRequest = 2203;
+
+  /// <summary>
+  /// 聊天历史响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回按时间正序（旧→新）排列的历史消息列表
+  /// 对应数据结构：ChatHistoryResponse
+  /// 值：2204
+  /// </summary>
+  ChatHistoryResponse = 2204;
+
+  /// <summary>
+  /// 聊天消息推送
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端主动推给接收方（非请求的响应），接收方在线才发送
+  /// 对应数据结构：ChatReceiveNotify
+  /// 值：2205
+  /// </summary>
+  ChatReceiveNotify = 2205;
+
+  /// <summary>
+  /// 世界频道发送请求
+  /// 类型：MessageID (枚举)
+  /// 用途：向全体在线玩家共享的世界频道发一条消息（只带内容，发送者身份由服务端会话绑定）
+  /// 对应数据结构：WorldChatSendRequest
+  /// 值：2206
+  /// </summary>
+  WorldChatSendRequest = 2206;
+
+  /// <summary>
+  /// 世界频道发送响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回发送结果与落库后的消息回显（含服务端ID、时间戳与发送者昵称）
+  /// 对应数据结构：WorldChatSendResponse
+  /// 值：2207
+  /// </summary>
+  WorldChatSendResponse = 2207;
+
+  /// <summary>
+  /// 世界频道历史请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开世界频道面板时拉取最近的公共消息（身份由服务端会话绑定）
+  /// 对应数据结构：WorldChatHistoryRequest
+  /// 值：2208
+  /// </summary>
+  WorldChatHistoryRequest = 2208;
+
+  /// <summary>
+  /// 世界频道历史响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回按时间正序（旧→新）排列的公共消息列表
+  /// 对应数据结构：WorldChatHistoryResponse
+  /// 值：2209
+  /// </summary>
+  WorldChatHistoryResponse = 2209;
+
+  /// <summary>
+  /// 世界频道消息广播
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端主动广播给全部在线会话（非请求的响应）
+  /// 对应数据结构：WorldChatNotify
+  /// 值：2210
+  /// </summary>
+  WorldChatNotify = 2210;
+
+  // ────────────────────────── 排行榜 ──────────────────────────
+  /// <summary>
+  /// 成绩上报请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端挑战结束后上报本次成绩（服务端按"只保留最高分"入账）
+  /// 对应数据结构：ScoreSubmitRequest
+  /// 值：2301
+  /// </summary>
+  ScoreSubmitRequest = 2301;
+
+  /// <summary>
+  /// 成绩上报响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回入账结果、当前最高分与实时排名
+  /// 对应数据结构：ScoreSubmitResponse
+  /// 值：2302
+  /// </summary>
+  ScoreSubmitResponse = 2302;
+
+  /// <summary>
+  /// 排行榜查询请求
+  /// 类型：MessageID (枚举)
+  /// 用途：请求某挑战的 TopN 榜单（身份由服务端会话绑定，用于附带"我的排名"）
+  /// 对应数据结构：LeaderboardRequest
+  /// 值：2303
+  /// </summary>
+  LeaderboardRequest = 2303;
+
+  /// <summary>
+  /// 排行榜查询响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回 TopN 条目（名次/玩家/名字/分数）与查询者自己的排名分数
+  /// 对应数据结构：LeaderboardResponse
+  /// 值：2304
+  /// </summary>
+  LeaderboardResponse = 2304;
+
+  // ────────────────────────── 背包 ──────────────────────────
+  /// <summary>
+  /// 背包列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开背包时一次拉取槽位快照与物品配置表（消息体为空，身份由会话绑定）
+  /// 对应数据结构：BagListRequest
+  /// 值：2401
+  /// </summary>
+  BagListRequest = 2401;
+
+  /// <summary>
+  /// 背包列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回背包容量、非空槽位快照与物品静态配置表
+  /// 对应数据结构：BagListResponse
+  /// 值：2402
+  /// </summary>
+  BagListResponse = 2402;
+
+  /// <summary>
+  /// 使用物品请求
+  /// 类型：MessageID (枚举)
+  /// 用途：按槽位使用指定数量（服务端校验归属与数量后扣减）
+  /// 对应数据结构：BagUseRequest
+  /// 值：2403
+  /// </summary>
+  BagUseRequest = 2403;
+
+  /// <summary>
+  /// 使用物品响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回操作后的完整槽位快照
+  /// 对应数据结构：BagUseResponse
+  /// 值：2404
+  /// </summary>
+  BagUseResponse = 2404;
+
+  /// <summary>
+  /// 丢弃物品请求
+  /// 类型：MessageID (枚举)
+  /// 用途：按槽位丢弃指定数量（丢光则清空该槽）
+  /// 对应数据结构：BagDiscardRequest
+  /// 值：2405
+  /// </summary>
+  BagDiscardRequest = 2405;
+
+  /// <summary>
+  /// 丢弃物品响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回操作后的完整槽位快照
+  /// 对应数据结构：BagDiscardResponse
+  /// 值：2406
+  /// </summary>
+  BagDiscardResponse = 2406;
+
+  /// <summary>
+  /// 整理背包请求
+  /// 类型：MessageID (枚举)
+  /// 用途：请求服务端执行同类合并 + 排序重排（消息体为空，身份由会话绑定）
+  /// 对应数据结构：BagTidyRequest
+  /// 值：2407
+  /// </summary>
+  BagTidyRequest = 2407;
+
+  /// <summary>
+  /// 整理背包响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回整理后的完整槽位快照
+  /// 对应数据结构：BagTidyResponse
+  /// 值：2408
+  /// </summary>
+  BagTidyResponse = 2408;
+
+  /// <summary>
+  /// 拖拽换位请求
+  /// 类型：MessageID (枚举)
+  /// 用途：交换两个槽位的内容（含与空槽交换）
+  /// 对应数据结构：BagSwapRequest
+  /// 值：2409
+  /// </summary>
+  BagSwapRequest = 2409;
+
+  /// <summary>
+  /// 拖拽换位响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回交换后的完整槽位快照
+  /// 对应数据结构：BagSwapResponse
+  /// 值：2410
+  /// </summary>
+  BagSwapResponse = 2410;
+
+  /// <summary>
+  /// 测试发放请求
+  /// 类型：MessageID (枚举)
+  /// 用途：调试用直接发放物品（本期物品唯一来源）
+  /// 对应数据结构：BagGrantRequest
+  /// 值：2411
+  /// </summary>
+  BagGrantRequest = 2411;
+
+  /// <summary>
+  /// 测试发放响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回发放后的完整槽位快照（满包时说明未放下的数量）
+  /// 对应数据结构：BagGrantResponse
+  /// 值：2412
+  /// </summary>
+  BagGrantResponse = 2412;
+
+  // ────────────────────────── 任务 ──────────────────────────
+  /// <summary>
+  /// 任务列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开任务面板时一次拉取任务配置表与玩家任务状态（消息体为空，身份由会话绑定）
+  /// 对应数据结构：QuestListRequest
+  /// 值：2501
+  /// </summary>
+  QuestListRequest = 2501;
+
+  /// <summary>
+  /// 任务列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回任务静态配置表与玩家已接取任务的状态快照
+  /// 对应数据结构：QuestListResponse
+  /// 值：2502
+  /// </summary>
+  QuestListResponse = 2502;
+
+  /// <summary>
+  /// 接取任务请求
+  /// 类型：MessageID (枚举)
+  /// 用途：接取任务（服务端校验前置任务是否已提交、是否重复接取）
+  /// 对应数据结构：QuestAcceptRequest
+  /// 值：2503
+  /// </summary>
+  QuestAcceptRequest = 2503;
+
+  /// <summary>
+  /// 接取任务响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回操作后的任务状态快照
+  /// 对应数据结构：QuestAcceptResponse
+  /// 值：2504
+  /// </summary>
+  QuestAcceptResponse = 2504;
+
+  /// <summary>
+  /// 提交任务请求
+  /// 类型：MessageID (枚举)
+  /// 用途：提交已完成任务（收集类为交付语义，服务端重新校验持有量后扣除物品并发奖）
+  /// 对应数据结构：QuestSubmitRequest
+  /// 值：2505
+  /// </summary>
+  QuestSubmitRequest = 2505;
+
+  /// <summary>
+  /// 提交任务响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回提交结果与发放的奖励说明
+  /// 对应数据结构：QuestSubmitResponse
+  /// 值：2506
+  /// </summary>
+  QuestSubmitResponse = 2506;
+
+  /// <summary>
+  /// 放弃任务请求
+  /// 类型：MessageID (枚举)
+  /// 用途：放弃进行中的任务（放弃后回到未接取状态，可重新接取）
+  /// 对应数据结构：QuestAbandonRequest
+  /// 值：2507
+  /// </summary>
+  QuestAbandonRequest = 2507;
+
+  /// <summary>
+  /// 放弃任务响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回放弃结果与操作后的任务状态快照
+  /// 对应数据结构：QuestAbandonResponse
+  /// 值：2508
+  /// </summary>
+  QuestAbandonResponse = 2508;
+
+  /// <summary>
+  /// 调试：设置任务进度请求
+  /// 类型：MessageID (枚举)
+  /// 用途：GM 指令，直接改写任务进度便于联调（进度以存档缓存为准）
+  /// 对应数据结构：QuestGmSetProgressRequest
+  /// 值：2509
+  /// </summary>
+  QuestGmSetProgressRequest = 2509;
+
+  /// <summary>
+  /// 调试：设置任务进度响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回改写结果与操作后的任务状态快照
+  /// 对应数据结构：QuestGmSetProgressResponse
+  /// 值：2510
+  /// </summary>
+  QuestGmSetProgressResponse = 2510;
+
+  /// <summary>
+  /// 任务进度推送
+  /// 类型：MessageID (枚举)
+  /// 用途：玩法事件推进了任务进度时，服务端主动推给在线玩家（非请求的响应）
+  /// 对应数据结构：QuestProgressNotify
+  /// 值：2511
+  /// </summary>
+  QuestProgressNotify = 2511;
+
+  // ────────────────────────── 邮件 ──────────────────────────
+
+  /// <summary>
+  /// 邮件列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开邮件面板时拉取全部有效邮件（未删除且未过期）
+  /// 对应数据结构：MailListRequest
+  /// 值：2601
+  /// </summary>
+  MailListRequest = 2601;
+
+  /// <summary>
+  /// 邮件列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回邮箱容量与全部有效邮件快照
+  /// 对应数据结构：MailListResponse
+  /// 值：2602
+  /// </summary>
+  MailListResponse = 2602;
+
+  /// <summary>
+  /// 标记已读请求
+  /// 类型：MessageID (枚举)
+  /// 用途：点开邮件详情时置已读位（服务端幂等）
+  /// 对应数据结构：MailReadRequest
+  /// 值：2603
+  /// </summary>
+  MailReadRequest = 2603;
+
+  /// <summary>
+  /// 标记已读响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回置读结果与操作后的邮件快照
+  /// 对应数据结构：MailReadResponse
+  /// 值：2604
+  /// </summary>
+  MailReadResponse = 2604;
+
+  /// <summary>
+  /// 领取附件请求
+  /// 类型：MessageID (枚举)
+  /// 用途：一键领取全部附件，服务端单事务内校验并整单发放（背包放不下则拒绝）
+  /// 对应数据结构：MailClaimRequest
+  /// 值：2605
+  /// </summary>
+  MailClaimRequest = 2605;
+
+  /// <summary>
+  /// 领取附件响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回领取结果与操作后的邮件快照
+  /// 对应数据结构：MailClaimResponse
+  /// 值：2606
+  /// </summary>
+  MailClaimResponse = 2606;
+
+  /// <summary>
+  /// 删除邮件请求
+  /// 类型：MessageID (枚举)
+  /// 用途：软删除邮件（置状态位，不物理删行）
+  /// 对应数据结构：MailDeleteRequest
+  /// 值：2607
+  /// </summary>
+  MailDeleteRequest = 2607;
+
+  /// <summary>
+  /// 删除邮件响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回删除结果与操作后的邮件快照
+  /// 对应数据结构：MailDeleteResponse
+  /// 值：2608
+  /// </summary>
+  MailDeleteResponse = 2608;
+
+  /// <summary>
+  /// 测试发件请求
+  /// 类型：MessageID (枚举)
+  /// 用途：GM/联调指令，本期邮件唯一来源（可发自己或指定玩家，附件可为空）
+  /// 对应数据结构：MailGrantRequest
+  /// 值：2609
+  /// </summary>
+  MailGrantRequest = 2609;
+
+  /// <summary>
+  /// 测试发件响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回发件结果（收件人在线时由推送刷新）
+  /// 对应数据结构：MailGrantResponse
+  /// 值：2610
+  /// </summary>
+  MailGrantResponse = 2610;
+
+  /// <summary>
+  /// 收到新邮件推送
+  /// 类型：MessageID (枚举)
+  /// 用途：GM 发件时收件人在线即推送（非请求的响应），供面板与红点实时刷新
+  /// 对应数据结构：MailReceiveNotify
+  /// 值：2611
+  /// </summary>
+  MailReceiveNotify = 2611;
+
+  /// <summary>
+  /// GM 发公共邮件请求
+  /// 类型：MessageID (枚举)
+  /// 用途：运营邮件发全服（延迟创建：玩家拉列表时才实例化到个人邮箱，可按注册时间筛选）
+  /// 对应数据结构：MailPublicGrantRequest
+  /// 值：2612
+  /// </summary>
+  MailPublicGrantRequest = 2612;
+
+  /// <summary>
+  /// GM 发公共邮件响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回公共邮件创建结果（含新公共邮件ID）
+  /// 对应数据结构：MailPublicGrantResponse
+  /// 值：2613
+  /// </summary>
+  MailPublicGrantResponse = 2613;
+
+  /// <summary>
+  /// GM 撤回公共邮件请求
+  /// 类型：MessageID (枚举)
+  /// 用途：按 tag 标记撤回（软标记可逆可溯源；未领附件的已实例化邮件在拉取/领取时被过滤）
+  /// 对应数据结构：MailPublicRevokeRequest
+  /// 值：2614
+  /// </summary>
+  MailPublicRevokeRequest = 2614;
+
+  /// <summary>
+  /// GM 撤回公共邮件响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回撤回结果（含撤回的公共邮件数）
+  /// 对应数据结构：MailPublicRevokeResponse
+  /// 值：2615
+  /// </summary>
+  MailPublicRevokeResponse = 2615;
+
+  // ────────────────────────── 叙事任务 ──────────────────────────
+  // Mm-DialogSystem 框架的客户端权威任务系统（与 25xx 服务端权威任务体系并行）
+  // 服务器只做玩家叙事任务状态的持久化，不做规则校验
+
+  /// <summary>
+  /// 叙事任务拉取请求
+  /// 类型：MessageID (枚举)
+  /// 用途：登录成功后拉取该玩家的全部叙事任务状态（消息体为空，身份由会话绑定）
+  /// 对应数据结构：（空）
+  /// 值：2701
+  /// </summary>
+  NarrativeQuestSyncRequest = 2701;
+
+  /// <summary>
+  /// 叙事任务拉取响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回存储的全部叙事任务状态条目（客户端整表应用）
+  /// 对应数据结构：NarrativeQuestSyncResponse
+  /// 值：2702
+  /// </summary>
+  NarrativeQuestSyncResponse = 2702;
+
+  /// <summary>
+  /// 叙事任务保存请求
+  /// 类型：MessageID (枚举)
+  /// 【已废弃 2026-09-25】系统升级为服务端权威后客户端不再写库（枚举值保留占位防复用）
+  /// 对应数据结构：NarrativeQuestSaveRequest
+  /// 值：2703
+  /// </summary>
+  NarrativeQuestSaveRequest = 2703;
+
+  /// <summary>
+  /// 叙事任务保存响应
+  /// 类型：MessageID (枚举)
+  /// 【已废弃 2026-09-25】同上，服务端权威模式不再有客户端快照保存
+  /// 对应数据结构：NarrativeQuestSaveResponse
+  /// 值：2704
+  /// </summary>
+  NarrativeQuestSaveResponse = 2704;
+
+  /// <summary>
+  /// 叙事任务玩法事件上报
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端只报"发生了什么"（击杀/收集/到达/对话），服务端匹配目标推进进度；无独立回执，变更由推送确认
+  /// 对应数据结构：NarrativeQuestEventReport
+  /// 值：2705
+  /// </summary>
+  NarrativeQuestEventReport = 2705;
+
+  /// <summary>
+  /// 叙事任务接取请求
+  /// 类型：MessageID (枚举)
+  /// 用途：接取任务（服务端校验配置/前置链/未过期）
+  /// 对应数据结构：NarrativeQuestAcceptRequest
+  /// 值：2706
+  /// </summary>
+  NarrativeQuestAcceptRequest = 2706;
+
+  /// <summary>
+  /// 叙事任务接取响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回接取结果与操作后的全量状态快照
+  /// 对应数据结构：NarrativeQuestAcceptResponse
+  /// 值：2707
+  /// </summary>
+  NarrativeQuestAcceptResponse = 2707;
+
+  /// <summary>
+  /// 叙事任务提交请求
+  /// 类型：MessageID (枚举)
+  /// 用途：提交任务（服务端校验执行中/全目标达标/未过期）
+  /// 对应数据结构：NarrativeQuestSubmitRequest
+  /// 值：2708
+  /// </summary>
+  NarrativeQuestSubmitRequest = 2708;
+
+  /// <summary>
+  /// 叙事任务提交响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回提交结果与操作后的全量状态快照
+  /// 对应数据结构：NarrativeQuestSubmitResponse
+  /// 值：2709
+  /// </summary>
+  NarrativeQuestSubmitResponse = 2709;
+
+  /// <summary>
+  /// 叙事任务状态推送
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端权威模式下，任何事件推进/限时到期导致的变更后向在线玩家推全量快照（非请求响应）
+  /// 对应数据结构：NarrativeQuestStateNotify
+  /// 值：2710
+  /// </summary>
+  NarrativeQuestStateNotify = 2710;
+
+  /// <summary>
+  /// 叙事任务放弃请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端请求放弃一个执行中的任务（状态回到未激活、进度清零，可再次接取）
+  /// 对应数据结构：NarrativeQuestAbandonRequest
+  /// 值：2711
+  /// </summary>
+  NarrativeQuestAbandonRequest = 2711;
+
+  /// <summary>
+  /// 叙事任务放弃响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回放弃结果与该玩家的全量任务快照
+  /// 对应数据结构：NarrativeQuestAbandonResponse
+  /// 值：2712
+  /// </summary>
+  NarrativeQuestAbandonResponse = 2712;
+
+  /// <summary>
+  /// 叙事任务提示推送
+  /// 类型：MessageID (枚举)
+  /// 用途：任务提交成功后的提示文案（任务名 + 实际发放奖励），客户端用提示条展示
+  /// 对应数据结构：NarrativeQuestToastNotify
+  /// 值：2713
+  /// </summary>
+  NarrativeQuestToastNotify = 2713;
+
+  // ────────────────────────── 副本 ──────────────────────────
+  // 掉落系统：客户端只上报击杀，掉什么/掉多少由服务端按掉落规则表裁决；
+  // 形态A 直接入包，形态B 发 60 秒限时令牌，走近掉落物凭令牌拾取
+
+  /// <summary>
+  /// 击杀上报请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端上报击杀的敌人类型（1=直接入包型 2=世界掉落型），掉落由服务端裁决
+  /// 对应数据结构：DungeonKillReportRequest
+  /// 值：2801
+  /// </summary>
+  DungeonKillReportRequest = 2801;
+
+  /// <summary>
+  /// 击杀上报响应
+  /// 类型：MessageID (枚举)
+  /// 用途：形态A返回已入包物品；形态B返回带限时令牌的待拾取条目（客户端据此在世界刷掉落物）
+  /// 对应数据结构：DungeonKillReportResponse
+  /// 值：2802
+  /// </summary>
+  DungeonKillReportResponse = 2802;
+
+  /// <summary>
+  /// 拾取请求
+  /// 类型：MessageID (枚举)
+  /// 用途：玩家走近世界掉落物自动发起；服务端校验令牌归属与有效期后入包
+  /// 对应数据结构：DungeonPickupRequest
+  /// 值：2803
+  /// </summary>
+  DungeonPickupRequest = 2803;
+
+  /// <summary>
+  /// 拾取响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回拾取结果与物品条目（过期/已领取/满包转邮件在 message 说明）
+  /// 对应数据结构：DungeonPickupResponse
+  /// 值：2804
+  /// </summary>
+  DungeonPickupResponse = 2804;
+
+  // ────────────────────────── 活动 ──────────────────────────
+  // 活动系统（仿鸣潮武器唤取）：排期/卡池全在服务器配置表里，换活动零代码改动；
+  // 活动的 UI 与业务逻辑在客户端热更包（Lua）里，换内容发新包版本即可
+
+  /// <summary>
+  /// 活动列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开活动入口时拉取当前时间窗内的活动（含卡池ID与起止时间）
+  /// 对应数据结构：（空）
+  /// 值：2901
+  /// </summary>
+  ActivityListRequest = 2901;
+
+  /// <summary>
+  /// 活动列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回当前有效活动列表与服务器时间（客户端算剩余倒计时用）
+  /// 对应数据结构：ActivityListResponse
+  /// 值：2902
+  /// </summary>
+  ActivityListResponse = 2902;
+
+  /// <summary>
+  /// 唤取请求
+  /// 类型：MessageID (枚举)
+  /// 用途：对指定卡池唤取 1/10 次（服务端权威：扣媒介→roll→入包→写流水）
+  /// 对应数据结构：GachaDrawRequest
+  /// 值：2903
+  /// </summary>
+  GachaDrawRequest = 2903;
+
+  /// <summary>
+  /// 唤取响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回结果列表、保底计数与操作后的背包快照
+  /// 对应数据结构：GachaDrawResponse
+  /// 值：2904
+  /// </summary>
+  GachaDrawResponse = 2904;
+
+  /// <summary>
+  /// 唤取流水请求
+  /// 类型：MessageID (枚举)
+  /// 用途：拉取唤取详单（banner_id=0 为全部卡池，倒序）
+  /// 对应数据结构：GachaHistoryRequest
+  /// 值：2905
+  /// </summary>
+  GachaHistoryRequest = 2905;
+
+  /// <summary>
+  /// 唤取流水响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回流水条目与累计抽数/保底计数
+  /// 对应数据结构：GachaHistoryResponse
+  /// 值：2906
+  /// </summary>
+  GachaHistoryResponse = 2906;
+
+  /// <summary>
+  /// 签到状态请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开签到页时拉取 7 天奖励表与玩家签到进度（sign_id=签到活动的 activity_id）
+  /// 对应数据结构：SignInListRequest
+  /// 值：2907
+  /// </summary>
+  SignInListRequest = 2907;
+
+  /// <summary>
+  /// 签到状态响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回签到总天数/已签天数/今日是否已签与完整奖励快照
+  /// 对应数据结构：SignInListResponse
+  /// 值：2908
+  /// </summary>
+  SignInListResponse = 2908;
+
+  /// <summary>
+  /// 签到请求
+  /// 类型：MessageID (枚举)
+  /// 用途：签到一次（只带 sign_id，第几天由服务端按累计次数裁决，每日限一次）
+  /// 对应数据结构：SignInClaimRequest
+  /// 值：2909
+  /// </summary>
+  SignInClaimRequest = 2909;
+
+  /// <summary>
+  /// 签到响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回签到结果、完整签到快照与操作后的背包快照
+  /// 对应数据结构：SignInClaimResponse
+  /// 值：2910
+  /// </summary>
+  SignInClaimResponse = 2910;
+
+  /// <summary>
+  /// 活动切换推送
+  /// 类型：MessageID (枚举)
+  /// 用途：GM 轮换生效后向所有在线会话广播当前活动状态（非请求的响应）
+  /// 对应数据结构：ActivityChangeNotify
+  /// 值：2911
+  /// </summary>
+  ActivityChangeNotify = 2911;
+
+  /// <summary>
+  /// GM 轮换活动请求
+  /// 类型：MessageID (枚举)
+  /// 用途：联调/演示指令：结束当前活动并把目标（或下一排期）活动提前到现在
+  /// 对应数据结构：ActivityGmRotateRequest
+  /// 值：2913
+  /// </summary>
+  ActivityGmRotateRequest = 2913;
+
+  /// <summary>
+  /// GM 轮换活动响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回切换结果与切换后的活动状态
+  /// 对应数据结构：ActivityGmRotateResponse
+  /// 值：2914
+  /// </summary>
+  ActivityGmRotateResponse = 2914;
+
+  // ────────────────────────── 心跳 ──────────────────────────
+  /// <summary>
+  /// 心跳请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端定期发送以维持连接活性；服务端据此识别并回收僵尸会话
+  /// 对应数据结构：PingRequest
+  /// 值：3001
+  /// </summary>
+  PingRequest = 3001;
+
+  /// <summary>
+  /// 心跳响应
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端对 PingRequest 的回执，带回服务端时间用于时钟同步
+  /// 对应数据结构：PongResponse
+  /// 值：3002
+  /// </summary>
+  PongResponse = 3002;
+
+  // ────────────────────────── AI Agent（阿福）──────────────────────────
+  // 链路：客户端 →(3101/3105) .NET 网关（身份/限频；内容审核已于 2026-10-16 取消）→ HTTP → Python Agent 服务
+  // 号段勘误：原计划用 3001 起，动工时发现 3001/3002 已被心跳占用，改 3101-3106（3104=登录简报推送）
+
+  /// <summary>
+  /// Agent 聊天请求
+  /// 类型：MessageID (枚举)
+  /// 用途：玩家向 AI 助手阿福发消息（只带内容，发送者身份由服务端会话绑定）
+  /// 对应数据结构：AgentChatRequest
+  /// 值：3101
+  /// </summary>
+  AgentChatRequest = 3101;
+
+  /// <summary>
+  /// Agent 聊天响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回阿福的整段最终回复（流式模式下在 3103 分片全部收齐后补发做权威校准；含耗时）
+  /// 对应数据结构：AgentChatResponse
+  /// 值：3102
+  /// </summary>
+  AgentChatResponse = 3102;
+
+  /// <summary>
+  /// Agent 流式分片（打字机效果，Phase 5 已实现）
+  /// 类型：MessageID (枚举)
+  /// 用途：流式回复的增量分片推送（末片 done=true；工具轮前导噪声用 reset=true 作废重置）
+  /// 对应数据结构：AgentChatChunk
+  /// 值：3103
+  /// </summary>
+  AgentChatChunk = 3103;
+
+  /// <summary>
+  /// Agent 登录简报推送
+  /// 类型：MessageID (枚举)
+  /// 用途：登录成功后主动推送的待办汇总（未读邮件/可提交任务/保底进度；确定性文案，零 LLM）
+  /// 对应数据结构：AgentBriefNotify
+  /// 值：3104
+  /// </summary>
+  AgentBriefNotify = 3104;
+
+  /// <summary>
+  /// Agent 历史回放请求
+  /// 类型：MessageID (枚举)
+  /// 用途：打开 AgentPanel 时拉取与阿福的最近对话（跨会话记忆的可见入口）
+  /// 对应数据结构：AgentHistoryRequest
+  /// 值：3105
+  /// </summary>
+  AgentHistoryRequest = 3105;
+
+  /// <summary>
+  /// Agent 历史回放响应
+  /// 类型：MessageID (枚举)
+  /// 用途：按时间正序（旧→新）返回与阿福的最近对话列表
+  /// 对应数据结构：AgentHistoryResponse
+  /// 值：3106
+  /// </summary>
+  AgentHistoryResponse = 3106;
+
+  /// <summary>
+  /// Agent 主动提醒推送（悬浮球·一个 Agent 两个用法）
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端检测到事件（如邮件附件未领取）时让阿福主动发消息（LLM 生成文案，经 /agent/proactive 归档后推送）
+  /// 对应数据结构：AgentProactiveNotify
+  /// 值：3107
+  /// </summary>
+  AgentProactiveNotify = 3107;
+
+  // ────────────────────────── 对战好友邀请 ──────────────────────────
+  // 只做信令（谁邀请谁 / 凭据校验 / 结果通知），对战流量仍走房主进程的 NGO（7777）
+
+  /// <summary>
+  /// 发送对战邀请请求
+  /// 类型：MessageID (枚举)
+  /// 用途：房主邀请在线好友进入自己的对战房间（携带房主自报的对战地址）
+  /// 对应数据结构：BattleInviteRequest
+  /// 值：3201
+  /// </summary>
+  BattleInviteRequest = 3201;
+
+  /// <summary>
+  /// 发送对战邀请响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回邀请是否创建成功与邀请ID/过期时间
+  /// 对应数据结构：BattleInviteResponse
+  /// 值：3202
+  /// </summary>
+  BattleInviteResponse = 3202;
+
+  /// <summary>
+  /// 对战邀请推送
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端主动推给被邀请好友，客户端据此弹出邀请卡片
+  /// 对应数据结构：BattleInviteNotify
+  /// 值：3203
+  /// </summary>
+  BattleInviteNotify = 3203;
+
+  /// <summary>
+  /// 回应对战邀请请求
+  /// 类型：MessageID (枚举)
+  /// 用途：被邀请好友同意/拒绝（只有该邀请的目标玩家能回应）
+  /// 对应数据结构：BattleInviteRespondRequest
+  /// 值：3204
+  /// </summary>
+  BattleInviteRespondRequest = 3204;
+
+  /// <summary>
+  /// 回应对战邀请响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回处理结果；同意时携带房主对战地址，客户端据此发起直连
+  /// 对应数据结构：BattleInviteRespondResponse
+  /// 值：3205
+  /// </summary>
+  BattleInviteRespondResponse = 3205;
+
+  /// <summary>
+  /// 邀请结果推送
+  /// 类型：MessageID (枚举)
+  /// 用途：服务端主动推给邀请方，覆盖 同意/拒绝/过期/取消 四种终态
+  /// 对应数据结构：BattleInviteResultNotify
+  /// 值：3206
+  /// </summary>
+  BattleInviteResultNotify = 3206;
+
+  /// <summary>
+  /// 取消对战邀请请求
+  /// 类型：MessageID (枚举)
+  /// 用途：房主主动撤回尚未回应的邀请（invite_id=0 时按 room_id 全取消）
+  /// 对应数据结构：BattleInviteCancelRequest
+  /// 值：3207
+  /// </summary>
+  BattleInviteCancelRequest = 3207;
+
+  /// <summary>
+  /// 取消对战邀请响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回实际取消的邀请条数
+  /// 对应数据结构：BattleInviteCancelResponse
+  /// 值：3208
+  /// </summary>
+  BattleInviteCancelResponse = 3208;
+
+  /// <summary>
+  /// 邀请失效推送
+  /// 类型：MessageID (枚举)
+  /// 用途：房主取消/邀请超时/房主下线时推给被邀请好友，客户端立刻收起邀请弹窗
+  /// 对应数据结构：BattleInviteCancelledNotify
+  /// 值：3209
+  /// </summary>
+  BattleInviteCancelledNotify = 3209;
+
+  // ────────────────────────── 场景存档 ──────────────────────────
+  // 玩家在带 3D 世界/对话的场景里退出后，下次进入同一场景恢复位置/相机/对话节点；
+  // 一个玩家一个场景一行（服务端 UPSERT），位置由客户端上报、服务端只做范围护栏
+
+  /// <summary>
+  /// 存档拉取请求
+  /// 类型：MessageID (枚举)
+  /// 用途：进入场景时拉取该玩家在该场景的存档（消息体带 scene_name，身份由会话绑定）
+  /// 对应数据结构：SaveStatePullRequest
+  /// 值：3301
+  /// </summary>
+  SaveStatePullRequest = 3301;
+
+  /// <summary>
+  /// 存档拉取响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回是否存在存档与完整快照（has_save=false = 首次进入，客户端走场景默认）
+  /// 对应数据结构：SaveStatePullResponse
+  /// 值：3302
+  /// </summary>
+  SaveStatePullResponse = 3302;
+
+  /// <summary>
+  /// 存档上报请求
+  /// 类型：MessageID (枚举)
+  /// 用途：事件点（对话节点变更/选项/对话结束/打开设置/返回主页/退出/重连补发）覆盖式写入快照
+  /// 对应数据结构：SaveStatePushRequest
+  /// 值：3303
+  /// </summary>
+  SaveStatePushRequest = 3303;
+
+  /// <summary>
+  /// 存档上报响应
+  /// 类型：MessageID (枚举)
+  /// 用途：确认落库结果与服务端写入时间（仅排障用，客户端不依赖它推进玩法）
+  /// 对应数据结构：SaveStatePushResponse
+  /// 值：3304
+  /// </summary>
+  SaveStatePushResponse = 3304;
+
+  // ────────────────────────── 成就 ──────────────────────────
+  // 独立成就域（与任务 25xx 解耦）：玩法模块只报事实，成就服务统一判断/解锁/发奖；
+  // 定义/进度/解锁/领取四层分离，领取服务端权威且幂等
+
+  /// <summary>
+  /// 成就列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：拉取成就静态配置、玩家成就状态与汇总（消息体为空，身份由会话绑定）
+  /// 对应数据结构：AchievementListRequest
+  /// 值：3401
+  /// </summary>
+  AchievementListRequest = 3401;
+
+  /// <summary>
+  /// 成就列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回配置、玩家状态与汇总（总数/已解锁/可领取/成就点）
+  /// 对应数据结构：AchievementListResponse
+  /// 值：3402
+  /// </summary>
+  AchievementListResponse = 3402;
+
+  /// <summary>
+  /// 领取成就奖励请求
+  /// 类型：MessageID (枚举)
+  /// 用途：领取已解锁待领取的成就奖励（服务端事务校验 + 幂等）
+  /// 对应数据结构：AchievementClaimRequest
+  /// 值：3403
+  /// </summary>
+  AchievementClaimRequest = 3403;
+
+  /// <summary>
+  /// 领取成就奖励响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回发放明细、操作后的成就快照与汇总
+  /// 对应数据结构：AchievementClaimResponse
+  /// 值：3404
+  /// </summary>
+  AchievementClaimResponse = 3404;
+
+  /// <summary>
+  /// 成就解锁推送
+  /// 类型：MessageID (枚举)
+  /// 用途：条件达成时服务端主动推送（在线才推，离线靠下次拉列表补齐）
+  /// 对应数据结构：AchievementUnlockedNotify
+  /// 值：3405
+  /// </summary>
+  AchievementUnlockedNotify = 3405;
+
+  /// <summary>
+  /// 成就进度推送
+  /// 类型：MessageID (枚举)
+  /// 用途：进度变化时推送（节流），供面板打开时刷新进度条
+  /// 对应数据结构：AchievementProgressNotify
+  /// 值：3406
+  /// </summary>
+  AchievementProgressNotify = 3406;
+
+  /// <summary>
+  /// GM/联调：改进度、强制解锁、重置
+  /// 类型：MessageID (枚举)
+  /// 用途：成就系统联调用，直接改写玩家成就状态
+  /// 对应数据结构：AchievementGmRequest
+  /// 值：3407
+  /// </summary>
+  AchievementGmRequest = 3407;
+
+  /// <summary>
+  /// GM/联调响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回改写结果与操作后的成就快照
+  /// 对应数据结构：AchievementGmResponse
+  /// 值：3408
+  /// </summary>
+  AchievementGmResponse = 3408;
+
+  // ────────────────────────── 装备 ──────────────────────────
+  // 装备域（与背包 24xx 解耦）：背包管"有哪些"，player_equipment 管"穿在哪"，
+  // equipment_instance 管"这一件是什么"；穿脱、校验、跨角色转移全在服务端单事务内完成
+
+  /// <summary>
+  /// 装备列表请求
+  /// 类型：MessageID (枚举)
+  /// 用途：拉取装备配置、本人实例与穿戴关系（消息体为空，身份由会话绑定）
+  /// 对应数据结构：EquipmentListRequest
+  /// 值：3501
+  /// </summary>
+  EquipmentListRequest = 3501;
+
+  /// <summary>
+  /// 装备列表响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回配置、实例（含穿戴者）与槽位快照
+  /// 对应数据结构：EquipmentListResponse
+  /// 值：3502
+  /// </summary>
+  EquipmentListResponse = 3502;
+
+  /// <summary>
+  /// 穿戴/卸下请求
+  /// 类型：MessageID (枚举)
+  /// 用途：把某个实例穿到角色槽位，instance_id=0 表示卸下该槽
+  /// 对应数据结构：EquipRequest
+  /// 值：3503
+  /// </summary>
+  EquipRequest = 3503;
+
+  /// <summary>
+  /// 穿戴/卸下响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回结果码、是否幂等命中与操作后的槽位/实例快照
+  /// 对应数据结构：EquipResponse
+  /// 值：3504
+  /// </summary>
+  EquipResponse = 3504;
+
+  /// <summary>
+  /// 新手引导进度拉取请求
+  /// 类型：MessageID (枚举)
+  /// 用途：进入主页时拉取「下一步该播哪一步」与完成标记
+  /// 对应数据结构：GuidePullRequest
+  /// 值：3601
+  /// </summary>
+  GuidePullRequest = 3601;
+
+  /// <summary>
+  /// 新手引导进度拉取响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回是否有记录、下一步下标与完成标记
+  /// 对应数据结构：GuidePullResponse
+  /// 值：3602
+  /// </summary>
+  GuidePullResponse = 3602;
+
+  /// <summary>
+  /// 新手引导进度上报请求
+  /// 类型：MessageID (枚举)
+  /// 用途：每推进一步或结束时覆盖式写入进度
+  /// 对应数据结构：GuidePushRequest
+  /// 值：3603
+  /// </summary>
+  GuidePushRequest = 3603;
+
+  /// <summary>
+  /// 新手引导进度上报响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回服务端落库后的步骤下标与完成标记
+  /// 对应数据结构：GuidePushResponse
+  /// 值：3604
+  /// </summary>
+  GuidePushResponse = 3604;
+}

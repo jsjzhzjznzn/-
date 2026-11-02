@@ -1,0 +1,217 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 QuestPacket.proto 等同属 common.network，消息名不冲突即可共存
+// 本文件服务"叙事任务"（Mm-DialogSystem 框架的客户端权威任务系统），
+// 与服务端权威的 2501 任务体系并行、互不影响：服务器只做状态持久化，不做规则校验
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 NarrativeQuestPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 叙事任务状态条目
+/// 对应 Mm 框架 QuestSaveData（questId/eQuestState/progressList/acceptedAt/remainSeconds），
+/// 客户端全量快照推送、服务器整表替换存储
+/// </summary>
+message NarrativeQuestStateEntry {
+  /// <summary>任务ID（QuestData.QuestId，由客户端配置侧定义）</summary>
+  int32 quest_id = 1;
+
+  /// <summary>任务状态（EQuestState：未激活0 / 可用1 / 执行中2 / 提交3 / 失败4）</summary>
+  int32 state = 2;
+
+  /// <summary>各目标进度列表（索引与 QuestData.goalList 对应）</summary>
+  repeated int32 progress_list = 3;
+
+  /// <summary>接取时间（框架原样字段，Time.time 语义）</summary>
+  float accepted_at = 4;
+
+  /// <summary>限时剩余秒数（0 = 无限时限）</summary>
+  float remain_seconds = 5;
+}
+
+/// <summary>
+/// 叙事任务拉取请求
+/// 用途：登录成功后拉取该玩家的全部叙事任务状态（消息体为空，身份由会话绑定）
+/// </summary>
+message NarrativeQuestSyncRequest {
+}
+
+/// <summary>
+/// 叙事任务拉取响应
+/// 用途：返回该玩家存储的全部叙事任务状态条目（客户端整表应用到运行时）
+/// </summary>
+message NarrativeQuestSyncResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因等）</summary>
+  string message = 2;
+
+  /// <summary>叙事任务状态条目列表</summary>
+  repeated NarrativeQuestStateEntry quests = 3;
+}
+
+/// <summary>
+/// 叙事任务保存请求
+/// 【已废弃 2026-09-25】系统升级为服务端权威后客户端不再写库（枚举值保留占位防复用）；
+/// 服务端任务引擎自行落库，改走 2705 事件上报 / 2706 接取 / 2708 提交
+/// </summary>
+message NarrativeQuestSaveRequest {
+  /// <summary>本次快照的全部任务状态条目（含全部状态的任务，非增量）</summary>
+  repeated NarrativeQuestStateEntry quests = 1;
+}
+
+/// <summary>
+/// 叙事任务保存响应
+/// 【已废弃 2026-09-25】同上，服务端权威模式不再有客户端快照保存
+/// </summary>
+message NarrativeQuestSaveResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+}
+
+/// <summary>
+/// 玩法事件类型（叙事任务事件上报用）
+/// 与 EQuestGoalType 对应关系：击杀=1 / 收集=2 / 到达=3 / 对话=4
+/// </summary>
+enum ENarrativeEventType {
+  /// <summary>占位值（proto3 首值必须为 0）</summary>
+  ENarrativeEventType_None = 0;
+
+  /// <summary>击杀事件（target_key = 怪物Key）</summary>
+  ENarrativeEventType_EnemyKilled = 1;
+
+  /// <summary>收集事件（target_key = 物品Key）</summary>
+  ENarrativeEventType_ItemCollected = 2;
+
+  /// <summary>到达事件（target_key = 区域Key）</summary>
+  ENarrativeEventType_ZoneEntered = 3;
+
+  /// <summary>对话事件（graph_name = 对话图资产名，event_key = 选项eventKey或GraphFinished）</summary>
+  ENarrativeEventType_DialogueTriggered = 4;
+}
+
+/// <summary>
+/// 叙事任务玩法事件上报
+/// 客户端只报"发生了什么"（不推进任何任务逻辑），服务端匹配目标推进进度；
+/// 无独立回执——任何导致的变更由 2710 全量快照推送确认
+/// </summary>
+message NarrativeQuestEventReport {
+  /// <summary>事件类型（1击杀/2收集/3到达/4对话）</summary>
+  ENarrativeEventType event_type = 1;
+
+  /// <summary>事件Key（击杀=怪物Key/收集=物品Key/到达=区域Key，对话时忽略）</summary>
+  string target_key = 2;
+
+  /// <summary>数量（击杀/收集可批量，到达固定为1；服务端封顶校验）</summary>
+  int32 count = 3;
+
+  /// <summary>对话图资产名（仅对话事件使用；服务端以此匹配对话型目标）</summary>
+  string graph_name = 4;
+
+  /// <summary>对话事件Key（仅对话事件使用；与图上选项 eventKey 或整图结束信号 GraphFinished 对齐）</summary>
+  string event_key = 5;
+}
+
+/// <summary>
+/// 叙事任务接取请求
+/// 服务端校验：配置存在 + 前置任务全部提交 + 未过期，通过后置执行中并落库
+/// </summary>
+message NarrativeQuestAcceptRequest {
+  /// <summary>要接取的任务ID</summary>
+  int32 quest_id = 1;
+}
+
+/// <summary>
+/// 叙事任务接取响应
+/// 成功与否之外附带全量状态快照（与拉取响应同构），客户端直接整表镜像
+/// </summary>
+message NarrativeQuestAcceptResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因：前置未完成/已接取/配置不存在等）</summary>
+  string message = 2;
+
+  /// <summary>操作后的全量状态快照</summary>
+  repeated NarrativeQuestStateEntry quests = 3;
+}
+
+/// <summary>
+/// 叙事任务提交请求
+/// 服务端校验：执行中 + 全目标达标 + 未过期，通过后置提交并落库
+/// </summary>
+message NarrativeQuestSubmitRequest {
+  /// <summary>要提交的任务ID</summary>
+  int32 quest_id = 1;
+}
+
+/// <summary>
+/// 叙事任务提交响应
+/// 成功与否之外附带全量状态快照，客户端整表镜像
+/// </summary>
+message NarrativeQuestSubmitResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因：未接取/未达标/已过期等）</summary>
+  string message = 2;
+
+  /// <summary>操作后的全量状态快照</summary>
+  repeated NarrativeQuestStateEntry quests = 3;
+}
+
+/// <summary>
+/// 叙事任务状态推送（服务端→客户端，非请求响应）
+/// 任何事件推进/限时到期导致的状态变更后，向在线玩家推全量快照；
+/// 客户端收到后与拉取响应同路径整表应用（权威在服务端，客户端篡改会被本推送覆盖）
+/// </summary>
+message NarrativeQuestStateNotify {
+  /// <summary>全量状态快照</summary>
+  repeated NarrativeQuestStateEntry quests = 1;
+}
+
+/// <summary>
+/// 叙事任务放弃请求
+/// 服务端校验：执行中，通过后置未激活、进度清零（可再次接取），并落库
+/// </summary>
+message NarrativeQuestAbandonRequest {
+  /// <summary>要放弃的任务ID</summary>
+  int32 quest_id = 1;
+}
+
+/// <summary>
+/// 叙事任务放弃响应
+/// 成功与否之外附带全量状态快照，客户端整表镜像
+/// </summary>
+message NarrativeQuestAbandonResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（失败原因：未接取/已提交等）</summary>
+  string message = 2;
+
+  /// <summary>操作后的全量状态快照</summary>
+  repeated NarrativeQuestStateEntry quests = 3;
+}
+
+/// <summary>
+/// 叙事任务提示推送（服务端→客户端，非请求响应）
+/// 提交成功后的提示文案（任务名 + 实际发放的奖励），客户端用成就提示条展示
+/// </summary>
+message NarrativeQuestToastNotify {
+  /// <summary>提示标题（如「任务完成」）</summary>
+  string title = 1;
+
+  /// <summary>提示正文（如「【初次见面】 治疗药剂 x3」）</summary>
+  string message = 2;
+
+  /// <summary>发放的物品数量（>0 表示有实物奖励，可用于图标展示）</summary>
+  int32 granted_units = 3;
+}

@@ -1,0 +1,204 @@
+// 语法版本：proto3
+syntax = "proto3";
+
+// 包名：客户端与服务端共享的消息体定义层
+// 与 LoginPacket.proto / ChatPacket.proto / LeaderboardPacket.proto 同属 common.network，消息名不冲突即可共存
+package common.network;
+
+// 生成的 C# 命名空间（protoc 生成 BagPacket.cs 中类的归属）
+option csharp_namespace = "Common.Network";
+
+/// <summary>
+/// 背包槽位快照
+/// 服务端只下发非空槽（空槽由客户端按 capacity 补齐占位）；slot_index 即格子下标，容量恒定所以滚动稳定
+/// </summary>
+message BagSlotInfo {
+  /// <summary>槽位下标（0 起始；下标 = 格子上标，与视觉位置一一对应）</summary>
+  int32 slot_index = 1;
+
+  /// <summary>物品ID（对应 item_config.item_id）</summary>
+  int32 item_id = 2;
+
+  /// <summary>堆叠数量（≥1；不可堆叠物品恒为 1）</summary>
+  int32 count = 3;
+
+  /// <summary>装备实例ID（0 = 非装备行；装备行指向 equipment_instance，同名多件靠它区分）</summary>
+  int64 instance_id = 4;
+}
+
+/// <summary>
+/// 物品静态配置
+/// 随背包列表响应一并下发，客户端据此建运行时表（ItemDatabase，无 ScriptableObject）
+/// </summary>
+message ItemConfigInfo {
+  /// <summary>物品ID</summary>
+  int32 item_id = 1;
+
+  /// <summary>物品名（中文）</summary>
+  string name = 2;
+
+  /// <summary>物品类型（枚举值：0 未知 / 1 消耗品 / 2 材料 / 3 武器）</summary>
+  int32 item_type = 3;
+
+  /// <summary>稀有度（枚举值：1 普通 / 2 精良 / 3 稀有 / 4 史诗 / 5 传说，决定格子底色）</summary>
+  int32 rarity = 4;
+
+  /// <summary>图标资源键（YooAsset 地址，如 T_IconA80_02_UI）</summary>
+  string icon_key = 5;
+
+  /// <summary>描述文本</summary>
+  string desc = 6;
+
+  /// <summary>单格堆叠上限（1 = 不可堆叠）</summary>
+  int32 max_stack = 7;
+}
+
+/// <summary>
+/// 背包列表请求
+/// 打开背包面板时发送，一次拿全槽位快照 + 物品配置表（身份由服务端会话绑定）
+/// </summary>
+message BagListRequest {
+}
+
+/// <summary>
+/// 背包列表响应
+/// </summary>
+message BagListResponse {
+  /// <summary>是否成功（false = 未登录等）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>背包容量（定长槽位数，客户端据此补齐空槽占位）</summary>
+  int32 capacity = 3;
+
+  /// <summary>非空槽位快照（服务端权威数据）</summary>
+  repeated BagSlotInfo slots = 4;
+
+  /// <summary>物品静态配置表（客户端建运行时表用）</summary>
+  repeated ItemConfigInfo configs = 5;
+}
+
+/// <summary>
+/// 使用物品请求
+/// 按槽位使用指定数量（服务端校验归属与数量，成功与否以响应快照为准）
+/// </summary>
+message BagUseRequest {
+  /// <summary>目标槽位下标</summary>
+  int32 slot_index = 1;
+
+  /// <summary>使用数量（≥1；超过该格现有数量则失败）</summary>
+  int32 count = 2;
+}
+
+/// <summary>
+/// 使用物品响应（返回操作后的完整槽位快照，客户端整表刷新）
+/// </summary>
+message BagUseResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的非空槽位快照</summary>
+  repeated BagSlotInfo slots = 3;
+}
+
+/// <summary>
+/// 丢弃物品请求
+/// </summary>
+message BagDiscardRequest {
+  /// <summary>目标槽位下标</summary>
+  int32 slot_index = 1;
+
+  /// <summary>丢弃数量（≥1；丢光则该槽清空）</summary>
+  int32 count = 2;
+}
+
+/// <summary>
+/// 丢弃物品响应
+/// </summary>
+message BagDiscardResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>操作后的非空槽位快照</summary>
+  repeated BagSlotInfo slots = 3;
+}
+
+/// <summary>
+/// 整理背包请求
+/// 同类堆叠合并 + 按（类型/稀有度/物品ID）排序重排槽位，规则在服务端（权威）
+/// </summary>
+message BagTidyRequest {
+}
+
+/// <summary>
+/// 整理背包响应
+/// </summary>
+message BagTidyResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>整理后的非空槽位快照</summary>
+  repeated BagSlotInfo slots = 3;
+}
+
+/// <summary>
+/// 拖拽换位请求（交换两个槽位的内容，含空槽）
+/// </summary>
+message BagSwapRequest {
+  /// <summary>起点槽位下标</summary>
+  int32 from_slot = 1;
+
+  /// <summary>目标槽位下标</summary>
+  int32 to_slot = 2;
+}
+
+/// <summary>
+/// 拖拽换位响应
+/// </summary>
+message BagSwapResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>交换后的非空槽位快照</summary>
+  repeated BagSlotInfo slots = 3;
+}
+
+/// <summary>
+/// 测试发放请求
+/// 本期物品唯一来源（背包面板"测试发放"按钮），方便联调；后续可换成掉落/商店
+/// </summary>
+message BagGrantRequest {
+  /// <summary>要发放的物品ID（须存在于 item_config）</summary>
+  int32 item_id = 1;
+
+  /// <summary>发放数量（≥1）</summary>
+  int32 count = 2;
+}
+
+/// <summary>
+/// 测试发放响应
+/// </summary>
+message BagGrantResponse {
+  /// <summary>是否成功</summary>
+  bool success = 1;
+
+  /// <summary>结果说明（满包时说明剩余未放下的数量）</summary>
+  string message = 2;
+
+  /// <summary>发放后的非空槽位快照</summary>
+  repeated BagSlotInfo slots = 3;
+}
