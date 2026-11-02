@@ -1,0 +1,454 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using UnityEngine;
+using PerfAgent.Core;
+using PerfAgent.Utils;
+
+namespace PerfAgent.Collectors
+{
+    /// <summary>
+    /// 脚本反模式扫描。
+    ///
+    /// 做法：先用正则定位「每帧执行的方法」（Update/FixedUpdate/LateUpdate/OnGUI 及常用回调），
+    /// 再用花括号配对取出方法体范围，最后只在方法体内匹配反模式。
+    /// 这样能大幅降低误报（同类写法写在 Start/Awake 里往往没问题）。
+    /// </summary>
+    public class ScriptAntipatternCollector : IPerfCollector
+    {
+        public string Name { get { return "脚本反模式"; } }
+        public string ToolName { get { return "scan_scripts"; } }
+        public string Description { get { return "扫描 C# 源码，找出每帧执行方法中的堆分配、反射调用、查找类 API 等常见性能反模式。"; } }
+
+        const long MaxFileBytes = 1024 * 1024;
+        const int MaxIssues = 300;
+
+        static readonly Regex PerFrameMethod = new Regex(
+            @"\b(?:void|IEnumerator|async\s+void|protected\s+virtual\s+void|public\s+override\s+void|override\s+void)\s+" +
+            @"(Update|FixedUpdate|LateUpdate|OnGUI|OnTriggerEnter\w*|OnTriggerStay\w*|OnCollisionEnter\w*|" +
+            @"OnCollisionStay\w*|OnMouseDrag|OnMouseDown|OnMouseUp|OnPreRender|OnPostRender|" +
+            @"OnRenderObject|OnWillRenderObject|OnBecameVisible|OnBecameInvisible|OnAudioFilterRead|" +
+            @"OnAnimatorMove|OnAnimatorIK|OnDrawGizmos\w*|OnValidate)\s*\(",
+            RegexOptions.Compiled);
+
+        class Antipattern
+        {
+            public string id;
+            public Regex regex;
+            public string severity;
+            public string suggestion;
+
+            public Antipattern(string id, string pattern, string severity, string suggestion)
+            {
+                this.id = id;
+                this.regex = new Regex(pattern, RegexOptions.Compiled);
+                this.severity = severity;
+                this.suggestion = suggestion;
+            }
+        }
+
+        static readonly Antipattern[] Patterns =
+        {
+            new Antipattern("gc_collection_new",
+                @"\bnew\s+(?:List|Dictionary|HashSet|Queue|Stack|SortedDictionary|SortedList)\s*<",
+                Severity.Error, "把容器提升为字段并复用（.Clear() 而不是 new），或改用静态/池化缓冲"),
+
+            new Antipattern("gc_array_new",
+                @"\bnew\s+[A-Za-z_][\w\.<>]*\s*\[",
+                Severity.Error, "数组分配同样进入 GC，提升为字段并用长度上限复用"),
+
+            new Antipattern("gc_string_concat",
+                @"(?:""[^""\\]*(?:\\.[^""\\]*)*""\s*\+)|(?:\+\s*"")",
+                Severity.Warn, "字符串拼接每帧产生垃圾，改用 StringBuilder 字段或缓存结果"),
+
+            new Antipattern("gc_string_format",
+                @"\bstring\.Format\s*\(",
+                Severity.Warn, "string.Format 会有装箱与分配，缓存格式化结果或使用 ZString/TextMeshPro SetText"),
+
+            new Antipattern("linq",
+                @"\.(?:Where|Select|SelectMany|OrderBy|OrderByDescending|ThenBy|First|FirstOrDefault|Last|Single|Any|All|Count|Sum|Min|Max|ToList|ToArray|ToDictionary|ToHashSet|Distinct|GroupBy|Aggregate)\s*[(<]",
+                Severity.Error, "LINQ 每帧都会分配迭代器/闭包，改写为手写 for 循环"),
+
+            new Antipattern("foreach_enumerator",
+                @"\bforeach\s*\(",
+                Severity.Info, "确认被遍历的是 List/数组（结构体枚举器）而非 IEnumerable/Dictionary 接口（会装箱分配）"),
+
+            new Antipattern("new_waitfor",
+                @"\bnew\s+WaitFor(?:Seconds|SecondsRealtime|EndOfFrame|FixedUpdate)\b",
+                Severity.Error, "YieldInstruction 应缓存到字段，协程内每帧 new 会持续产生垃圾"),
+
+            new Antipattern("getcomponent",
+                @"\bGetComponent(?:InParent|InChildren)?\s*[(<]",
+                Severity.Warn, "GetComponent 有原生调用开销，改为 Awake 中缓存引用"),
+
+            new Antipattern("find_api",
+                @"\b(?:GameObject\.Find|FindObjectOfType|FindObjectsOfType|FindGameObjectWithTag|FindGameObjectsWithTag|FindAnyObjectByType|FindFirstObjectByType)\b",
+                Severity.Error, "场景查找是 O(n) 遍历，改为启动时缓存或由外部注入引用"),
+
+            new Antipattern("camera_main",
+                @"\bCamera\.main\b",
+                Severity.Error, "Camera.main 内部是带 Tag 的全场景查找且会被缓存失效，改为字段缓存"),
+
+            new Antipattern("tag_compare",
+                @"\.tag\s*==|==\s*[A-Za-z_]\w*\.tag\b",
+                Severity.Warn, "比较 tag 字符串会分配，改用 CompareTag(\"...\")"),
+
+            new Antipattern("sendmessage",
+                @"\bSendMessage\s*\(|\bBroadcastMessage\s*\(",
+                Severity.Warn, "SendMessage 是反射调用，改为接口/委托直调"),
+
+            new Antipattern("resources_load",
+                @"\bResources\.(?:Load|LoadAll|LoadAsync|UnloadUnusedAssets)\b",
+                Severity.Warn, "Resources.Load 会同步阻塞并绕过依赖管理，改用 Addressables"),
+
+            new Antipattern("instantiate_destroy",
+                @"\b(?:Object\.)?Instantiate\s*[<(]|\bDestroy\s*\(|\bDestroyImmediate\s*\(",
+                Severity.Warn, "每帧实例化/销毁会造成分配与 GC 尖峰，改用对象池"),
+
+            new Antipattern("physics_alloc",
+                @"\bPhysics2?D?\.(?:RaycastAll|SphereCastAll|BoxCastAll|CapsuleCastAll|OverlapSphere|OverlapBox|OverlapCapsule|OverlapCircle|OverlapArea)\s*\(",
+                Severity.Warn, "使用带 NonAlloc 的版本并复用结果数组"),
+
+            new Antipattern("gc_collect",
+                @"\bGC\.Collect\s*\(",
+                Severity.Error, "手动触发 GC 会造成明显卡顿尖峰，移除该调用并改为减少分配"),
+
+            new Antipattern("debug_log",
+                @"\bDebug\.Log(?:Format|Warning|Error)?\s*\(",
+                Severity.Info, "日志本身有字符串构造与 IO 成本，发布版本应剥离或用条件编译包裹"),
+
+            new Antipattern("stringbuilder_new",
+                @"\bnew\s+StringBuilder\s*\(",
+                Severity.Warn, "StringBuilder 应提升为字段并复用（Clear 后继续用）"),
+
+            new Antipattern("sort_alloc",
+                @"\.Sort\s*\(\s*(?:\(|delegate|new\s+Comparison)",
+                Severity.Warn, "lambda/delegate 形式的比较器会分配闭包，改为静态比较方法"),
+        };
+
+        public void Collect(CollectorContext ctx)
+        {
+            var s = ctx.snapshot;
+            if (s == null) return;
+
+            string root = Application.dataPath;
+            List<string> files;
+            try
+            {
+                files = new List<string>(Directory.GetFiles(root, "*.cs", SearchOption.AllDirectories));
+            }
+            catch (Exception e)
+            {
+                ctx.Note("脚本扫描失败: " + e.Message);
+                return;
+            }
+
+            int scanned = 0, skipped = 0;
+            string sceneScope = SceneScopeRoot();          // "Assets/PerfAgentSample/Before/"，空串 = 判定不了
+            s.codeScopeRoot = sceneScope;
+            for (int i = 0; i < files.Count; i++)
+            {
+                string full = files[i].Replace('\\', '/');
+                if (ShouldSkip(full, root)) { skipped++; continue; }
+                if (s.codeIssues.Count >= MaxIssues) break;
+
+                try
+                {
+                    var fi = new FileInfo(full);
+                    if (fi.Length > MaxFileBytes) { skipped++; continue; }
+                    int before = s.codeIssues.Count;
+                    ScanFile(s, root, full, File.ReadAllText(full));
+                    if (sceneScope.Length > 0)
+                    {
+                        for (int k = before; k < s.codeIssues.Count; k++)
+                            s.codeIssues[k].inSceneScope = IsInScope(s.codeIssues[k].file, sceneScope);
+                    }
+                    scanned++;
+                }
+                catch { skipped++; }
+            }
+
+            int inScope = 0, perFrameInScope = 0;
+            if (sceneScope.Length > 0)
+            {
+                for (int i = 0; i < s.codeIssues.Count; i++)
+                {
+                    if (!s.codeIssues[i].inSceneScope) continue;
+                    inScope++;
+                    if (CodeIssue.IsPerFrameMethod(s.codeIssues[i].pattern)) perFrameInScope++;
+                }
+            }
+
+            s.SetMetric("已扫描脚本", "个", scanned, "Assets/**/*.cs（不含插件自身与 Editor 专用代码）");
+            s.SetMetric("代码问题数", "个", s.codeIssues.Count, "整个工程 Assets/**/*.cs（含同工程里的其它副本）");
+            if (sceneScope.Length > 0)
+            {
+                s.SetMetric("代码问题数（当前场景目录）", "个", inScope,
+                            "只看 " + sceneScope + " 下的脚本 —— 前后对比看这一行");
+                // 再按执行时机拆一层：每帧型才是稳态开销；事件型（碰撞/触发回调里的
+                // Instantiate + Destroy 之类）是正常游戏逻辑，两版都会有，别拿它做对比。
+                // 实测：优化前后两份样例的代码问题数一模一样（都是 60 处，因为扫描是工程级的），
+                // 拆开后才看得出真实差别 —— 每帧型 41 -> 1 处，事件型 13 -> 5 处。
+                s.SetMetric("每帧类代码问题（当前场景目录）", "个", perFrameInScope,
+                            "只看 " + sceneScope + " 下 Update/FixedUpdate/LateUpdate/OnGUI 等每帧方法体内的反模式 —— "
+                            + "优化前后对比看这一行");
+                s.SetMetric("事件类代码问题（当前场景目录）", "个", inScope - perFrameInScope,
+                            "碰撞/触发等事件回调里的写法（不是每帧分配），两版通常都有，对比时可忽略");
+                if (inScope != s.codeIssues.Count)
+                {
+                    s.AddNote("静态扫描是工程级的：" + (s.codeIssues.Count - inScope)
+                              + " 处问题落在 " + sceneScope + " 以外的脚本（同工程里的其它副本/公共目录）。"
+                              + "对比前后两份报告时，请只看「每帧类代码问题（当前场景目录）」以及带 ★ 的行；"
+                              + "两张表里相同的那些行往往是同一批“不属于本次采集场景”的代码。");
+                }
+            }
+            if (skipped > 0)
+                s.AddNote("脚本扫描跳过 " + skipped + " 个文件（插件自身 / Editor 专用代码 / 第三方 / 生成代码 / 超大文件）。"
+                          + "本插件只对自己安装目录以外的、会进到玩家构建里的脚本报问题。");
+        }
+
+        /// <summary>
+        /// 「本次采集场景所在目录」（形如 <c>Assets/PerfAgentSample/Before/</c>），判定不出来时返回空串。
+        ///
+        /// 对比「优化前 vs 优化后」时只该看这个目录下的脚本问题：工程里可能同时存在同一玩法的多份副本，
+        /// 不区分就会让两份报告列出同一批问题，看上去“一模一样”。
+        ///
+        /// 取法：场景的父目录若是约定的 <c>Scenes</c>，就取它的上一层（<c>Assets/Game/Scenes/Main.unity</c>
+        /// → <c>Assets/Game/</c>）；否则退回场景自己的目录。
+        /// </summary>
+        static string SceneScopeRoot()
+        {
+            try
+            {
+                var active = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene();
+                string scene = active.IsValid() ? (active.path ?? "") : "";
+                if (scene.Length == 0) return "";
+                scene = scene.Replace('\\', '/');
+                int slash = scene.LastIndexOf('/');
+                if (slash <= 0) return "";
+
+                string dir = scene.Substring(0, slash + 1);                 // Assets/Game/Scenes/
+                string trimmed = dir.Substring(0, dir.Length - 1);          // Assets/Game/Scenes
+                int up = trimmed.LastIndexOf('/');
+                if (up <= 0) return dir;
+                string leaf = trimmed.Substring(up + 1);
+                string parent = trimmed.Substring(0, up + 1);               // Assets/Game/
+                if (string.Equals(leaf, "Scenes", StringComparison.OrdinalIgnoreCase)) return parent;
+                return dir;
+            }
+            catch { return ""; }
+        }
+
+        static bool IsInScope(string assetRelativePath, string scopeRoot)
+        {
+            if (string.IsNullOrEmpty(assetRelativePath) || string.IsNullOrEmpty(scopeRoot)) return false;
+            string f = assetRelativePath.Replace('\\', '/').ToLowerInvariant();
+            return f.StartsWith(scopeRoot.ToLowerInvariant(), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 是否跳过这个文件。
+        ///
+        /// **判定必须基于「相对工程根」的路径**：曾经拿绝对路径做 <c>Contains("/perfagent/")</c>，
+        /// 工程恰好放在 <c>D:\hub\PerfAgent\</c> 下时每个 .cs 都命中，整份工程被判成插件自身，
+        /// 扫描数恒为 0（静默失效）。纯判定逻辑抽在 <see cref="ScriptScope"/>，有离线回归。
+        /// </summary>
+        static bool ShouldSkip(string fullPath, string root)
+        {
+            string lower = fullPath.Replace('\\', '/').ToLowerInvariant();
+            return ScriptScope.ShouldSkip(RelativePath(root, fullPath), OwnRoot(), IsInEditorAssemblyDir(lower));
+        }
+
+        /// <summary>
+        /// 本插件自身的源码根（形如 "assets/perfagent"，小写正斜杠）——从本程序集的 asmdef 位置反推。
+        ///
+        /// 用 asmdef 而不是写死 "Assets/PerfAgent"：包可以嵌在任意目录，也可以被移到别处，
+        /// 而 asmdef 的位置永远是准的。
+        /// </summary>
+        static string OwnRoot()
+        {
+            if (_ownRoot != null) return _ownRoot;
+            _ownRoot = "";
+            try
+            {
+                string asmName = typeof(ScriptAntipatternCollector).Assembly.GetName().Name;
+                string asmdef = UnityEditor.Compilation.CompilationPipeline
+                    .GetAssemblyDefinitionFilePathFromAssemblyName(asmName);
+                string rel = (asmdef ?? "").Replace('\\', '/');
+                const string prefix = "Assets/";
+                if (rel.StartsWith(prefix))
+                {
+                    string rest = rel.Substring(prefix.Length);          // PerfAgent/Editor/PerfAgent.Editor.asmdef
+                    int slash = rest.IndexOf('/');
+                    if (slash > 0) _ownRoot = (prefix + rest.Substring(0, slash)).ToLowerInvariant();
+                }
+            }
+            catch { }
+            return _ownRoot;
+        }
+
+        static string _ownRoot;
+        static HashSet<string> _editorAsmFiles;
+
+        /// <summary>
+        /// 该文件是否属于「只编给编辑器用」的程序集（asmdef 里 includePlatforms 含 Editor）。
+        /// 文件夹叫不叫 Editor 都能覆盖到。
+        /// </summary>
+        static bool IsInEditorAssemblyDir(string lowerPath)
+        {
+            if (_editorAsmFiles == null)
+            {
+                var set = new HashSet<string>();
+                try
+                {
+                    var asms = UnityEditor.Compilation.CompilationPipeline.GetAssemblies(
+                        UnityEditor.Compilation.AssembliesType.Editor);
+                    for (int i = 0; i < asms.Length; i++)
+                    {
+                        var a = asms[i];
+                        if ((a.flags & UnityEditor.Compilation.AssemblyFlags.EditorAssembly) == 0) continue;
+                        if (a.sourceFiles == null) continue;
+                        for (int j = 0; j < a.sourceFiles.Length; j++)
+                        {
+                            string f = a.sourceFiles[j];
+                            if (string.IsNullOrEmpty(f)) continue;
+                            set.Add(f.Replace('\\', '/').ToLowerInvariant());
+                        }
+                    }
+                }
+                catch { }
+                _editorAsmFiles = set;
+            }
+
+            return _editorAsmFiles.Contains(lowerPath);
+        }
+
+        void ScanFile(PerfSnapshot s, string root, string fullPath, string text)
+        {
+            foreach (Match m in PerFrameMethod.Matches(text))
+            {
+                if (s.codeIssues.Count >= MaxIssues) return;
+
+                int bodyStart = FindBodyStart(text, m.Index + m.Length - 1);
+                if (bodyStart < 0) continue;
+                int bodyEnd = FindBodyEnd(text, bodyStart);
+                if (bodyEnd <= bodyStart) continue;
+
+                string methodName = m.Groups[1].Value;
+                string body = text.Substring(bodyStart, bodyEnd - bodyStart + 1);
+
+                for (int p = 0; p < Patterns.Length; p++)
+                {
+                    var pattern = Patterns[p];
+                    foreach (Match hit in pattern.regex.Matches(body))
+                    {
+                        if (s.codeIssues.Count >= MaxIssues) return;
+
+                        int absolute = bodyStart + hit.Index;
+                        var issue = new CodeIssue();
+                        issue.file = RelativePath(root, fullPath);
+                        issue.line = LineOf(text, absolute);
+                        issue.pattern = methodName + " + " + pattern.id;
+                        issue.snippet = Snippet(text, absolute, methodName);
+                        issue.suggestion = pattern.suggestion;
+                        issue.severity = pattern.severity;
+                        s.codeIssues.Add(issue);
+                    }
+                }
+            }
+        }
+
+        static string RelativePath(string root, string fullPath)
+        {
+            string normalized = fullPath.Replace('\\', '/');
+            string rootNorm = root.Replace('\\', '/');
+            return normalized.StartsWith(rootNorm, StringComparison.Ordinal)
+                ? "Assets" + normalized.Substring(rootNorm.Length)
+                : normalized;
+        }
+
+        static string Snippet(string text, int index, string methodName)
+        {
+            int start = text.LastIndexOf('\n', Math.Max(0, index - 1));
+            int end = text.IndexOf('\n', index);
+            if (start < 0) start = 0; else start++;
+            if (end < 0) end = text.Length;
+            string line = text.Substring(start, Math.Max(0, end - start)).Trim();
+            if (line.Length > 160) line = line.Substring(0, 157) + "...";
+            return methodName + ": " + line;
+        }
+
+        static int LineOf(string text, int index)
+        {
+            int line = 1;
+            for (int i = 0; i < index && i < text.Length; i++)
+                if (text[i] == '\n') line++;
+            return line;
+        }
+
+        // ---------------- 花括号配对 ----------------
+
+        static int FindBodyStart(string text, int from)
+        {
+            for (int i = from; i < text.Length && i < from + 400; i++)
+            {
+                char c = text[i];
+                if (c == '{') return i;
+                if (c == ';') return -1;                        // 接口方法 / 抽象声明
+                if (c == '=' && i + 1 < text.Length && text[i + 1] == '>') return -1; // 表达式体（暂不分析）
+            }
+            return -1;
+        }
+
+        static int FindBodyEnd(string text, int start)
+        {
+            int depth = 0;
+            for (int i = start; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '"')
+                {
+                    i = SkipStringLiteral(text, i, '"');
+                    continue;
+                }
+                if (c == '\'')
+                {
+                    i = SkipStringLiteral(text, i, '\'');
+                    continue;
+                }
+                if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
+                {
+                    int nl = text.IndexOf('\n', i);
+                    i = nl < 0 ? text.Length : nl;
+                    continue;
+                }
+                if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
+                {
+                    int close = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                    i = close < 0 ? text.Length : close + 1;
+                    continue;
+                }
+                if (c == '{') depth++;
+                else if (c == '}')
+                {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+            return text.Length - 1;
+        }
+
+        static int SkipStringLiteral(string text, int start, char quote)
+        {
+            for (int i = start + 1; i < text.Length; i++)
+            {
+                if (text[i] == '\\') { i++; continue; }
+                if (text[i] == quote) return i;
+                if (text[i] == '\n') return i;
+            }
+            return text.Length - 1;
+        }
+    }
+}

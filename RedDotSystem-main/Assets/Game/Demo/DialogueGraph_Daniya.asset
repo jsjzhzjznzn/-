@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e0250bb1ed372d4989b5fa2d62966f5, type: 3}
+  m_Name: DialogueGraph_Daniya
+  m_EditorClassIdentifier: 
+  graphId: 9001
+  graphName: DialogueGraph_Daniya
+  startNodeId: 1
+  nodeList:
+  - nodeConfigId: 1
+    speakType: 2
+    speakerName: "\u4E39\u59AE\u5A05"
+    dialogText: "\u65C5\u884C\u8005\uFF0C\u4F60\u7EC8\u4E8E\u6765\u4E86\u3002\u9ED1\u6D77\u5CB8\u7684\u98CE\uFF0C\u5C31\u8981\u8D77\u4E86\u3002"
+    isOptionNode: 1
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 0
+      conditionList: []
+    choiceList:
+    - labelText: "\u6211\u51C6\u5907\u597D\u4E86"
+      eventKey: daniya_ready
+      toNodeId: 2
+      conditionList: []
+    - labelText: "\u7A0D\u540E\u518D\u6765"
+      eventKey: 
+      toNodeId: 3
+      conditionList: []
+  - nodeConfigId: 2
+    speakType: 2
+    speakerName: "\u4E39\u59AE\u5A05"
+    dialogText: "\u90A3\u5C31\u968F\u6211\u6765\u5427\u3002\u613F\u6F6E\u58F0\u62A4\u4F60\u4E00\u8DEF\u3002"
+    isOptionNode: 0
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 0
+      conditionList: []
+    choiceList: []
+  - nodeConfigId: 3
+    speakType: 2
+    speakerName: "\u4E39\u59AE\u5A05"
+    dialogText: "\u4E0D\u6025\u3002\u60F3\u597D\u4E86\u968F\u65F6\u6765\u627E\u6211\u3002"
+    isOptionNode: 0
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 0
+      conditionList: []
+    choiceList: []
+  variableList: []

@@ -1,0 +1,69 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 94c541d2836d3fc42bec4d4dfbef89f9, type: 3}
+  m_Name: VfxCatalog
+  m_EditorClassIdentifier: 
+  entries:
+  - key: player_attack_slash
+    prefab: {fileID: 1133915824432234, guid: fe2cc20c80374a9bb3cbdb005fc47e8f, type: 3}
+    prewarm: 2
+    durationOverride: 0
+    unscaled: 0
+    scale: 1
+    rotationOffsetEuler: {x: 0, y: 0, z: 0}
+    positionOffset: {x: 0.87, y: 0, z: 0}
+    comment: "\u73A9\u5BB6\u5DE6\u952E\u6325\u51FB\u5F27\u5149\uFF08fuben\uFF09"
+  - key: enemy_hit
+    prefab: {fileID: 176804, guid: ff5a637b0b9b4cb19b5b914aa1e34985, type: 3}
+    prewarm: 3
+    durationOverride: 0
+    unscaled: 0
+    scale: 1
+    rotationOffsetEuler: {x: 0, y: 0, z: 0}
+    positionOffset: {x: 0, y: 0, z: 0}
+    comment: "\u654C\u4EBA\u53D7\u51FB\u7206\u95EA\uFF08fuben\uFF09"
+  - key: enemy_die
+    prefab: {fileID: 147324, guid: f05a2ff27df4404494d201eea0504adf, type: 3}
+    prewarm: 2
+    durationOverride: 0
+    unscaled: 0
+    scale: 1
+    rotationOffsetEuler: {x: 0, y: 0, z: 0}
+    positionOffset: {x: 0, y: 0, z: 0}
+    comment: "\u654C\u4EBA\u6B7B\u4EA1\u661F\u661F\u6D88\u6563\uFF08fuben\uFF09"
+  - key: kill_coins
+    prefab: {fileID: 110212, guid: 5751a41c4e1f4921910903452bfc3bad, type: 3}
+    prewarm: 1
+    durationOverride: 1.4
+    unscaled: 0
+    scale: 1
+    rotationOffsetEuler: {x: 0, y: 0, z: 0}
+    positionOffset: {x: 0, y: 0, z: 0}
+    comment: "A\u578B\xB7\u62FE\u91D1\u9F20\u51FB\u6740\u76F4\u63A5\u5165\u5305\u91D1\u5E01\uFF08\u5FAA\u73AF\u578B\uFF0C\u65F6\u957F\u8986\u76D61.4s\uFF09"
+  - key: pickup_burst
+    prefab: {fileID: 1211592783823396, guid: d31ecdf50b2f4a86acb81faf81cf0ae8, type: 3}
+    prewarm: 2
+    durationOverride: 0
+    unscaled: 0
+    scale: 1
+    rotationOffsetEuler: {x: 0, y: 0, z: 0}
+    positionOffset: {x: 0, y: 0, z: 0}
+    comment: "B\u578B\xB7\u85CF\u5B9D\u9F9F\u6389\u843D\u62FE\u53D6\u661F\u5149\uFF08fuben\uFF09"
+  - key: deflect_spark
+    prefab: {fileID: 1211592783823396, guid: d31ecdf50b2f4a86acb81faf81cf0ae8, type: 3}
+    prewarm: 1
+    durationOverride: 0.6
+    unscaled: 0
+    scale: 1
+    rotationOffsetEuler: {x: 0, y: 0, z: 0}
+    positionOffset: {x: 0, y: 0, z: 0}
+    comment: "\u5F39\u5200\u706B\u82B1\uFF08\u6253\u51FB\u611F P2\uFF09"

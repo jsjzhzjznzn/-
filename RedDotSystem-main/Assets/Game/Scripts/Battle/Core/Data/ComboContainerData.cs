@@ -1,0 +1,299 @@
+using System.Collections.Generic;
+using Animancer;
+using UnityEngine;
+
+/// <summary>
+/// 连招容器配置资源
+/// 统一管理一套角色完整普攻连招、前进攻击，提供对外统一读取接口
+/// comboDates 列表的下标即攻击段数：comboDates[0]=第一段攻击，comboDates[1]=第二段攻击，以此类推
+/// 每段攻击在容器里占一个 ComboData 元素，存放该段的动画、收尾、伤害、震动、暂停等数据
+/// 
+/// 注意：多人游戏中，多个角色可能共享同一份 ScriptableObject。
+/// SwitchForwardATK/ResetComboDates 会修改 comboDates 列表，直接调用会污染共享数据。
+/// 必须先调用 CreateRuntimeClone() 创建运行时副本，再对副本进行修改。
+/// </summary>
+
+public class ComboContainerData : ScriptableObject
+{
+    [Header("连招段序列（下标0=第一段攻击，下标1=第二段攻击...）")]
+    [SerializeField] public List<ComboData> comboDates = new List<ComboData>();
+
+    [SerializeField, Header("前进攻击连招数据")] 
+    public ComboData ForwardATKData;
+
+    /// <summary>缓存初始第一段连招，用于前进攻击后恢复原连招</summary>
+    private ComboData firstComboData;
+
+    /// <summary>
+    /// 创建运行时副本，用于多人游戏中每个角色独立操作
+    /// 副本的 comboDates 列表是独立的，修改不会影响原始 ScriptableObject
+    /// ComboData 本身是只读的（只修改列表引用，不修改 ComboData 内部），所以可以安全共享
+    /// </summary>
+    public ComboContainerData CreateRuntimeClone()
+    {
+        var clone = ScriptableObject.CreateInstance<ComboContainerData>();
+        
+        // 深拷贝列表（新列表，但 ComboData 引用共享——SwitchForwardATK 只修改列表引用，不修改 ComboData 内部）
+        clone.comboDates = new List<ComboData>(this.comboDates);
+        clone.ForwardATKData = this.ForwardATKData;
+        
+        // 初始化运行时数据
+        clone.Init();
+        
+        return clone;
+    }
+
+    /// <summary>
+    /// 初始化缓存原始首段连招
+    /// 游戏加载/角色初始化时调用，保存默认普攻第一段
+    /// </summary>
+    public void Init()
+    {
+        // 无连招配置直接返回
+        if (comboDates.Count == 0) 
+            return;
+        
+        // 缓存列表第一个基础连招
+        firstComboData = comboDates[0];
+    }
+
+    /// <summary>
+    /// 按段数下标安全获取该段的 ComboData，越界返回 null
+    /// </summary>
+    /// <param name="index">攻击段数（0=第一段，1=第二段...）</param>
+    /// <returns>该段的连招数据，越界返回 null</returns>
+    public ComboData GetComboData(int index)
+    {
+        if (comboDates.Count == 0 || index < 0 || index >= comboDates.Count) 
+            return null;
+        
+        return comboDates[index];
+    }
+
+    /// <summary>
+    /// 获取连招总段数
+    /// </summary>
+    public int GetComboMaxCount()
+    {
+        return comboDates.Count;
+    }
+
+    /// <summary>
+    /// 获取该段的动画/事件标识名称
+    /// </summary>
+    /// <param name="index">攻击段数（0=第一段）</param>
+    /// <returns>连招名称字符串</returns>
+    public string GetComboName(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null) 
+            return null;
+
+        // 空名称弹出警告提示配置缺失
+        if (data.comboName == null)
+            Debug.LogWarning($"下标{index}连招未配置连招名称");
+        
+        return data.comboName;
+    }
+
+    /// <summary>
+    /// 获取该段的冷却时间
+    /// </summary>
+    public float GetComboColdTime(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null) 
+            return 0;
+
+        if (data.comboColdTime == 0)
+            Debug.LogWarning($"下标{index}连招未配置冷却时间");
+        
+        return data.comboColdTime;
+    }
+
+// ============ 伤害判定参数读取（对应 ComboData 已接入的字段） ============
+
+    /// <summary>
+    /// 获取该段的伤害倍率（小数；最终伤害 = 攻击者攻击力 × 该值）
+    /// </summary>
+    public float GetComboDamageMultiplier(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0f;
+
+        if (data.damageMultiplier == 0)
+            Debug.LogWarning($"下标{index}连招未配置伤害倍率");
+
+        return data.damageMultiplier;
+    }
+
+    /// <summary>
+    /// 获取该段的攻击命中半径（OverlapSphere 半径）
+    /// </summary>
+    public float GetComboDistance(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0f;
+
+        if (data.attackDistance == 0)
+            Debug.LogWarning($"下标{index}连招未配置攻击判定距离");
+
+        return data.attackDistance;
+    }
+
+    /// <summary>
+    /// 获取该段的命中点前移量（角色前方偏移）
+    /// </summary>
+    public float GetComboOffset(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0f;
+
+        return data.comboOffset;
+    }
+
+    /// <summary>
+    /// 获取该段的打击帧时间（动画归一化时间，0=本段无伤害判定）
+    /// </summary>
+    public float GetComboHitFrameTime(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0f;
+
+        return data.hitFrameTime;
+    }
+
+    /// <summary>
+    /// 获取该段的命中顿帧时长
+    /// </summary>
+    public float GetPauseFrameTime(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0f;
+
+        return data.pauseFrameTime;
+    }
+
+    /// <summary>
+    /// 获取该段的相机震动力度
+    /// </summary>
+    public float GetComboShakeForce(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0f;
+
+        return data.shakeForce;
+    }
+
+    /// <summary>
+    /// 获取该段的通用音效规则类型
+    /// </summary>
+    public SoundStyle GetComboSoundStyle(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return default;
+
+        return data.universalSound;
+    }
+    // ============ 上面这些方法对应已接入的判定参数 ============
+
+    /// <summary>
+    /// 获取该段的攻击动作动画
+    /// </summary>
+    public ClipTransition GetAttackClip(int index)
+    {
+        var data = GetComboData(index);
+        return data?.attackClip;
+    }
+
+    /// <summary>
+    /// 获取该段的收尾动画（播完自动回待机）
+    /// </summary>
+    public ClipTransition GetAttackEndClip(int index)
+    {
+        var data = GetComboData(index);
+        return data?.attackEndClip;
+    }
+
+    /// <summary>
+    /// 获取该段的接下一段取消窗口时间（动画归一化时间，0=关闭提前取消）
+    /// </summary>
+    public float GetLinkCancelTime(int index)
+    {
+        var data = GetComboData(index);
+        if (data == null)
+            return 0;
+
+        return data.linkCancelTime;
+    }
+
+    // ============ 以下方法对应 ComboData 中已暂停使用的参数，测试连击阶段先注释保留 ============
+    // /// <summary>
+    // /// 获取该段的相机震动力度
+    // /// </summary>
+    // public float GetComboShakeForce(int index)
+    // {
+    //     var data = GetComboData(index);
+    //     if (data == null) 
+    //         return 0;
+    //
+    //     return data.shakeForce;
+    // }
+    //
+    // /// <summary>
+    // /// 获取该段的帧暂停时长
+    // /// </summary>
+    // public float GetPauseFrameTime(int index)
+    // {
+    //     var data = GetComboData(index);
+    //     if (data == null) 
+    //         return 0;
+    //
+    //     return data.pauseFrameTime;
+    // }
+    // ============ 上面这些方法暂停使用，待对应系统接入后恢复 ============
+
+    /// <summary>
+    /// 切换当前第一段连招为前进攻击
+    /// 行走中触发时调用，替换普攻第一段逻辑
+    /// 
+    /// 警告：此方法会修改 comboDates 列表！
+    /// 多人游戏中必须对运行时副本调用，不能对原始 ScriptableObject 调用！
+    /// </summary>
+    public void SwitchForwardATK()
+    {
+        if (ForwardATKData == null) 
+            return;
+        
+        comboDates[0] = ForwardATKData;
+    }
+
+    /// <summary>
+    /// 重置第一段连招为初始化缓存的原始普攻
+    /// 前进攻击结束后恢复正常平A连招
+    /// 
+    /// 警告：此方法会修改 comboDates 列表！
+    /// 多人游戏中必须对运行时副本调用，不能对原始 ScriptableObject 调用！
+    /// </summary>
+    public void ResetComboDates()
+    {
+        if (comboDates == null || comboDates.Count == 0)
+        {
+            Debug.Log("连招列表为空");
+            return;
+        }
+
+        // 当前第一段不等于初始连招时执行还原
+        if (comboDates[0] != firstComboData)
+        {
+            comboDates[0] = firstComboData;
+        }
+    }
+}

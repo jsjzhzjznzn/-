@@ -1,0 +1,84 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e0250bb1ed372d4989b5fa2d62966f5, type: 3}
+  m_Name: ItemConditionDemoGraph
+  m_EditorClassIdentifier: 
+  graphId: 9001
+  graphName: "\u94C1\u5320\u94FA\u9053\u5177\u6761\u4EF6Demo"
+  startNodeId: 1
+  nodeList:
+  - nodeConfigId: 1
+    speakType: 2
+    speakerName: "\u94C1\u5320\u8001\u738B"
+    dialogText: "\u6B22\u8FCE\u6765\u5230\u94C1\u5320\u94FA\uFF01\u8BA9\u6211\u77A7\u77A7\u4F60\u8FD9\u6B21\u7684\u6536\u83B7\u2026\u2026"
+    isOptionNode: 0
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 2
+      conditionList: []
+    choiceList: []
+  - nodeConfigId: 2
+    speakType: 2
+    speakerName: "\u94C1\u5320\u8001\u738B"
+    dialogText: "\u4F60\u53E3\u888B\u91CC\u6709\u94C1\u77FF\u5417\uFF1F"
+    isOptionNode: 1
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 0
+      conditionList: []
+    choiceList:
+    - labelText: "\u8001\u677F\u4F60\u770B\uFF0C\u6211\u5E26\u4E86\u94C1\u77FF\uFF01"
+      eventKey: 
+      toNodeId: 3
+      conditionList:
+      - variableName: item_1012_count
+        eCondition: 20
+        targetFloat: 0
+        targetInt: 0
+    - labelText: "\u62B1\u6B49\u8001\u677F\uFF0C\u6211\u4E00\u5757\u94C1\u77FF\u4E5F\u6CA1\u6709\u2026\u2026"
+      eventKey: 
+      toNodeId: 4
+      conditionList:
+      - variableName: item_1012_count
+        eCondition: 22
+        targetFloat: 0
+        targetInt: 0
+  - nodeConfigId: 3
+    speakType: 2
+    speakerName: "\u94C1\u5320\u8001\u738B"
+    dialogText: "\u597D\u6837\u7684\uFF01\u8FD9\u6279\u94C1\u77FF\u6210\u8272\u4E0D\u9519\uFF0C\u591F\u6211\u6253\u4E00\u628A\u4E0A\u597D\u7684\u5251\u4E86\uFF0C\u7B49\u7740\u77A7\u5427\uFF01"
+    isOptionNode: 0
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 0
+      conditionList: []
+    choiceList: []
+  - nodeConfigId: 4
+    speakType: 2
+    speakerName: "\u94C1\u5320\u8001\u738B"
+    dialogText: "\u5509\u2026\u2026\u5317\u8FB9\u77FF\u6D1E\u91CC\u591A\u7684\u662F\uFF0C\u6316\u4E2A\u4E94\u5757\u5341\u5757\u518D\u6765\u627E\u6211\u5427\u3002"
+    isOptionNode: 0
+    nextTransition:
+      labelText: 
+      eventKey: 
+      toNodeId: 0
+      conditionList: []
+    choiceList: []
+  variableList:
+  - name: item_1012_count
+    variableType: 1
+    defaultFloat: 0
+    defaultInt: 0
+    defaultBool: 0

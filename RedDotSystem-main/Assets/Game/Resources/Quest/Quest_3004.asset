@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8e3c1a29b4d6e7f8a0b1c2d3e4f5a6b, type: 3}
+  m_Name: Quest_3004
+  m_EditorClassIdentifier: 
+  questId: 3004
+  category: 1
+  title: "\u518D\u8BBF"
+  description: "\u7B54\u5E94\u8FC7\u4E39\u59AE\u5A05\u7684\u4E8B\uFF0C\u8BE5\u53BB\u7ED9\u4E2A\u7B54\u590D\u4E86\u3002"
+  acceptMode: 1
+  timeLimit: 0
+  goalList:
+  - type: 0
+    targetKey: 
+    dialogueGraph: {fileID: 11400000, guid: 96f939c70d0ffe74fb874b100139792e, type: 2}
+    dialogueEventKey: daniya_ready
+    count: 1
+    description: "\u544A\u8BC9\u4E39\u59AE\u5A05\u4F60\u51C6\u5907\u597D\u4E86"
+  prerequisiteIdList: b90b0000
+  rewardList:
+  - itemId: 1007
+    count: 1
+  npcKey: daniya

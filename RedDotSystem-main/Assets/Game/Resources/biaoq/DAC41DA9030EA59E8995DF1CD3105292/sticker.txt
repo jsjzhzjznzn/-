@@ -1,0 +1,4 @@
+﻿frames=75
+fps=16.67
+width=220
+height=209

@@ -1,0 +1,2203 @@
+# 《KCC 源码精讲》教学脚本
+### 从 3C 运动控制到面试 —— 基于 `com.janooba.kcc` v1.0.1 逐行精读
+
+> 代码版本：本目录下 9 个 C# 文件，共 3170 行（`KinematicCharacterMotor.cs` 2494 行）
+> 文中所有 `文件:行号` 均指向本仓库真实代码，可直接跳转对照
+> 建议录制方式：**左边 Rider/VSCode 读码，右边白板画向量**，每集末尾切到 Unity 里跑行为验证
+
+> **怎么读（先看这段）**
+> 这份文档有两条线，**不要按顺序从头读到尾**：
+> - **A 线 · Controller / gameplay（本课程重点）**：第 12 集附 → 第 13 集 → 13 集附 → 第 14 集 → 附录 E 的 "5 天 gameplay 路线"。目标是"能设计、能调、能搬走"自己的控制层；这部分**不依赖 KCC**，换成 UE CMC / 自研 2D 控制器同样成立。
+> - **B 线 · Motor 源码（支撑理解，不要求背）**：第 2、3、5、6、7 集。你只需要知道"我写进去的速度会被怎样改写"，不需要能默写扫掠循环。
+> - **C 线 · 面试（可选）**：口述训练、第 17 集、附录 J。与 gameplay 能力无关，按需取用。
+> 如果目标是做玩法而不是面试，**B 线只读第 5、6 集**（地面吸附和落地投影会改你的速度），其余时间全部投在 A 线。
+
+---
+
+## 课程总览
+
+| 集 | 主题 | 时长 | 面试权重 |
+|---|---|---|---|
+| 0 | 资源地图 + 官方手册导读 | 10min | ★★★ |
+| 1 | 设计取舍：为什么是 Kinematic | 12min | ★★★★★ |
+| 2 | 文件地图 / 生命周期 / 一次 Tick 全景 | 15min | ★★★★ |
+| 3 | KinematicCharacterSystem：两阶段调度与插值 | 20min | ★★★★★ |
+| 4 | 数据模型：Transient 世界与 Report 家族 | 15min | ★★★ |
+| 5 | UpdatePhase1 逐行 | 25min | ★★★★★ |
+| 6 | 地面检测 ProbeGround 与稳定性判定 | 25min | ★★★★★ |
+| 7 | InternalCharacterMove：运动解算核心 | 30min | ★★★★★ |
+| 8 | 速度投影的数学 | 20min | ★★★★ |
+| 9 | 台阶 Step Handling | 20min | ★★★★ |
+| 10 | 移动平台 PhysicsMover | 20min | ★★★★★ |
+| 11 | 刚体交互与推箱子 | 18min | ★★★ |
+| 12 | 插值与时间步 | 15min | ★★★★ |
+| ★ | **12 附：Controller 精要（gameplay 主线，不读源码）** | 30min | ★★★★ |
+| 13 | **实战：从零写一个 Controller（Control）** | 35min | ★★★★★ |
+| 14 | 相机（Camera）与 3C 闭环 | 20min | ★★★★ |
+| 15 | 性能 / 多角色 / 网络与确定性 | 15min | ★★★ |
+| 16 | 排错手册（故障 → 根因 → 修法） | 15min | ★★★★★ |
+| 17 | 面试题库 50 题（含答案要点） | 阅读 | ★★★★★ |
+| ★ | **理论锚点：KCC = Collide-and-Slide**（Quake3 / Fauerby 2003） | 15min | ★★★★★ |
+| ★ | **13 附：状态机 Controller 与 Root Motion** | 20min | ★★★★ |
+| ★ | **口述训练：30 秒 / 3 分钟 / 10 分钟** | 必背 | ★★★★★ |
+| 附录 | 常量/默认值/调用顺序/术语/7天计划/方案对比/FAQ/实验课/分镜表/评分表/**自测 20 问** | 查阅 | ★★★★ |
+
+**本课程的 3C 定位**
+
+- **Character（角色）** = 胶囊体 + 表现层（模型/动画/IK）+ 状态（`GroundingStatus`、`BaseVelocity`）
+- **Control（控制）** = 把玩家意图变成**速度与朝向**（`UpdateVelocity` / `UpdateRotation`），KCC 只做"解算"，不做"意图"
+- **Camera（相机）** = 提供**参照系**（输入方向相对相机）+ 表现平滑（LateUpdate 插值）
+
+> 记住一句话：**KCC 是一个"带碰撞解算的位移求解器"，它不产生力，也不产生加速度。加速度、摩擦、跳跃全在你的 Controller 里。** 这是所有面试题的总纲。
+
+**按目标选路线**
+
+| 目标 | 读什么 | 可以跳过 | 读完的产出 |
+|---|---|---|---|
+| **做玩法 / 写 Controller（本课程主线）** | 5、6 集摘要 + **12 集附** + 13 集 + 13 集附 + 14 集 | 7、8、9、10、11 的算法细节 | 一套可维护的 Controller 骨架 + 调参表 |
+| 面试 / 讲清架构 | 口述训练 + 2、3、5、6 集 + 17 集 | 12 集附的代码细节 | 能连续讲 5 分钟不卡 |
+| 二开 KCC / 改解算 | 全部 + 7、8、9 集 | 无 | 能改 `InternalCharacterMove` |
+
+> 本文档原先 17 集里有 14 集在讲 Motor，Controller 只有第 13 集一集（且偏"最小可跑"）。为了对齐"学 Controller 精髓"的目标，新增了 **第 12 集附**：不读源码，只讲控制层的组成、速度合成、回调用法与调参方法。**建议先读那一集，再回来看第 13 集的代码。**
+
+---
+
+# 口述训练 · 三个版本（看完就要能开口）
+
+> 这一节是全文档的"提词器"。**先背这一节，再读后面**；读完后再回来复述一遍，两遍下来就能在面试里连续讲 5 分钟不卡。
+
+## 版本一：30 秒（电梯陈述）
+
+> "KCC 是一个**运动学角色控制器**：它不产生力，只负责把'你希望的速度'变成'合法位移'。核心是一条 **collide-and-slide** 循环——胶囊扫掠找最近命中，按**稳定性**把命中分成四类，分别做爬坡、上台阶、或沿面滑动；两面夹角时用 **crease / corner 状态机**决定沿交线滑还是停住。整个系统用**两阶段调度**解决移动平台，用**三套位姿**解决物理帧和渲染帧不一致。"
+
+背下这一段的骨架：**定位 → 一条循环 → 四种结局 → 两个状态 → 两个工程问题（平台、帧率）**。
+
+## 版本二：3 分钟（架构陈述，面试最常用）
+
+按这五步说，每步一句话，中间不停顿：
+
+1. **定位**：KCC 不是物理，是"带碰撞解算的位移求解器"。重力、加速、跳跃都在你的 `ICharacterController` 里，Motor 只做解算。所以它是引擎/玩法分离的——同一套 Motor 可以给玩家、AI、网络鬼影用。
+2. **调度**：`KinematicCharacterSystem` 单例持有两张静态表（Motor / Mover），在 `FixedUpdate` 里按 **Mover 算速度 → Motor Phase1 → Mover 移动 → Motor Phase2** 的顺序跑，`LateUpdate` 再做插值。拆两阶段唯一原因是**移动平台必须先动、但角色必须在它动之前探地**，否则站平台会每帧上下抖。
+3. **状态**：任何时候都有三套位姿——`Transform`（渲染）、`Transient`（物理真相）、`InitialTick`（本 tick 起点，插值用）。所有查询只用 Transient，绝不读 `transform.position`。
+4. **移动**：`InternalCharacterMove` 是一个**预算制迭代**（`MaxMovementIterations = 5`，最多 6 次扫掠）。每次迭代：找最近命中 → 评估稳定性 → 稳定就"保长度贴面"爬坡、不稳定先试台阶、再不行就投影滑动；第 2、3 次不稳定命中进入 crease/corner 状态机。
+5. **平台与交互**：站在平台上时，`GroundCollider.attachedRigidbody` 被识别为 attached rigidbody，Phase1 用它算"平台带我的位移"，所以角色的总速度 = `BaseVelocity + attachedRigidbodyVelocity`；撞到动态刚体则**先记账、移动结束后统一按质量比换成冲量**。
+
+## 版本三：10 分钟（逐机制展开）
+
+把"六大机制"每个讲 90 秒，各配一个代码锚点：
+
+| 机制 | 一句话原理 | 锚点 |
+|---|---|---|
+| ① 调度 | 两阶段 + 插值，解决平台与帧率 | `KinematicCharacterSystem.cs:175-204` |
+| ② 状态 | 三套位姿 + 四份 Report（全部 struct，零 GC） | `KinematicCharacterMotor.cs:34-150` |
+| ③ 探地 | 胶囊扫掠 + 多层吸附 + 三层稳定性判定 | `ProbeGround` `1281` / `EvaluateHitStability` `1938` |
+| ④ 移动 | 扫掠 → 投影 → 迭代（collide and slide） | `InternalCharacterMove` `1384` |
+| ⑤ 平台 | attached rigidbody + `PhysicsMover` 速度化 | `961-1051` / `PhysicsMover.cs:243` |
+| ⑥ 交互 | 命中记账 + 质量比伪冲量 | `1783` / `1860` |
+
+## 架构总图（白板就画这个）
+
+```
+                 ┌──────────── KinematicCharacterSystem (FixedUpdate, order -100)
+                 │
+   ① Mover.VelocityUpdate ──► 目标位姿 → Velocity / AngularVelocity
+                 │
+   ② Motor.UpdatePhase1 ────► BeforeCharacterUpdate
+                 │              ├ 解 MoveCharacter 队列
+                 │              ├ 解初始重叠（只推静态体）
+                 │              ├ ProbeGround + Snap  ← 用"平台旧位姿"
+                 │              ├ 落地速度投影（杀掉下坠速度）
+                 │              └ 跟随平台移动（attachedRigidbodyVelocity）
+                 │
+   ③ Mover 应用新位姿 ──────► 平台先动
+                 │
+   ④ Motor.UpdatePhase2 ────► UpdateRotation
+                 │              ├ 解平台推挤产生的重叠（IsBeingCrushed）
+                 │              ├ UpdateVelocity  ← 你的重力/加速/跳跃
+                 │              ├ InternalCharacterMove  ← collide & slide
+                 │              ├ 刚体冲量 / 平面约束 / 离散碰撞
+                 │              └ AfterCharacterUpdate
+                 │
+   LateUpdate: Transform = Lerp(InitialTick, Transient, f)
+```
+
+## 数字记忆梯（考场回忆用）
+
+**2 → 3 → 3 → 4 → 5 → 6 → 10 → 0.01**
+
+- **2** 个阶段（Phase1 平台前 / Phase2 平台后）
+- **3** 套位姿（Transform / Transient / InitialTick）
+- **3** 层稳定判定（法线角 60° → ledge/denivelation → 台阶）
+- **4** 种命中结局（无碰撞 / 稳定爬坡 / 台阶 / 滑动→crease→corner）
+- **5** 次迭代预算（`MaxMovementIterations`，实际最多 6 次扫掠）
+- **6** 大机制（调度 / 状态 / 探地 / 移动 / 平台 / 交互）
+- **10** 个回调（`ICharacterController`）
+- **0.01** 皮肤厚度（`CollisionOffset`，贯穿全系统的"永远不真接触"）
+
+## 面试话术模板
+
+> "我先说结论，再说实现。**结论**：KCC 是 kinematic 的 collide-and-slide 实现，把'位移求解'和'玩法意图'彻底解耦。**实现**上它靠三件事撑住手感：① 三套位姿让逻辑和渲染解耦；② 稳定性判定让'能不能站 / 能不能踩 / 会不会掉'变成可查询、可干预的数据；③ 预算制迭代让极端情况有确定的上界。**工程上**它靠两阶段调度解决平台、靠 NonAlloc + 固定数组做到零 GC。**代价**是必须自己写 Controller，且不支持任意重力方向和真实物理反作用。"
+
+---
+
+# 第 0 集 · 资源地图与官方手册导读
+
+**目标**：先建立"资料坐标系"。KCC 的教学资料有一个**版本陷阱**，不知道就会把不同架构的文档混在一起读，越读越乱。
+
+### 0.1 必读的四份资料
+
+| 资料 | 内容 | 注意 |
+|---|---|---|
+| **官方 User Guide（PDF）** | Quickstart / Package Overview / Core scripts reference / Kinematic Character System In-depth / Additional Information | 描述的是 **3.x 老架构**：`BaseCharacterController`、`CharacterUpdatePhase1/2/3`、`PhysicsMover.SimulateAtGoal/Desimulate` |
+| **官方 Walkthrough（示例集）** | `ExampleCharacterController` 的状态机、梯子攀爬、蹲伏、**Root Motion** | 只讲"怎么用示例"，不讲算法细节 |
+| **本仓库源码（Janooba 重构）** | 2 阶段、`ICharacterController`、`IMoverController` | 算法与官方 3.x **一致**，但**调度结构被简化** |
+| **OpenKCC（开源同类）** | 另一套工业实现：接口化 `IColliderCast` / `IMovingGround`、独立状态机、单元测试 | 用来做**对比**，面试讲"我了解多种方案" |
+
+**版本陷阱对照表（本课程最重要的"防混淆"表）**
+
+| 官方 3.x | 本仓库 v1.0.1 | 说明 |
+|---|---|---|
+| `BaseCharacterController`（抽象类） | `ICharacterController`（接口） | 接口更轻，可多继承组合 |
+| `BaseMoverController` | `IMoverController` | 同上 |
+| `CharacterUpdatePhase1/2/3` | `UpdatePhase1/2` | **第三阶段被合并**（见第 3 集附录） |
+| `PhysicsMover.SimulateAtGoal / Desimulate` | 直接 `SetPositionAndRotation` | 简化了"先模拟后回退"的双向流程 |
+| `UseInterpolation` 常量 | `KCCSettings.Interpolate` | 从编译期常量变成可配置资产 |
+| `MaxHitsBudget / MaxCollisionBudget = 32` | **16 / 16** | 查询预算减半（性能 vs 鲁棒性的取舍） |
+| `KinematicCharacterMotor.ProbeGround` 公开 | `private` | 外部无法直接探地 |
+
+> 录课建议：**先讲这张表**（3 分钟），观众后面看到网上的老教程就不会懵。
+
+### 0.2 官方手册的"五条 Additional Information"（面试常考）
+
+官方指南最后一章列了 5 个"重要限制"，这 5 条本质上是 KCC 的**使用契约**：
+
+1. **Physics queries capacity**：查询用 `NonAlloc` + 固定数组，命中数有上限（官方 32/32，本仓库 16/16），超了会丢命中 → 穿模
+2. **Interpolation**：插值必须在系统内统一处理，不能交给 Rigidbody
+3. **AutoSyncTransforms**：支持关闭 `Physics.autoSyncTransforms`，但系统内部会在合适时机手动同步（`Physics.SyncTransforms`）
+4. **AutoSimulation**：可关掉自动 tick，自己做服务器/回放驱动
+5. **Root motion**：Root Motion 与 FixedUpdate 的**帧率不一致**，必须"累加 + 消费"（第 13 集附录详讲）
+
+### 0.3 读源码的正确顺序（不要从第 1 行读）
+
+```
+ICharacterController.cs   (47 行)  ← 先看"我能插手的 10 个时机"
+        ↓
+KinematicCharacterSystem.cs (271 行) ← 再看"谁在什么时候调我"
+        ↓
+KinematicCharacterMotor.cs 的 UpdatePhase1 / UpdatePhase2（骨架）
+        ↓
+InternalCharacterMove → ProbeGround → EvaluateHitStability（算法）
+        ↓
+PhysicsMover.cs（平台）→ 回头看 Phase1 的 attachedRigidbody 段
+```
+
+> 反面教材：从 `KinematicCharacterMotor.cs:1` 开始顺序读，会在 400 行字段声明里迷路，在第 1000 行放弃。**先看接口和调度，再看算法，最后看参数**。
+
+---
+
+# 第 1 集 · 设计取舍：为什么是 Kinematic
+
+**目标**：搞清 KCC 在整个角色方案谱系中的位置，能回答"为什么不用 Rigidbody / 不用 CharacterController"。
+
+### 板书（一张图讲完）
+
+```
+                 手感可控性 ↑
+   Dynamic Rigidbody ── CharacterController ── KCC ── 纯数学位移
+   (物理真实)                                  (完全可控)
+```
+
+### 口播要点
+
+1. **Dynamic Rigidbody 的问题**：力 → 加速度 → 速度，中间隔了物理引擎的求解器和摩擦模型。你给一个 `AddForce`，落地时会被 solver 弹一下、贴墙时会被 friction 粘住、斜坡上会自动滑。手感调不准，且不同 PhysX 版本行为会变。
+2. **Unity 自带 CharacterController 的问题**：它是 C++ 黑盒，`Move()` 只返回 `CollisionFlags`，你拿不到**命中法线、命中点、是否稳定地面、是否台阶**。想做斜坡滑落、贴墙滑行、台阶自动上台，只能靠外挂射线硬猜。
+3. **KCC 的答案**：**自己做 Sweep + 自己做解算**，物理引擎只负责两件事——`Physics.CapsuleCastNonAlloc`（扫掠查询）和 `Physics.ComputePenetration`（重叠解算）。
+4. **代价**：你要自己实现重力、加速度、摩擦、跳跃、斜坡、平台、推箱子。KCC 把这部分留成了 `ICharacterController` 接口 —— 这就是本课程第 13 集的重点，也是 3C 里 Control 的真正战场。
+5. **为什么"运动学"**：角色的位置由代码**直接写入**（`transform.SetPositionAndRotation`），不参与物理积分。所以**永远不会被物理引擎"偷偷推动"**，确定性高，帧间可复现，利于回放/联机。
+
+### 面试追问
+
+- **Q：KCC 和"自己写 Transform.position += velocity * dt"有什么区别？**
+  → 差在**连续性检测**（Sweep 而非 Teleport，避免高速穿透）、**多面解算**（crease/corner，避免卡在墙角抖动）、**地面吸附**（snap，避免下坡时"蹦蹦跳跳"）、**台阶**（自动上台阶）。
+- **Q：什么时候你会选 Dynamic Rigidbody 而不是 KCC？**
+  → 需要真实的被撞飞、堆叠、布娃娃、物理谜题时。KCC 的推箱子是"伪物理"，靠质量比模拟冲量（第 11 集）。
+
+---
+
+# 第 1 集附 · 对照组：用 Unity CharacterController 做同一件事
+
+**目标**：把"为什么最后都换 KCC"讲成**具体现象**，而不是"KCC 更高级"。面试里这一节最有说服力——因为它是**踩坑史**。
+
+### 一、CharacterController 的五个"够用但难受"
+
+下面每一条都是 Unity 官方 CC 的标准做法，也是它的天花板：
+
+| 需求 | 官方 CC 的标准做法 | 卡在哪 |
+|---|---|---|
+| 移动 | `Move()`（完全手动）/ `SimpleMove()`（自带重力、忽略 y 速度） | 只返回 `CollisionFlags`，不知道撞的是**什么面、什么点、稳不稳** |
+| 跳跃 | `isGrounded` + 自己积重力 | `isGrounded` 有延迟/抖动，落地那一帧速度不清零 → 起跳高度随机 |
+| 下坡 | `isGrounded` 为 false 时手动 Raycast 往下贴 | 斜坡上 `isGrounded` 反复翻转，表现为**下坡抖动**（社区最经典的问题） |
+| 下蹲 | 改 `height` / `center`，再手动检测头顶 | 站起时容易顶穿天花板；改尺寸和碰撞检测的时序要自己保证 |
+| 推箱子 | `OnControllerColliderHit` 里给刚体 `AddForce` | 力度靠拍脑袋，没有质量比、没有冲量守恒，箱子会"黏"在角色上 |
+
+### 二、同一件事，KCC 怎么解
+
+| 问题 | KCC 的机制 | 代码 |
+|---|---|---|
+| 撞到了什么 | 命中法线 + 命中点 + `HitStabilityReport` | `1938` |
+| 下坡抖 | 站地时把探测距离放大到 `max(radius, MaxStepHeight)`，一帧内"吸"回地面 | `930-940` |
+| 落地速度 | 刚落地那一帧把速度投影到地面切面，干掉下坠分量 | `942-947` |
+| 下蹲顶穿 | `SetCapsuleDimensions` 重算缓存几何 + 站起前用"站立尺寸"单独检测 | `758` |
+| 推箱子 | 记账 + 质量比伪冲量 + `ForceMode.VelocityChange` | `1783` / `1860` |
+
+### 三、一句话总结（面试用）
+
+> "CharacterController 是**能用**：它保证你不穿墙、能爬小台阶。但它把'为什么能站、撞到了什么、该怎么滑'全部封在黑盒里，你只能靠射线去猜。KCC 是把这套黑盒**打开**：同样的运动学思路，但每一步都给你法线、稳定性报告和投影决策点。所以换 KCC 不是换引擎，是**把不可控变成可控**。"
+
+> 反过来说也成立：**如果你只是要一个能走能跳的原型，官方 CC 更快**。KCC 的成本在于你必须自己写 `ICharacterController`（第 13 集，200 行起步）。
+
+---
+
+# 第 2 集 · 文件地图、生命周期、一次 Tick 全景
+
+**目标**：建立全局心智模型，之后每集都能"定位到地图上的哪一格"。
+
+### 代码地图
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `Core/Runtime/KinematicCharacterMotor.cs` | 2494 | 碰撞/地面/台阶/速度解算的**全部算法** |
+| `Core/Runtime/KinematicCharacterSystem.cs` | 271 | 全局单例调度器：`FixedUpdate` 两阶段 + `LateUpdate` 插值 |
+| `Core/Runtime/PhysicsMover.cs` | 258 | 移动平台：把"目标位姿"变成"速度" |
+| `Core/Runtime/ICharacterController.cs` | 47 | **你要实现的 10 个回调**（Control 层） |
+| `Core/Runtime/IMoverController.cs` | 11 | 平台的位姿驱动接口 |
+| `Core/Runtime/KCCSettings.cs` | 29 | 自动模拟开关、插值开关、列表容量 |
+| `Core/Runtime/ReadOnlyKCCAttribute.cs` | 7 | Inspector 只读标记 |
+| `Core/Editor/*` | 53 | 场景里画台阶高度圆圈（`KinematicCharacterMotorEditor.cs:11`） |
+
+### 依赖方向（严格单向，无循环）
+
+```
+System ──驱动──> Motor ──调用──> ICharacterController（你的实现）
+                    │
+                    └──识别──> PhysicsMover（平台）──> IMoverController
+```
+
+> 面试点：**Motor 从不主动找你的角色脚本，只通过接口回调**。这就是"引擎/游戏逻辑分离"，也是能复用到 AI、网络鬼影（ghost）、回放系统的原因。
+
+### 生命周期（注册与销毁）
+
+- `OnEnable` → `KinematicCharacterSystem.EnsureCreation()` + `RegisterCharacterMotor(this)`（`KinematicCharacterMotor.cs:566`）
+- `EnsureCreation` 懒创建单例 + `DontDestroyOnLoad`（`KinematicCharacterSystem.cs:25`）
+- `OnDisable` → 从静态列表移除；`KinematicCharacterSystem.OnDisable` 直接 `Destroy(gameObject)`（`KinematicCharacterSystem.cs:110`）——防止热重载后出现两个系统
+- `Awake` 做三件重要事（`KinematicCharacterMotor.cs:779`）：
+  1. `ValidateData()`：绑定 Capsule、强制 `localScale = one`
+  2. **构建 `CollidableLayers`**：遍历 32 个 Layer，用 `Physics.GetIgnoreLayerCollision` 反推出"本层能撞谁"的掩码（788-793）
+  3. `SetCapsuleDimensions` 缓存 5 个关键偏移（见第 4 集）
+
+> 细节：为什么要自己算 `CollidableLayers`？因为 `Physics.CapsuleCastNonAlloc` 需要一个 LayerMask，而 Unity 的 IgnoreCollision 矩阵（Layer 碰撞表）不直接可读，只能 32 次探测反推。**这是"用物理引擎的查询 API 时绕不开的坑"**，面试可以主动提。
+
+### 一次 Tick 全景（本课程主图，抄在纸上）
+
+```
+FixedUpdate (System, DefaultExecutionOrder = -100)
+ ├─ [可选] PreSimulationInterpolationUpdate   把 Transform 拉回 Transient（上帧插值残影）
+ ├─ foreach Mover: VelocityUpdate             (目标位姿 → Velocity/AngularVelocity)
+ ├─ foreach Motor: UpdatePhase1
+ │    ├─ BeforeCharacterUpdate                ← 你的回调
+ │    ├─ 处理 MoveCharacter 队列
+ │    ├─ 解算初始重叠（非交互刚体）
+ │    ├─ 地面探测 + 吸附 + 落地速度投影
+ │    ├─ PostGroundingUpdate                  ← 你的回调
+ │    └─ 跟随 attachedRigidbody 移动
+ ├─ foreach Mover: 应用新位姿到 Transform + Rigidbody   ← 平台先动
+ ├─ foreach Motor: UpdatePhase2
+ │    ├─ UpdateRotation                       ← 你的回调
+ │    ├─ 处理 RotateCharacter 队列
+ │    ├─ 解算 attachedRigidbody 上浮 + 二次重叠
+ │    ├─ UpdateVelocity                       ← 你的回调（重力/加速/跳跃）
+ │    ├─ InternalCharacterMove（Sweep 解算）
+ │    ├─ 刚体冲量处理 / 平面约束 / 离散碰撞
+ │    └─ AfterCharacterUpdate                 ← 你的回调
+ └─ [可选] PostSimulationInterpolationUpdate  把 Transform 拉回 InitialTick（供 LateUpdate 插值）
+
+LateUpdate: CustomInterpolationUpdate           InitialTick → Transient 的 Lerp/Slerp
+```
+
+### 面试追问
+
+- **Q：为什么 `[DefaultExecutionOrder(-100)]`？**
+  → 必须在其他逻辑（AI、平台脚本、相机跟随）读 Transform 之前完成本帧角色位姿，否则会读到上一帧位置，产生"视觉延迟 1 帧"。
+- **Q：如果一帧跑了两次 FixedUpdate 会怎样？**
+  → 两次 Simulate 都会执行；`PostSimulationInterpolationUpdate` 每次把 Transform 复位到 InitialTick，所以不会有"位姿累积跳变"。这是本套插值方案能成立的关键（第 12 集详解）。
+
+---
+
+# 第 3 集 · KinematicCharacterSystem：两阶段调度与插值
+
+**目标**：能解释"为什么整个系统要拆成 Phase1 / Phase2"，这是 KCC 最核心的架构决策。
+
+### 代码走读
+
+```csharp
+// KinematicCharacterSystem.cs:175
+private static void Simulate(float deltaTime, List<KinematicCharacterMotor> motors, List<PhysicsMover> movers)
+{
+    foreach (PhysicsMover mover in movers) mover.VelocityUpdate(deltaTime);   // ① 平台算速度
+    foreach (KinematicCharacterMotor motor in motors) motor.UpdatePhase1(deltaTime); // ② 角色探测地面
+    foreach (PhysicsMover mover in movers) { /* 平台真正移动 */ }              // ③ 平台先动
+    foreach (KinematicCharacterMotor motor in motors) { motor.UpdatePhase2(deltaTime); /* 写入 Transform */ }
+}
+```
+
+### 为什么必须两阶段（本集最重要的 3 分钟）
+
+把一帧想成"**平台先动、角色后动**"，但角色的**地面检测**必须在平台移动**之前**完成，否则：
+
+1. 平台从 A 移到 B，角色还站在 A 的空中；
+2. 角色做地面检测 → 检测不到地面 → 判定为"离地"；
+3. 角色开始下坠 → 下一帧又贴回平台 → **每帧上下抖动**。
+
+KCC 的解法：
+
+- **Phase1（平台移动前）**：用平台**旧位姿**做地面探测，确定"我是否站在平台上、站在哪个点"；然后把平台速度作为 `_attachedRigidbodyVelocity` **额外移动角色一次**（`KinematicCharacterMotor.cs:1041`）。
+- **Phase2（平台移动后）**：解算因平台推挤/自身旋转产生的重叠（`1101-1174`），再跑自身的速度移动。
+
+于是角色的位移被拆成两笔：**平台带的位移（Phase1）+ 自己走的位移（Phase2）**。这就是 `Velocity => BaseVelocity + _attachedRigidbodyVelocity`（`546`）的由来。
+
+### 三个静态列表与容量
+
+- `CharacterMotors` / `PhysicsMovers` 是 `static List`（`14-15`），**全局唯一注册表**
+- `SetCharacterMotorsCapacity`（`53`）预分配，避免运行时扩容 GC
+- 注意：`foreach` 遍历静态 List，如果角色在回调里 `Destroy` 自己会 **抛 InvalidOperationException**（集合被修改）。实战坑：死亡后在回调里销毁角色 → 延迟到下一帧销毁。
+
+### 插值开关
+
+`FixedUpdate` → `if (!Settings.AutoSimulation) return;`（`122`）
+→ 关掉自动模拟后，你自己在任意时机调 `Simulate`（服务器/回放/自定义时间步）。
+
+### 面试追问
+
+- **Q：如果把 `AutoSimulation` 关掉，你会在哪里调 `Simulate`？**
+  → 联机服务器：按固定步长在同一处批量 tick 所有角色；回放：从快照重放；暂停：不调即冻结。
+- **Q：为什么 `RegisterPhysicsMover` 里强制 `interpolation = None`？（`98`）**
+  → 平台由 KCC 自己的插值系统接管，Rigidbody 插值会和它打架，产生双倍平滑/抖动。
+
+---
+
+## 第 3 集附 · 官方 3.x 是三阶段，本仓库为什么变成两阶段
+
+官方 User Guide 的 In-depth 章节列出的顺序是：
+
+```
+Phase1: 解初始重叠 → 地面探测与吸附 → 速度更新 → 交互刚体处理 → 按平台速度移动
+        ↓
+PhysicsMover.SimulateAtGoal         ← 平台"模拟到目标位姿"
+        ↓
+Phase2: 解 attached 刚体重叠 → 解平台重叠 → 角色按自身速度移动 → 解算旋转 → 应用最终位移
+        ↓
+Phase3: （收尾）
+PhysicsMover.Desimulate             ← 平台"退回原处"，供物理引擎下帧正常积分
+Physics transforms sync
+PhysicsMover.UpdateMovement
+```
+
+**为什么老版本要多一个 Phase3 + Desimulate？**
+因为老版本的平台是**用物理速度驱动**的：先把平台"瞬移"到目标位姿让角色去碰撞，再"退回"原位，让 PhysX 在真正的物理步里把它积分过去。否则平台会被物理引擎重复积分一次（走两倍距离）。
+
+**本仓库为什么能砍掉？**
+`PhysicsMover` 改成了**直接写 `Rigidbody.MovePosition`**（`KinematicCharacterSystem.cs:229-230`），平台的位姿由 KCC 自己的循环负责，不需要"退回再积分"。于是整个流程塌缩成：
+
+```
+Phase1（平台未动）→ 平台直接应用目标位姿 → Phase2（平台已动）
+```
+
+**面试怎么讲这一段（加分回答）**
+
+> "KCC 官方文档描述的是三阶段：Phase1 在平台移动前做地面探测，然后平台模拟到目标位姿，Phase2 解算角色移动，Phase3 让平台退回原位以避免被物理引擎重复积分。我读的这个重构版把 Phase3 删掉了，因为平台改为 `Rigidbody.MovePosition` 驱动，物理引擎不会再积分它。两阶段的前提是**平台完全由代码控制**；一旦你需要平台参与真实物理（被爆炸推动、被角色挤压产生反作用力），就必须把三阶段和 Desimulate 加回来。"
+
+> 注意：官方文档的 Phase1 列表里写了"Velocity update"，但**本仓库的 `UpdateVelocity` 明确在 Phase2**（`KinematicCharacterMotor.cs:1179`）。文档与代码有版本差异时，**以代码为准** —— 这也是面试官爱听的"我不迷信文档"。
+
+---
+
+# 第 4 集 · 数据模型：Transient 世界与 Report 家族
+
+**目标**：理解 KCC 的"三套坐标"和"四份报告"，这是读懂后面前提。
+
+### 三套位姿（必须分清，90% 的抖动问题出在这里）
+
+| 概念 | 字段 | 含义 |
+|---|---|---|
+| Transform | `_transform` | Unity 世界坐标，**渲染/其他系统看到的**，可被插值 |
+| Transient | `_transientPosition`、`_transientRotation` | **物理真相**，本 tick 解算后的权威位姿 |
+| InitialTick | `InitialTickPosition`、`InitialTickRotation` | 本 tick 开始前的位姿，**插值的起点** |
+
+插值公式（`KinematicCharacterSystem.cs:250`）：
+```csharp
+transform.SetPositionAndRotation(
+    Vector3.Lerp(InitialTickPosition, TransientPosition, f),
+    Quaternion.Slerp(InitialTickRotation, TransientRotation, f));
+```
+
+> 一句话：**Transient 是"逻辑"，Transform 是"表演"**。所有查询/解算只认 Transient，绝不能用 `transform.position` 做碰撞。
+
+### 四份报告（struct，全部值类型 = 零 GC）
+
+1. `CharacterGroundingReport`（`67`）：`FoundAnyGround` / `IsStableOnGround` / `SnappingPrevented` / `GroundNormal` / `InnerGroundNormal` / `OuterGroundNormal` / `GroundCollider` / `GroundPoint`
+2. `CharacterTransientGroundingReport`（`96`）：**去掉 Collider 引用**的版本 → 因为要序列化进 `GetState()`（存盘/回滚时不能持引用）。注意 `CopyFrom` 会把 `GroundCollider` 置 null（`88`）
+3. `HitStabilityReport`（`119`）：一次命中判定的完整上下文 —— `IsStable`、内外法线、`ValidStepDetected`、`SteppedCollider`、以及 6 个 ledge 字段
+4. `RigidbodyProjectionHit`（`143`）：把"撞到刚体"这件事**延迟记账**，等移动结束再统一算冲量
+
+### 胶囊几何缓存（`SetCapsuleDimensions`，`758`）
+
+```
+_characterTransformToCapsuleCenter     = center
+_characterTransformToCapsuleBottom     = center - up*(h/2)
+_characterTransformToCapsuleTop        = center + up*(h/2)
+_characterTransformToCapsuleBottomHemi = 下半球球心（= bottom + up*radius）
+_characterTransformToCapsuleTopHemi    = 上半球球心（= top - up*radius）
+```
+
+> 为什么要缓存？因为每帧要做十几次 `CapsuleCast`，每次都算一遍 `center ± height/2` 是纯浪费；而且**胶囊的"扫掠体"= 两个半球球心之间的线段**，用错点会漏检。
+> 面试点：为什么 KCC 强制 `localScale = 1`（`610`）？CapsuleCollider 的 radius/height 是**本地空间**，缩放会破坏"半径等比、高度不等比"，导致扫掠距离与实际体积不符 —— 这也是所有角色控制器的通病（要用缩放就改 `SetCapsuleDimensions` 的数值，而不是 Transform）。
+
+### 面试追问
+
+- **Q：`GroundingStatus` 和 `LastGroundingStatus` 为什么要两份？**
+  → 本帧结论 vs 上一帧结论。判断"刚落地"（`!Last.IsStable && Now.IsStable` → 投影速度，`942`）、"刚离地"、"上坡时失去地面"都要用到历史状态。**运动控制器本质是一个带记忆的状态机。**
+
+---
+
+# 第 5 集 · UpdatePhase1 逐行
+
+**目标**：能默写 Phase1 的五件事和顺序。
+
+### 五个步骤（按代码顺序）
+
+**① 防御性重置（`810-839`）**
+- NaN 检查：`BaseVelocity` 一旦 NaN 会污染整个 transform，永久坏掉。KCC 每帧清零兜底（`810`）
+- 禁止缩放：`lossyScale != 1` 直接 `Debug.LogError`（`818`）
+- `_transientPosition = _transform.position` —— **每 tick 从 Transform 重新同步**（因为上一帧插值改过它）
+- 存 `_initialSimulationPosition/Rotation`（供平面约束用，`1206`）
+
+**② 处理 `MoveCharacter` 队列（`841-862`）**
+
+`MoveCharacter(toPos)` 是**延迟执行**的（`701`）：只打脏标记，下一 tick 才真正走。实现方式很巧：把"目标点 - 当前点"换成速度，复用完整的 `InternalCharacterMove` 解算流程：
+
+```csharp
+Vector3 tmpVelocity = GetVelocityFromMovement(_movePositionTarget - _transientPosition, deltaTime);
+InternalCharacterMove(ref tmpVelocity, deltaTime);
+```
+
+> 面试点：**为什么用"速度"而不是直接设位置？** 因为要复用扫掠碰撞，否则瞬移会穿墙。这是"位移 = 速度 × dt"的统一抽象。
+
+**③ 初始重叠解算（`869-916`）**
+
+```csharp
+while (iterationsMade < MaxDecollisionIterations && !overlapSolved) {
+    int nbOverlaps = CharacterCollisionsOverlap(...);
+    for (...) {
+        if (GetInteractiveRigidbody(...) != null) continue;   // 动态刚体留给 Phase2
+        Physics.ComputePenetration(Capsule, pos, rot, other, ..., out dir, out dist);
+        dir = GetObstructionNormal(dir, IsStableOnNormal(dir));
+        _transientPosition += dir * (dist + CollisionOffset);  // 推出 + 1cm 安全缝
+        _overlaps[_overlapsCount++] = new OverlapResult(dir, collider); // 记账
+    }
+}
+```
+
+三个考点：
+- **只推静态**（`881`）：动态刚体/平台**还没移动**，现在推会把角色推到错误方向；它们留到 Phase2 平台动完再算
+- **记账 `_overlaps`**：`InternalCharacterMove` 开头会先用这些法线做一次速度投影（`1401-1418`），避免"刚推出又被吸回去"
+- `MaxDecollisionIterations` 默认 **1**：只解一次。堆叠场景下不够时会残留穿插 → 表现为"角色被塞进墙里" → 调大到 3~5
+
+**④ 地面探测与吸附（`919-957`）—— 本集高潮**
+
+```csharp
+if (MustUnground())
+    _transientPosition += _characterUp * (MinimumGroundProbingDistance * 1.5f); // 主动抬起，跳过吸附
+else {
+    float selectedGroundProbingDistance = MinimumGroundProbingDistance; // 0.005
+    if (!LastGroundingStatus.SnappingPrevented &&
+        (LastGroundingStatus.IsStableOnGround || LastMovementIterationFoundAnyGround))
+    {
+        // 上一帧站得稳 → 用"大距离"吸附（下坡贴地）
+        selectedGroundProbingDistance = StepHandling != None ? Mathf.Max(CapsuleRadius, MaxStepHeight) : CapsuleRadius;
+        selectedGroundProbingDistance += GroundDetectionExtraDistance;
+    }
+    ProbeGround(ref _transientPosition, _transientRotation, selectedGroundProbingDistance, ref GroundingStatus);
+}
+```
+
+**这段代码回答了面试必问的"为什么下坡不飞起来"**：
+- 站在地上时，向下探测距离被放大到 `max(radius, MaxStepHeight)`（默认 0.5），远远大于重力单帧位移（0.01~0.02），所以**下坡时角色被"吸"回地面**
+- 上一帧不在地面时，只探 0.005 —— 避免"离地瞬间被吸回去"导致跳不起来
+- `MustUnground()` 时反而**向上抬 0.0075**，强制脱离（跳跃用）
+
+**落地速度投影（`942-947`）** —— 极易被忽略但极重要：
+
+```csharp
+if (!LastGroundingStatus.IsStableOnGround && GroundingStatus.IsStableOnGround) {
+    BaseVelocity = Vector3.ProjectOnPlane(BaseVelocity, CharacterUp);           // 干掉 Y
+    BaseVelocity = GetDirectionTangentToSurface(BaseVelocity, GroundNormal) * BaseVelocity.magnitude; // 转到斜面
+}
+```
+
+> 不这么写会怎样：从 5 米高跳下，重力累积到 -20m/s，落地那一刻不归零，下一帧你按跳跃仍然从 -20 起步 → "落地粘滞 / 跳不起来 / 上坡速度被吃掉"。
+
+**⑤ 跟随 attachedRigidbody（`961-1051`）**
+
+顺序：`_lastAttachedRigidbody = _attachedRigidbody` → 用地面信息重新识别平台（`973`）→ 算平台在这个点的线速度/角速度（`987`）→ **打滑检测**（`994`：平台突然减速 > `RigidbodySlipVelocity` 就 `ForceUnground`）→ 动量守恒（`1002`）→ 用平台速度做一次完整移动（`1041`）。
+
+> 「打滑」那段是为了"平台急停时角色因惯性被甩出去"——把角色从平台上放开，让它按自己的速度飞。
+
+### 面试追问
+
+- **Q：`GroundDetectionExtraDistance` 干什么用？**
+  → 额外加长吸附距离，用于"高速下坡/大台阶下行"场景，代价是可能吸附到不想要的低处地面。
+- **Q：为什么 Phase1 不调用 `UpdateVelocity`？**
+  → 因为此时平台还没移动、重叠还没解算，速度会被错误的地面/障碍信息污染。速度必须等世界状态确定后再更新（Phase2，`1179`）。
+
+---
+
+# 第 6 集 · 地面检测：ProbeGround 与稳定性判定
+
+**目标**：读懂"一次向下扫掠如何变成沿斜坡滑动的多次迭代"，以及"稳定"的三层定义。
+
+### ProbeGround（`1281-1353`）算法
+
+```
+while (剩余距离 > 0 && 迭代 <= 2 && 未结束):
+    CapsuleCast 向下（距离 = 剩余距离）
+    命中?
+      否 → 结束（没地面）
+      是 → 得到 hit.normal / hit.point
+           EvaluateHitStability(...)   // 稳定性判定
+           稳定  → 记录 GroundingReport，吸附到 (hit.distance - CollisionOffset)，结束
+           不稳定 → 沿命中点前进，向上回弹，方向改为"投影到命中面上"，继续
+```
+
+**不稳定分支的三个动作（`1332-1343`）是"沿着斜坡走"的关键：**
+
+```csharp
+Vector3 sweepMovement = groundSweepDirection * groundSweepHit.distance + atRotation * _cachedWorldUp * Mathf.Max(CollisionOffset, groundSweepHit.distance);
+groundSweepPosition += sweepMovement;                  // 挪到命中点上方
+groundProbeDistanceRemaining = Mathf.Min(GroundProbeReboundDistance, ...); // 只剩 0.02
+groundSweepDirection = Vector3.ProjectOnPlane(groundSweepDirection, groundSweepHit.normal).normalized; // 贴着面走
+```
+
+也就是说：碰到 70° 的陡坡（> `MaxStableSlopeAngle` 60°，不稳定）时，第一次垂直向下扫到坡面 → 判定"不稳定" → 方向改成沿坡面 → 只剩 0.02 的探测距离继续扫 → 若在坡底 2cm 内接到平地，就判定为"站在平地上"。**最多 3 次扫掠**（`MaxGroundingSweepIterations = 2`，计数从 0 开始，含首次）。
+
+> 作用：站在陡坡边缘/斜坡+平地交界处，能"探到"脚下 0.5 米内的真实平地面，避免误判为悬空。
+
+### "稳定"的三层定义（面试高频）
+
+**第 1 层：法线夹角（`IsStableOnNormal`，`1226`）**
+
+```csharp
+return Vector3.Angle(_characterUp, normal) <= MaxStableSlopeAngle; // 默认 60°
+```
+
+> 为什么用 `Angle` 而不是 `Dot`？`Dot > cos(θ)` 需要自己算阈值，且 `Dot` 对"法线未归一化"不敏感；`Angle` 语义直白、可读性强，且 `Vector3.Angle` 内部做了 Clamp 防 NaN。性能上每秒只有几十次调用，不值得优化。
+
+**第 2 层：Ledge / Denivelation 特例（`IsStableWithSpecialCases`，`1234`）**
+
+- **Ledge（边缘）**：法线稳定 ≠ 真的能站。站在台阶边缘，脚一半悬空时，KCC 会在命中点左右各打一条向下射线（`EvaluateHitStability` 的 `1968-1986`），若一边稳定一边不稳定 → `LedgeDetected = true`
+  - `IsOnEmptySideOfLedge && DistanceFromLedge > MaxStableDistanceFromLedge`（默认 0.5）→ **判为不稳定，掉下去**
+  - `IsMovingTowardsEmptySideOfLedge` 且速度 > `MaxVelocityForLedgeSnap`（默认 0 = 只要朝外走就不吸附）→ **不吸附，自然走下落**
+- **Denivelation（落差角）**：`InnerNormal` 与 `OuterNormal` 夹角 > `MaxStableDenivelationAngle`（默认 180 = 关闭）→ 判为"会从斜坡弹射出去"
+
+**第 3 层：台阶（第 9 集）**
+
+```csharp
+if (StepHandling != None && !stabilityReport.IsStable) { DetectSteps(...); }
+```
+
+> 注意 `2007` 的条件：**只有"不稳定"才尝试台阶**。稳定命中不需要台阶。
+
+### 面试追问
+
+- **Q：`StableGroundLayers` 和 `CollidableLayers` 为什么分开？**
+  → `CollidableLayers` 来自 Layer 碰撞矩阵（自动推导），决定"能不能撞"；`StableGroundLayers` 是手动配置，决定"撞到了算不算地面"。地面探测用 `CollidableLayers & StableGroundLayers`（`2423`），所以你可以让角色撞墙但不在墙上"站住"。
+- **Q：角色在斜坡上抖动，调什么？**
+  → ① `MaxStableSlopeAngle` 与坡角别贴太近（临界角会造成稳定/不稳定来回翻转）；② 关掉/调整 `LedgeAndDenivelationHandling`；③ 检查 `StableGroundLayers` 是否把装饰物也包含进来；④ `GroundDetectionExtraDistance` 太大导致吸附到远处面。
+
+---
+
+# 理论锚点 · KCC 就是 Collide-and-Slide 的工业实现
+
+**目标**：把 KCC 放回算法谱系里。能说出"这套东西 1999 年就在 Quake 里跑"，面试层次立刻不同。
+
+### 一、算法血统
+
+```
+1996 Quake   PM_SlideMove        平面集 + 多次 bump + 沿平面滑动
+1999 Quake3  bg_slidemove.c      同上，工程化（4 次 bump / 5 个裁剪平面 / OVERCLIP）
+2003 Fauerby "Improved Collision detection and Response"
+             椭球空间 + 扫掠球 + 递归滑动（学术化，很多引擎的教科书来源）
+2017+ KCC    CapsuleCast + PhysX ComputePenetration + 地面吸附/台阶/平台
+```
+
+### 二、逐项对照（这张表就是"你真的懂"的证据）
+
+| Quake3 `PM_SlideMove` | KCC（本仓库） | 说明 |
+|---|---|---|
+| `numbumps = 4` | `MaxMovementIterations = 5`（最多 6 次） | 迭代预算，超了就停 |
+| `planes[MAX_CLIP_PLANES=5]` | `MovementSweepState`（Initial/AfterFirstHit/Crease/Corner） | Quake 用平面数组，KCC 用状态机——**KCC 更省内存、语义更清晰** |
+| `PM_ClipVelocity` + `OVERCLIP` | `CollisionOffset = 0.01` + `ProjectOnPlane` | 都是"沿法线多推一点，避免下一帧起点重叠" |
+| `if (numplanes >= MAX_CLIP_PLANES) break;` | `FoundBlockingCorner → velocity = 0` | 多面夹住时停止 |
+| 贴地时先沿地面平面 clip | `HandleVelocityProjection` 的"贴地分支" | 保证沿地面滑行而不是被顶起 |
+| 上台阶 `PM_StepSlideMove` | `DetectSteps / CheckStepValidity` | Quake 分两趟（先不台阶，再台阶）；KCC 在命中判定阶段就决定 |
+| 命中 `trace_t` | `HitStabilityReport` | KCC 的报告信息量远大于 Quake（含 ledge、内外法线、台阶碰撞体） |
+
+### 三、KCC 比教科书多出来的部分（面试可展开）
+
+1. **地面吸附（Snap）**：论文里的 collide-and-slide 不管"下坡会不会飞起来"，KCC 用"上一帧是否稳定 → 决定探测距离"解决
+2. **稳定性判定（Stable）**：把"法线是否可站"抽象成 `HitStabilityReport`，并允许用户改（`ProcessHitStabilityReport`）
+3. **Ledge / Denivelation**：站在边缘是否掉下去的启发式判定（论文没有）
+4. **移动平台跟随**：`attachedRigidbody` + 两阶段调度（论文没有）
+5. **刚体交互**：伪冲量交换（论文没有）
+6. **胶囊体而非椭球**：省掉"椭球空间变换"（Fauerby 论文的核心优化之一），代价是"人形在低矮空间的表现"略差于椭球
+
+> 一句可以背下来的总结：
+> **"KCC = Quake 的 collide-and-slide 主干 + PhysX 的查询能力 + 一套为角色手感服务的稳定性判定层。"**
+
+---
+
+# 第 7 集 · InternalCharacterMove：运动解算核心
+
+**目标**：这是整个 KCC 的心脏（`1384-1579`，195 行）。能画出流程图，能讲清"为什么最多 6 次扫掠"。
+
+### 整体结构
+
+```
+InternalCharacterMove(velocity, dt):
+  1. 用上一步的 _overlaps 做速度预投影          (1401-1418)
+  2. while (还有剩余位移 && 扫掠次数 <= Max && 上一轮撞到了东西):
+       2.1 先用 Overlap 检测"起点已重叠"          (1429-1462)
+       2.2 否则 CapsuleCast 找最近命中            (1464-1474)
+       2.3 有命中 → 前进到命中点前 0.01           (1478-1482)
+       2.4 判定命中稳定性 EvaluateHitStability    (1485-1487)
+       2.5 若命中可踩 → 台阶处理（传送 + 投影）    (1490-1523)
+       2.6 否则 → 算 obstructionNormal，回调，      (1526-1553)
+                 做速度投影（含 crease/corner）
+       2.7 没命中 → 退出循环
+  3. 把剩余位移一次性走完（无遮挡）              (1575)
+```
+
+### 四个必须能讲出的细节
+
+**① 为什么先做"初始重叠检测"而不是直接 CapsuleCast？（`1429`）**
+
+CapsuleCast 对"起点已经嵌在墙里"的情况**返回 distance = 0 且法线方向不可靠**（PhysX 的已知行为）。所以先用 `OverlapCapsuleNonAlloc + ComputePenetration` 拿**分离法线**，选"最阻碍前进方向"的那个（`1447-1450`：`dot < 0` 且最小）作为命中。
+
+**② 为什么每轮只前进到"命中点 - 0.01"？（`1479`）**
+
+`CollisionOffset = 0.01` 是**皮肤厚度**：永远不真正接触，避免浮点误差导致的"下一帧起点重叠"。这个 0.01 贯穿整个系统（推出距离、台阶、地面吸附都用它）。
+
+**③ 为什么每轮都要重新投影速度？（`1546`）**
+
+贴墙滑行 = 一次扫掠撞墙 → 速度投影掉法线分量 → 剩余位移变小 → 继续扫掠。多面（墙角）需要多轮，每轮都重新算，这才是"沿墙滑行"的正确实现；一次投影只能处理单平面。
+
+**④ 迭代预算与"防卡死"（`1561-1571`）**
+
+```csharp
+sweepsMade++;
+if (sweepsMade <= MaxMovementIterations) continue;
+if (KillRemainingMovementWhenExceedMaxMovementIterations) remainingMovementMagnitude = 0f;
+if (KillVelocityWhenExceedMaxMovementIterations) transientVelocity = Vector3.zero;
+wasCompleted = false;
+```
+
+`MaxMovementIterations = 5` → 最多 6 次扫掠（计数 0..5 均可继续）。超过就算"解算失败"：
+- 剩余位移清零（避免继续塞进几何体）
+- 速度清零（避免速度一直累积成"爆炸"）
+- 返回 `false` → `MoveCharacter` 场景下会把 `ProcessVelocityForRigidbodyHits` 也跳过
+
+> 面试点：**这是一个"预算制"的迭代求解器**，不是收敛式求解器（没有"迭代到误差小于 ε"）。牺牲极端情况的精确性换取**确定性上界**（固定开销、可预测帧时间），这是实时游戏引擎的标准取舍。
+
+### 面试追问
+
+- **Q：为什么会卡在墙角抖？**
+  → 相邻两帧命中不同面 → 速度在两面之间来回投影。解药就是 crease/corner 处理（第 8 集），把"两个平面都过不去"识别成"沿交线走"或"完全停住"。
+- **Q：高速穿透怎么防？**
+  → `CapsuleCast` 是连续检测，理论上不穿。真正的穿透来自：① 起点已重叠（被别的系统塞进去）；② `_internalCharacterHits` 只有 16 个槽位（`549`），命中太多时**最近命中可能被挤出缓冲**；③ 目标移动太远，单帧位移超过场景厚度本身没有意义 —— 需要限制最大速度。
+
+---
+
+# 第 8 集 · 速度投影的数学
+
+**目标**：能把 `HandleVelocityProjection` 的四个分支画出来，并解释"斜坡上不减速"。
+
+### 核心函数 `HandleVelocityProjection`（`1741`）
+
+```csharp
+if (站立稳定 && !MustUnground) {
+    if (稳定命中)  // 斜坡
+        velocity = GetDirectionTangentToSurface(velocity, obstructionNormal) * velocity.magnitude; // 保长度！
+    else {        // 墙
+        Vector3 right = Cross(obstructionNormal, GroundNormal).normalized;
+        Vector3 up    = Cross(right, obstructionNormal).normalized;
+        velocity = GetDirectionTangentToSurface(velocity, up) * velocity.magnitude;
+        velocity = ProjectOnPlane(velocity, obstructionNormal);   // 再贴墙
+    }
+} else {          // 空中
+    if (稳定命中) { velocity = ProjectOnPlane(velocity, CharacterUp); velocity = Tangent(...) * mag; } // 落地
+    else          velocity = ProjectOnPlane(velocity, obstructionNormal);  // 撞墙：直接砍掉法线分量
+}
+```
+
+### 关键差异：`ProjectOnPlane` vs `GetDirectionTangentToSurface`
+
+| | 效果 | 用在哪 |
+|---|---|---|
+| `ProjectOnPlane(v, n)` | **保留切向分量，长度变短**（能量损失） | 撞墙、空中撞面 |
+| `GetDirectionTangentToSurface(v, n) * v.magnitude` | **方向转到切面，长度不变**（能量守恒） | 斜坡、落地 |
+
+`GetDirectionTangentToSurface` 的实现（`1373`）：
+
+```csharp
+Vector3 directionRight = Vector3.Cross(direction, _characterUp);
+return Vector3.Cross(surfaceNormal, directionRight).normalized;
+```
+
+> 数学含义：先用 `cross(dir, up)` 得到"水平右向量"（与角色上方向正交），再 `cross(normal, right)` 得到"落在该表面上、且与 right 垂直的方向" —— 即在**保持角色 up 参照系**的前提下，把方向贴到表面。**这是 KCC 里最漂亮的三行代码**，面试时能推一遍直接加分。
+> 对比 `ProjectOnPlane(dir, normal)`：那个是纯几何投影，不做 up 参照，走斜坡时会有横向偏移。
+
+### Crease / Corner（`1633-1696` + `1698-1736`）
+
+```
+第 1 次不stable命中 → 普通投影，状态 = AfterFirstHit
+第 2 次不stable命中 → EvaluateCrease 判断是不是"真实的交线约束"
+    是 → 站立时：速度清零（FoundBlockingCorner，卡死）
+         空中时：速度投影到交线方向（FoundBlockingCrease，沿缝滑）
+第 3 次命中 → 无条件清零（FoundBlockingCorner）
+```
+
+`EvaluateCrease` 的判定（`1707-1725`）：交线方向 = `Cross(n1, n2)`；若两平面近似平行（`dot > 0.999`）直接不成立；否则把两个法线、以及"入射速度"都投影到垂直于交线的平面上做二维比较，确认速度确实**同时被两个平面挡住**，才认账。
+
+> 为什么要这么麻烦？因为"两次命中"不等于"墙角"：斜坡 + 缓坡的第二次命中，其实还能继续滑。误判成角会让角色"贴墙就停住"，手感极差。
+
+### 面试追问
+
+- **Q：为什么在斜坡上走不减速，但撞墙会减速？**
+  → 斜坡用"保长度重定向"（因为你是在地面上走，重力已由地面支撑），撞墙用"投影"（法线方向速度被墙吸收）。这是**能量模型**，不是几何巧合。
+- **Q：`OnMovementHit` 回调能改什么？**
+  → 能改 `HitStabilityReport`（比如强制某个碰撞体"不稳定"），进而改变投影分支。**能改报告，不能改速度** —— 速度想改就 override `HandleVelocityProjection`（`protected virtual`，`1741`）。
+
+---
+
+# 辨析 · 社区文章的 6 个不准确说法（你能纠正 = 真读过源码）
+
+**目标**：网上讲 KCC 的文章很多，但大多停在"扫掠 + 投影"的科普层。下面 6 条是常见的**简化甚至错误**说法，能逐条纠正，面试官立刻知道你不是看博客背的。
+
+### ① "斜坡就是把速度 `ProjectOnPlane` 到坡面上"
+
+**不准确**。KCC 用的是 `GetDirectionTangentToSurface`（`1373`）：
+
+```csharp
+Vector3 directionRight = Vector3.Cross(direction, _characterUp);
+return Vector3.Cross(surfaceNormal, directionRight).normalized;   // 再 × 原速度长度
+```
+
+区别：
+- `ProjectOnPlane` 是纯几何投影 → **速度长度变短**（斜坡上越走越慢），且不考虑角色朝向参照
+- `GetDirectionTangentToSurface` 先构造"以角色 up 为基准的水平右向量"，再叉乘出"贴在面上、且不产生横向偏移"的方向，最后**保持原速度长度**
+
+这就是"斜坡上走不减速、但撞墙会减速"的源码级原因（第 8 集）。
+
+### ② "Crease / Corner 就是用两个法线的点积判断，`dot > 0` 是 Crease"
+
+**过度简化**。真实实现 `EvaluateCrease`（`1698-1736`）做了三步：
+
+1. 交线方向 = `Cross(n1, n2)`，若两法线近似平行（`dot > 0.999`）直接否决
+2. 把两个法线**投影到垂直于交线的平面**上，得到二维夹角关系
+3. 把"上一轮的速度方向"也投影过去，检查它是否**同时被两个平面挡住**
+
+为什么不能只看点积？因为在斜面上，两个法线点积为正/负与"能不能沿交线滑"没有稳定对应关系——斜墙 + 坡面会让点积法误判成"能过"，角色就会往墙角里钻。**用点积讲原理可以，用点积写代码会出 bug** —— 这句话面试可以直接说。
+
+### ③ "第三次命中就直接速度清零"
+
+**漏了空中分支**。代码里（`1683-1690`）：
+
+- `FoundBlockingCrease`（还在空中）→ 速度**投影到交线方向**，继续沿缝滑
+- `FoundBlockingCorner`（已站稳）→ 速度**清零**
+- 第三次不 stable 命中 → 无条件进 `FoundBlockingCorner`
+
+如果空中也清零，就会出现"跳跃中撞到墙角瞬间悬停"的卡顿。这正是第 8 集说的"能改报告、不能改速度"的边界。
+
+### ④ "上台阶是免费的、没有代价"
+
+**省了位移，但没省速度**。`1517` 明确做了：
+
+```csharp
+transientVelocity = Vector3.ProjectOnPlane(transientVelocity, CharacterUp);  // 竖直分量清零
+```
+
+不清零会带着下压速度上台 → 下一帧被地面顶回 → 抽搐。而且台阶是**传送**过去的，不消耗位移，所以"上台阶不变慢"是设计选择，不是免费的午餐。
+
+### ⑤ "高速时 KCC 绝对安全，不会飞"
+
+**会**。这是社区里真实存在的"一飞冲天"：
+
+- 高速撞到一个**可稳定站立**的斜面时，速度会被**重定向到坡面切线**（保长度）
+- 如果速度足够大、坡面足够陡，切线方向可能是**朝上**的 → 角色被"弹"上坡顶甚至飞出
+
+源码里的对策只有"收紧 `MaxStableSlopeAngle`"和"限制最大速度"；更彻底的做法是 override `HandleVelocityProjection`（`1741`），对稳定命中做速度上限或额外重力。**能主动说出这个坑，说明你真的跑过高速角色。**
+
+### ⑥ "Kinematic 就是 IK"
+
+**完全是两个东西**（社区真的有人混淆）：
+
+- **Kinematic（运动学）**：位置/旋转由代码给定，不参与物理积分。KCC 的"Kinematic"是这个意思
+- **IK（Inverse Kinematics，逆运动学）**：由手/脚的末端位置反解关节旋转，用于瞄准、踩地、抓握
+
+角色控制器是前者；后者是动画层的技术，两者可以同时存在（KCC 角色照样可以挂 IK 做踩地）。
+
+---
+
+# 第 9 集 · 台阶 Step Handling
+
+**目标**：能讲清"一次台阶检测要做几次射线"，以及 Standard 与 Extra 的区别。
+
+### 两处台阶代码
+
+1. **判定**：`DetectSteps`（`2024`）/ `CheckStepValidity`（`2058`）—— 回答"这个障碍物算不算能踩的台阶"
+2. **执行**：`InternalCharacterMove` 里的 `1490-1523` —— 回答"那就传送上去"
+
+### DetectSteps 算法（`2024`）
+
+```
+起点 = hitPoint - 垂直分量 + up*MaxStepHeight + 水平方向*0.03   (2030)
+向下 CapsuleCast，高度 = MaxStepHeight + 0.01，收集多个命中     (2033)
+CheckStepValidity: 挑"最远"的命中（= 台阶顶面）
+    ① 该位置无重叠（Overlap）
+    ② 从命中点向外再打一条向下射线，确认"外侧坡面稳定"
+    ③ 从当前角色位置向上 CapsuleCast，确认上方没挡住（净空）
+    ④ 内侧确认：AllowSteppingWithoutStableGrounding ? true :
+         从"台阶高度的胶囊中心"向下打 → 或从"台阶内沿"向下打，任一稳定即可
+```
+
+- **复用判定结果（关键优化）**：`EvaluateHitStability` 在移动命中时就已经算出 `ValidStepDetected` 和 `SteppedCollider`（`2013`）。执行阶段只需再做一次向下扫掠，然后比对"扫到的 collider" 与 `SteppedCollider` **是不是同一个**（`1507`）——相同才算合法台阶，不同就说明扫到的是天花板或别的物体。这样省掉了重新判断台阶合法性的整套流程。
+
+> 为什么选"最远"命中？台阶顶面是向下扫掠中**最后一个**有效面（再往前就是地面）。取最远 = 踩到顶面边缘，能最大化前进量。
+
+### 执行（`1490-1523`）的两个关键取舍
+
+```csharp
+if (StepHandling != None && moveHitStabilityReport.ValidStepDetected) {
+    float obstructionCorrelation = Mathf.Abs(Vector3.Dot(closestSweepHitNormal, _characterUp));
+    if (obstructionCorrelation <= CorrelationForVerticalObstruction) {  // 0.01，只对"近乎垂直的墙"做台阶
+        ... 向下扫到台阶面 ...
+        tmpMovedPosition = endStepPosition;      // 直接传送
+        transientVelocity = ProjectOnPlane(transientVelocity, CharacterUp);  // 水平速度保留，竖直清零
+    }
+}
+```
+
+- **竖直速度清零**：否则上台阶瞬间会带着"下压速度"，下一帧又被地面顶起来 → 抖动
+- **不做位移补偿**：上台阶是"免费"的，不减速 —— 这是设计选择，追求手感。想要"上台阶变慢"就自己在这一步扣速度
+
+### Standard vs Extra（`2043`）
+
+- `Standard`：只做"从角色位置上方垂直下落"的检测，够用于大多数台阶
+- `Extra`：再做一次"从角色位置 + MaxStepHeight、向前 `MinRequiredStepDepth` 处"的检测 —— 能踩到**更矮/更窄**的台阶（代价：多一次扫掠 + 可能踩到不该踩的矮边）
+
+### 面试追问
+
+- **Q：角色上台阶时"抽搐"？**
+  → ① `MinRequiredStepDepth` 太大（`ValidateData` 会 clamp 到 `CapsuleRadius`）；② `MaxStepHeight` 与美术台阶高度贴近临界值；③ 台阶碰撞体是多个薄盒拼接，存在缝隙；④ 台阶顶层不是稳定面（法线角度超限）。
+- **Q：为什么台阶检测要求"障碍物法线接近水平"（`obstructionCorrelation <= 0.01`）？**
+  → 因为台阶的**立面必须是竖直的**。斜坡不需要台阶处理（由稳定地面逻辑接管），如果对斜面也做台阶，会出现"沿斜坡瞬移"。
+
+---
+
+# 第 10 集 · 移动平台 PhysicsMover
+
+**目标**：能解释 `VelocityUpdate` 的一行公式，以及为什么平台必须 kinematic。
+
+### 数据流
+
+```
+IMoverController.UpdateMovement(out goalPos, out goalRot, dt)   ← 你决定去哪
+        ↓
+PhysicsMover.VelocityUpdate: Transient 直接设为 goal
+        Velocity = (goalPos - initPos) / dt
+        AngularVelocity = Deg2Rad * (rotationDelta).eulerAngles / dt   ← 注意这里有坑
+        ↓
+System.Simulate 把新位姿写入 Transform + Rigidbody.position
+        ↓
+角色的 Phase2 做重叠解算、Phase1 算 _attachedRigidbodyVelocity
+```
+
+### 代码要点
+
+- `ValidateData`（`143`）：强制 `isKinematic = true`、`centerOfMass = 0`、`maxAngularVelocity = Infinity`、`maxDepenetrationVelocity = Infinity`、`interpolation = None`
+  → 目的：让平台**完全由代码控制**，物理引擎不许推它；`maxDepenetrationVelocity = Infinity` 防止角色被挤在平台和墙之间时平台被"顶开"
+- `MoveWithPhysics`（`35`）：`true` 用 `Rigidbody.MovePosition`（走物理插值管线，能正确推开动态刚体）；`false` 直接写 `position`
+- 插值同步（`KinematicCharacterSystem.cs:262-267`）：平台每帧记录 `PositionDeltaFromInterpolation`，供"站在平台上的角色"做额外补偿（官方示例角色用它做视觉平滑）
+
+### 已知坑：`eulerAngles` 的 0~360 回绕
+
+`PhysicsMover.cs:255`：
+
+```csharp
+Quaternion rotationFromCurrentToGoal = TransientRotation * Quaternion.Inverse(InitialSimulationRotation);
+AngularVelocity = (Mathf.Deg2Rad * rotationFromCurrentToGoal.eulerAngles) / deltaTime;
+```
+
+`eulerAngles` 返回 0~360，一个 **-1°** 的旋转会被解析成 **359°**，角速度瞬间变成 359 倍 → 角色被甩飞。
+**修法**：把欧拉角归一化到 (-180, 180]：
+
+```csharp
+Vector3 e = rotationFromCurrentToGoal.eulerAngles;
+e.x = e.x > 180 ? e.x - 360 : e.x;
+e.y = e.y > 180 ? e.y - 360 : e.y;
+e.z = e.z > 180 ? e.z - 360 : e.z;
+AngularVelocity = Mathf.Deg2Rad * e / deltaTime;
+```
+
+> 这类"源码里的小 bug"是面试**极佳的谈资**：说明你不是背 API，而是真的读过、想过、验证过。同类还有 `StoreRigidbodyHit` 对"另一个 KCC"的提前 return（`1610`），使得 `ProcessVelocityForRigidbodyHits` 里"角色互推"的分支成为死代码（详见第 11 集）。
+
+### 面试追问
+
+- **Q：平台为什么必须是 kinematic Rigidbody，不能是纯 Transform？**
+  → ① 需要 `Rigidbody.velocity` 让物理系统知道它"在动"，动态刚体才会被正确推开；② 需要 `attachedRigidbody` 让 KCC 能通过 `GroundCollider.attachedRigidbody` 识别"这是可跟随的物体"（`973`）。
+- **Q：玩家站在两个平台交界处会怎样？**
+  → 只会识别**地面探测命中的那个 collider** 的 rigidbody，另一个平台的速度不生效 → 交界处会有速度跳变。这是 KCC "单 attached rigidbody"模型的固有局限，需要自己做混合。
+
+---
+
+# 第 11 集 · 刚体交互与推箱子
+
+**目标**：理解 KCC 的"伪物理"，能回答"为什么推箱子不是真的物理"。
+
+### 三段式设计
+
+1. **记账**：移动中撞到刚体 → `StoreRigidbodyHit`（`1606`）存 `RigidbodyProjectionHit`
+   - 去重 ①：结算时同一个刚体只吃一次冲量（`_ridbodiesPushedThisMove.Contains`，`1789`）
+   - 过滤 ②：**撞到另一个 KCC 直接 return，不记账**（`1610`：`if (hitRigidbody.GetComponent<KinematicCharacterMotor>()) return;`）
+2. **结算**：`ProcessVelocityForRigidbodyHits`（`1783`）在移动结束后统一算
+3. **冲量**：`ComputeCollisionResolutionForHitBody`（`1860`）
+
+### 质量比模型
+
+```csharp
+characterToBodyMassRatio = mC / (mC + mB);          // 1822
+if (!hitBodyIsDynamic) ratio = 0;                    // 撞不动的东西，角色吃全部反弹 (1832)
+else if (InteractionType == Kinematic) ratio = 1;     // 运动学模式：角色弹回，箱子不动 (1837)
+```
+
+冲量（`1867-1886`）：
+
+```csharp
+// 1) 把移动阶段被投影掉的法线速度"还回来"
+if (dot(characterVel, normal) < 0) velocityChangeOnCharacter += normal * dot(characterVel, normal);
+// 2) 交换法线方向的相对速度（按质量比分配）
+Vector3 rel = normal * (bodyVelOnN - charVelOnN);
+velocityChangeOnCharacter += rel * (1 - ratio);
+velocityChangeOnBody      += -rel * ratio;
+```
+
+给箱子的力用 `AddForceAtPosition(..., ForceMode.VelocityChange)`（`1852`）—— **直接改速度**，不是力，所以质量只通过 ratio 影响，不会出现"箱子太重推不动"的物理真实感。
+
+### 三种交互模式（`RigidbodyInteractionType`，`7`）
+
+| 模式 | 角色 | 刚体 | 用途 |
+|---|---|---|---|
+| `None` | 穿过去 | 不受影响 | 纯 PVE 小怪 |
+| `Kinematic` | 完全弹回 | 不动（但会被 WakeUp） | "撞墙感"，最便宜 |
+| `SimulatedDynamic` | 质量比交换 | 受力 | 推箱子、多人互撞 |
+
+> `SimulatedDynamic` 额外调用 `HandleSimulatedRigidbodyInteraction`（`1775`，空实现）—— 留给你自定义，比如"角色质量随背包变化"、"冲量按部位衰减"。
+
+### 重要发现：字符-字符互推在本版本是死代码
+
+因为 `StoreRigidbodyHit` 在 `1610` 就把"撞到另一个 KCC"直接 return 掉了，所以 `_internalRigidbodyProjectionHits` 里**永远不会出现另一个角色**。于是 `ProcessVelocityForRigidbodyHits` 里这两段分支永远不执行：
+
+- `hitBodyIsCharacter` 判定（`1800`）与 `hitCharacterMotor.SimulatedCharacterMass` 取值（`1807`）
+- `hitCharacterMotor.BaseVelocity += velocityChangeOnCharacter`（`1848`）
+
+**结论**：KCC 的角色间碰撞走的是"运动解算时相互被当作普通碰撞体挡住"，而不是"冲量交换"。玩家之间会互相挡住、能踩在别人头上（如果法线稳定），但不会"撞飞"。
+
+**想要互推怎么做**：删掉 `1610` 的提前 return，并保证每个角色在 `ProcessVelocityForRigidbodyHits` 里收到的冲量能落到**下一个 tick** 的 `BaseVelocity`（否则会因 tick 顺序产生不对称）。
+
+### 面试追问
+
+- **Q：为什么先记账再结算，不能边撞边推？**
+  → 因为一次移动会撞多个物体，且顺序影响结果（先推 A 可能改变与 B 的接触）。**延迟到移动结束后统一求解**，结果与命中顺序无关，更稳定、更可复现。
+- **Q：两个玩家对撞，为什么有时穿模？**
+  → 见第 10 集的"已知坑"：`BaseVelocity` 的累加可能落在对方已经算过的 tick 之后。解法：用 `KinematicCharacterSystem` 的确定性顺序（列表顺序固定），或把角色间交互改成显式的一对一解算。
+
+---
+
+# 第 12 集 · 插值与时间步
+
+**目标**：能解释"为什么 KCC 自己写插值，而不是用 Rigidbody.interpolation"。
+
+### 完整帧流水（很重要，能背下来）
+
+```
+FixedUpdate #1（可能 0 次/帧，也可能 2 次）
+   PreInterp:  变换 = Transient（上帧末位姿）
+   Simulate:   Transient 更新到新位姿，并把 Transform 设为 Transient
+   PostInterp: Transform 拉回 InitialTick（本 tick 起点）
+LateUpdate
+   f = (Time.time - tickStartTime) / tickDeltaTime
+   Transform = Lerp(InitialTick, Transient, f)
+```
+
+关键点：
+- `_lastCustomInterpolationStartTime` / `_lastCustomInterpolationDeltaTime`（`17-18`）记录**最后一次物理 tick 的时刻与步长**
+- `f` 是 `Clamp01`：物理卡顿时 f 会到 1，角色停在最新位姿（不 extrapolate，避免抖动）
+- 一帧两次 FixedUpdate 时：第二次 PreInterp 把 Transform 拉回 Transient（丢弃上一次插值的残影），再模拟。**所以插值不会累积误差**
+
+### 为什么不用 `Rigidbody.interpolation`
+
+1. 角色的 Transform 是"直接写的"，根本没有 Rigidbody 参与积分，Unity 的插值管不到
+2. KCC 的 Body 是 kinematic capsule，`Rigidbody.interpolation` 在 kinematic 上行为不稳定且与 `MovePosition` 混用会打架（`PhysicsMover.RegisterPhysicsMover` 直接关掉它，`98`）
+3. 自己写可以统一处理"角色 + 平台"的插值，且能拿到 `PositionDeltaFromInterpolation` 做额外补偿
+
+### 时间步与手感（面试常问）
+
+- 物理固定 `Time.fixedDeltaTime`（默认 0.02 = 50Hz）。角色移动在 50Hz 下解算，渲染在 60~144Hz 下插值
+- **不要把 `Time.deltaTime` 传给 `Simulate`**。`FixedUpdate` 里用 `Time.deltaTime`（= fixedDeltaTime）是对的，但若你手动调 `Simulate`，应固定步长以保证确定性
+- 步长越小 → 解算越精细（穿模更少），但 CPU 更高；步长越大 → 高速角色更容易"撞进"几何体
+
+### 面试追问
+
+- **Q：为什么插值会让"打击判定"看起来晚一帧？**
+  → 渲染的是 `[InitialTick, Transient]` 之间的插值，比逻辑状态落后最多 1 个 tick。所以命中判定要用 Transient 数据，不能用 Transform。
+- **Q：`Interpolate = false` 什么时候用？**
+  → 物理步长 = 渲染步长（如 60Hz 锁帧）、服务端（无渲染）、或做"回放"时需要精确对应 tick。
+
+---
+
+# 第 12 集附 · Controller 精要：KCC 只是"位移积分器"（gameplay 主线）
+
+> 这一集不读源码，只回答一个问题：**抛开 KCC，一个能上线的角色控制器由哪几块组成、按什么顺序工作、参数怎么调。**
+> 如果目标是做玩法而不是面试，**这一集比第 13 集更重要**：第 13 集是"能跑"，这一集是"能改、能调、能搬走"。
+
+## 12附.0 划线：谁负责什么
+
+| 层 | 负责 | 不负责 |
+|---|---|---|
+| 意图（Input） | 把设备状态变成"想往哪走"、"这一刻想不想跳" | 决定速度多大 |
+| 规则（Controller） | 加速、重力、跳跃、状态、朝向 | 几何约束（穿墙、贴地、台阶） |
+| 解算（Motor） | 扫掠、投影、吸附、台阶、平台跟随 | 任何玩法判断 |
+| 表现（Anim / Camera / VFX） | 读结果、做平滑 | 写逻辑位姿与速度 |
+
+**一句话：Controller 决定"想怎么动"，Motor 决定"实际能怎么动"，表现层只读结果。**
+
+两个最常见的越界，都会让手感变"玄学"：
+
+- **Controller 里自己打射线贴地**：与 Motor 的吸附同时生效 → 双重补偿 → 下坡抖、跳跃高度不稳。
+- **表现层里改速度或位置**：下一 tick 会被瞬态位姿覆盖，插值再把差值放大成抖动。
+
+## 12附.1 铁律：一切"想去哪"都翻译成速度
+
+KCC 连"精确移动到某点"都不直接写位置，而是先换成速度再走完整解算（`MoveCharacter` `701` / `GetVelocityForMovePosition` `2206`）。这不是实现细节，而是控制层的设计原则：
+
+**Controller 对外的唯一输出是 `(velocity, rotation)`，不是 `position`。**
+
+三个好处：
+
+1. 所有位移共享同一套碰撞处理（冲刺撞墙会被挡住，而不是穿过去）
+2. 外力、平台、击退、根运动可以统一成"速度叠加"，不需要各写一套移动代码
+3. 可回放、可回滚：状态就是速度 + 位姿，录像和网络同步都简单
+
+落地做法：任何"我要在 X 秒内到那儿"的需求（翻越、处决位移、被吸过去、梯子锚定）都写成
+
+```csharp
+velocity = Motor.GetVelocityForMovePosition(Motor.TransientPosition, targetPoint, dt);
+```
+
+## 12附.2 速度合成模型（本集核心，建议抄在纸上）
+
+下面代码沿用第 13.1 节的字段（`_moveInput`、`Gravity`、`JumpUpSpeed`、`Motor` …）。
+
+`UpdateVelocity` 每 tick 只调用一次，你写进去的就是角色的"自身速度"（`BaseVelocity`）。难点不是公式，而是**顺序和所有权**。
+
+| # | 层 | 典型内容 | 写入方式 | 所有权 |
+|---|---|---|---|---|
+| 1 | 惯性 | 上一 tick 的速度、重力累积、击退衰减 | 读 `currentVelocity` | 你自己 |
+| 2 | 位移驱动 | Root Motion、翻越、处决、传送门 | **覆盖** | 最高优先级 |
+| 3 | 规则 | 地面加速/减速、空中加速、跳跃 | 地面**覆盖**、空中**累加** | 你自己 |
+| 4 | 外力 | 击退、风、爆炸、载具推力 | **增量** | 多个系统可叠加 |
+| 5 | 约束 | 落地投影、贴地、台阶、平面约束 | 由 Motor 做 | Motor（你只发信号） |
+| 6 | 平台 | 平台带你的位移 | Motor 直接位移 | Motor（**不要手动加**） |
+| 7 | 兜底 | 限速、NaN、最小速度 | clamp | 你自己 |
+
+三条规则，能解决 80% 的"手感玄学"：
+
+- **单写入者**：`UpdateVelocity` 里每 tick 只能有一个"最终决定权"的分支，用 early return 表达优先级，不要写成"谁都 `+=` 一脚"。
+- **量纲不能混**：地面层写的是"目标速度"（覆盖），空中层写的是"加速度"（累加）。混着写会出现"帧率越高越飘"的隐藏惯性。
+- **平台速度不进 `BaseVelocity`**：Phase1 用平台速度单独做了一次移动；`Motor.Velocity` 是只读的 `BaseVelocity + 平台速度`。离开平台时 Motor 会自动把平台速度补进 `BaseVelocity`（`PreserveAttachedRigidbodyMomentum`，`1002`）——**你手动再加一次就是双倍**，表现为"跳上移动平台直接飞出去"。
+
+推荐骨架（可直接替换第 13 集的 `UpdateVelocity`）：
+
+```csharp
+public void UpdateVelocity(ref Vector3 velocity, float dt)
+{
+    // ① 位移驱动：有根运动就接管，本 tick 不再叠加规则
+    if (_rootMotionDeltaPos.sqrMagnitude > 0f)
+    {
+        velocity = Vector3.ClampMagnitude(_rootMotionDeltaPos / dt, MaxRootMotionSpeed);
+        _rootMotionDeltaPos = Vector3.zero;
+        return;
+    }
+
+    // ② 外力（击退）：只衰减、不接受输入，但保留重力
+    if (_knockbackTimer > 0f)
+    {
+        _knockbackTimer -= dt;
+        velocity = Vector3.MoveTowards(velocity, Vector3.zero, KnockbackDrag * dt);
+        if (!Motor.GroundingStatus.IsStableOnGround)
+            velocity += Motor.CharacterUp * (-Gravity * dt);
+        return;
+    }
+
+    // ③ 规则层：地面覆盖 + 指数收敛；空中累加 + 阻力
+    if (Motor.GroundingStatus.IsStableOnGround && !Motor.MustUnground())
+    {
+        Vector3 target = _moveInput * CurrentMoveSpeed;
+        target = Motor.GetDirectionTangentToSurface(target, Motor.GroundingStatus.GroundNormal) * target.magnitude;
+
+        velocity = Vector3.Lerp(velocity, target, 1f - Mathf.Exp(-GroundSharpness * dt));
+
+        if (TryConsumeJump())
+        {
+            velocity += Motor.CharacterUp * JumpUpSpeed;
+            Motor.ForceUnground(0.1f);      // 先脱离，本 tick 的速度才不会被吸附吃掉
+        }
+    }
+    else
+    {
+        velocity += _moveInput * AirAcceleration * dt;
+        velocity += Motor.CharacterUp * (-Gravity * dt);
+        velocity *= 1f - Mathf.Clamp01(Drag * dt);
+    }
+
+    // ④ 兜底：限速 + NaN 防御（NaN 一旦进 Transform 就永久损坏）
+    if (velocity.magnitude > MaxSpeed) velocity = velocity.normalized * MaxSpeed;
+    if (float.IsNaN(velocity.x) || float.IsNaN(velocity.y) || float.IsNaN(velocity.z))
+        velocity = Vector3.zero;
+}
+```
+
+注意地面分支**不要**再"保留竖直速度"：贴地时竖直分量要么被吸附吃掉，要么变成贴地弹跳。需要上抛就明确 `ForceUnground`，语义才清楚。
+
+> 为什么这套顺序能防"玄学"：每个 tick 的速度只由**一个分支**决定，其余系统只能通过"外力累加器"或"Motor 的约束"影响结果。出现问题时，你可以按这张表逐层二分，而不是在十几个 `+=` 里猜。
+
+## 12附.3 十个回调：用哪个，比"都实现"重要
+
+接口方法必须全部实现，但**每个回调只有一两种正确用法**。本仓库的调用点：
+
+| 回调 | 时机（`KinematicCharacterMotor.cs`） | 该做的事 | 不该做的事 |
+|---|---|---|---|
+| `BeforeCharacterUpdate` | Phase1 最开始 `831` | 清缓存、记录上 tick 状态、改胶囊尺寸 | 读输入、改速度 |
+| `PostGroundingUpdate` | 探地完成、平台未动 `959` | 落地音效/粒子（此时位姿还会变） | 依赖最终位置 |
+| `UpdateRotation` | Phase2 最前 `1067` | 决定朝向 | 期望读到本 tick 新速度 |
+| `UpdateVelocity` | Phase2 中段 `1179` | 唯一的规则写入点 | 写 position、打大量查询 |
+| `OnGroundHit` | 探地每次命中 `1322` | 改稳定性、记录地面材质 | 改速度 |
+| `OnMovementHit` | 移动每次命中 `1532` | 撞墙事件、按材质扣速度、贴花 | 改 `transform` |
+| `ProcessHitStabilityReport` | 命中后、判定前 `2020` | 自定义"什么能站"（冰面、单向平台、斜坡例外） | 重计算、分配内存 |
+| `OnDiscreteCollisionDetected` | 移动结束后重叠 `1217` | 挤压伤害、卡住兜底 | 假设它每帧都触发 |
+| `AfterCharacterUpdate` | 全部结束 `1220` | 读最终速度、派生事件、驱动动画参数 | 写速度/位姿 |
+| `IsColliderValidForCollisions` | 每次查询过滤 `1930` | 忽略自己的武器、触发器 | 依赖帧序的状态 |
+
+两个只有读过源码才知道的时序事实：
+
+- **`UpdateRotation` 在 `UpdateVelocity` 之前**（`1067` vs `1179`）。所以"朝速度方向转"在 `UpdateRotation` 里读到的是**上一 tick 的速度**。想用本 tick 速度，就在 `AfterCharacterUpdate` 里缓存 `Motor.BaseVelocity`，下一 tick 再用——50Hz 下 20ms 延迟，通常无感。
+- **你写进去的速度，最终会被解算改掉**（投影、台阶、限速、`MinVelocityMagnitude = 0.01` 清零，`1181`）。要"真实速度"（做动画、算伤害、判断是否撞墙），**只在 `AfterCharacterUpdate` 里读**。
+
+## 12附.4 三拍时序：输入、逻辑、表现
+
+| 拍 | 频率 | 只做三件事 | 绝对不能 |
+|---|---|---|---|
+| `Update` | 可变 | 采样输入、维护时间窗（buffer/coyote）、累加根运动 | 改速度/位置、做 Physics 查询 |
+| `FixedUpdate`（Motor 内） | 固定 50Hz | `UpdateVelocity` / `UpdateRotation` | 读 `Input.GetButtonDown` |
+| `LateUpdate` | 可变 | 相机、UI、IK 目标 | 读 `TransientPosition` |
+
+核心原则：**输入是"状态"，不是"事件"。**
+
+一帧里可能 0 次或 2 次物理 tick，`GetButtonDown` 这种边沿信号必须在 `Update` 里转成**带时间的计时器**，才能在物理帧里安全消费：
+
+```csharp
+// Update：只采样 + 计时，不消费
+void Update()
+{
+    _moveInput = ComputeMoveInputFromCamera();
+    _jumpBufferTimer = Input.GetButtonDown("Jump") ? JumpBufferTime : _jumpBufferTimer - Time.deltaTime;
+    _coyoteTimer = Motor.GroundingStatus.IsStableOnGround ? CoyoteTime : _coyoteTimer - Time.deltaTime;
+}
+
+// UpdateVelocity：消费即清零，避免一次按键触发两次跳
+bool TryConsumeJump()
+{
+    if (_jumpBufferTimer <= 0f || _coyoteTimer <= 0f) return false;
+    _jumpBufferTimer = 0f;
+    _coyoteTimer = 0f;
+    return true;
+}
+```
+
+同一个"时间窗"模式可复用到：攻击预输入、冲刺缓冲、连招窗口、翻越吸附。**这是 gameplay 里最值得抄走的一个模式。**
+
+## 12附.5 四个旋钮：手感的数学
+
+**① 收敛速度：`1 - exp(-k·dt)`**
+
+`k` 的含义是"每秒收敛多少次"，达到 63% 的时间 = `1/k`：
+
+| k | 63% 时间 | 手感 | 典型用途 |
+|---|---|---|---|
+| 5 | 0.20s | 滑、重 | 空中转向 |
+| 10 | 0.10s | 有惯性 | 地面加速 |
+| 15 | 0.067s | 跟手 | 地面减速、转身 |
+| 25 | 0.04s | 硬 | 急停、瞄准 |
+
+用 `Lerp(a, b, k * dt)` 是错的：`k * dt > 1` 会过冲，帧率一变手感就变。
+
+**② 跳跃的三段重力**
+
+只用一个 `Gravity`，跳起来像月球。可玩性最好的形状是三段：
+
+```csharp
+float g = Gravity;
+if (velocity.y > 0f) g *= JumpRiseMultiplier;                 // 0.8~1.0：上升"轻"
+else if (velocity.y < -ApexThreshold) g *= FallMultiplier;    // 1.5~2.0：下落"脆"
+else g *= ApexMultiplier;                                     // 0.5：顶点悬停（可选）
+velocity += Motor.CharacterUp * (-g * dt);
+```
+
+再加**松键截断**（可变跳跃高度）：松键且 `vy > 0` 时 `vy *= 0.5`。两者叠加，跳跃才有"重量"。
+
+**③ 容错窗口**
+
+| 参数 | 建议 | 作用 |
+|---|---|---|
+| Coyote Time | 0.08~0.12s | 刚离开平台还能跳 |
+| Jump Buffer | 0.08~0.15s | 落地前按跳，落地即起跳 |
+| 转身锁定 | 0.05~0.1s | 攻击/技能期间不转头（视觉稳定） |
+
+本质都是"把离散输入变连续"的低通，和相机 `SmoothDamp` 同类。
+
+**④ 不要在 Controller 里重复补偿**
+
+KCC 已经做了：保长度投影（斜坡不减速）、贴地吸附（下坡不飞）、台阶抬升（不减速）。再在 Controller 里乘 `dot(v, groundNormal)`、加向下力、手动抬高度，就是**双重补偿**：
+
+| 症状 | 常见错误补偿 | 正确做法 |
+|---|---|---|
+| 斜坡变慢 | 又乘了一次 `dot` | 交给 `GetDirectionTangentToSurface` |
+| 下坡弹跳 | 加"贴地力" | 调 `GroundDetectionExtraDistance` |
+| 台阶卡顿 | 手动插值高度 | 调 `MaxStepHeight` / `StepHandling` |
+| 落地粘滞 | 落地再清一次速度 | Phase1 已做落地位移投影（`942`） |
+
+## 12附.6 八条可迁移原则（换引擎也成立）
+
+| # | 原则 | 在别的方案里长什么样 |
+|---|---|---|
+| 1 | 位移统一走速度通道 | UE CMC 的 `Velocity` + `SafeMoveUpdatedComponent`；Rigidbody 的 `MovePosition` 也应换算成速度 |
+| 2 | 逻辑位姿与渲染位姿分离 | 固定步长 + 插值；网络游戏的"预测位姿 vs 渲染位姿" |
+| 3 | 状态可查询，事件靠差分 | 不监听 `OnCollisionEnter`，而是比较本 tick / 上 tick 的 `IsGrounded` |
+| 4 | 解算器不含玩法 | Motor 不知道"跳跃"；UE CMC 的 `MovementMode` 在组件层，不在物理层 |
+| 5 | 单写入者 | 每 tick 只有一个系统写速度，其它系统只写"外力累加器" |
+| 6 | 显式时序 | 平台先动 → 角色解算 → 相机跟随；ECS 用 SystemGroup 表达同一件事 |
+| 7 | 预算与上限 | 迭代上限、查询上限、速度上限，保证最坏帧有界 |
+| 8 | 默认零 GC + 显式契约 | 回调里不分配；坐标系/缩放/胶囊尺寸启动时校验并报错 |
+
+> 这八条是这份文档里**最值得带走的东西**。KCC 会过时，这八条不会。
+
+## 12附.7 验收：Controller 的 12 项自检
+
+1. 所有移动都通过速度表达，没有一处直接改 `transform`
+2. `UpdateVelocity` 只有一个写速度的主分支，优先级用 early return
+3. 地面是覆盖、空中是累加，量纲没有混用
+4. 所有收敛都用 `1 - exp(-k·dt)`
+5. 跳跃前 `ForceUnground`，且 buffer 只消费一次
+6. 没有手动加平台速度
+7. "真实速度"只在 `AfterCharacterUpdate` 里读
+8. 落地/离地/撞墙事件由状态差分产生
+9. 回调里没有 `new`、LINQ、字符串拼接
+10. 有速度上限和 NaN 兜底（`BaseVelocity` 一旦 NaN，Transform 永久损坏）
+11. 蹲伏改胶囊用 `SetCapsuleDimensions`，且在 `BeforeCharacterUpdate` 里改
+12. 相机只在 `LateUpdate` 读 `Transform`，不读 `TransientPosition`
+
+## 12附.8 四个练习（做完就算掌握）
+
+1. **重构**：把第 13 集的 Controller 改成 12附.2 的骨架，对比"贴墙走"和"斜坡加速"是否更稳
+2. **击退**：加 `Knockback(dir, force)`，验证击退期间输入无效、落地后自动恢复
+3. **位移驱动**：用 `GetVelocityForMovePosition` 做 2 米冲刺，确认撞墙会被挡住而不是穿过去
+4. **事件**：不用任何碰撞回调，用 `AfterCharacterUpdate` 的差分实现"落地音效 + 落地压缩动画"
+
+---
+
+# 第 13 集 · 实战：从零写一个 Controller（Control 层）
+
+**目标**：这是 3C 里 **Control** 的核心战场。KCC 只给你 "改速度/改朝向" 的插槽，手感全靠这 200 行。
+
+### 13.1 骨架
+
+```csharp
+public class MyCharacterController : MonoBehaviour, ICharacterController
+{
+    public KinematicCharacterMotor Motor;
+    [Header("Refs")] public Transform CameraTransform;   // 输入参照系
+    [Header("Move")] public float MaxStableMoveSpeed = 10f;
+    public float StableMovementSharpness = 15f;          // 地面加速/减速的"锐度"
+    public float OrientationSharpness = 15f;             // 转身锐度
+    [Header("Air")] public float AirMoveSpeed = 10f;
+    public float AirAccelerationSpeed = 5f;
+    public float Drag = 0.1f;
+    [Header("Jump")] public float JumpUpSpeed = 10f;
+    public float Gravity = 30f;
+    public float CoyoteTime = 0.1f;
+    public float JumpBufferTime = 0.1f;
+    [Header("Slope")] public float MaxSlopeSlideSpeed = 20f;
+
+    private Vector3 _moveInput;       // 相机空间的输入
+    private bool _jumpRequested;
+    private float _coyoteTimer, _jumpBufferTimer;
+    private Vector3 _cameraForward, _cameraRight;
+
+    void Awake() {
+        Motor.CharacterController = this;      // 关键：注册回调
+    }
+}
+```
+
+> 第一步就要讲：**`Motor.CharacterController = this` 是唯一的绑定方式**。忘了它，Motor 会抛 NullReferenceException（每个 tick 都会调回调）。
+
+### 13.2 输入（Control 的第一层：意图 → 方向）
+
+```csharp
+void Update() {
+    // 1) 相机为参照系（3C 的 Camera 提供 Control 的坐标系）
+    _cameraForward = Vector3.ProjectOnPlane(CameraTransform.forward, Motor.CharacterUp).normalized;
+    _cameraRight   = Vector3.Cross(Motor.CharacterUp, _cameraForward).normalized;
+
+    float h = Input.GetAxisRaw("Horizontal");
+    float v = Input.GetAxisRaw("Vertical");
+    _moveInput = (_cameraRight * h + _cameraForward * v);
+
+    // 2) 跳跃缓冲 + 土狼时间（手感的灵魂）
+    _jumpBufferTimer = Input.GetButtonDown("Jump") ? JumpBufferTime : _jumpBufferTimer - Time.deltaTime;
+    _coyoteTimer = Motor.GroundingStatus.IsStableOnGround ? CoyoteTime : _coyoteTimer - Time.deltaTime;
+}
+```
+
+> 要点：**输入在 `Update` 读，在 `UpdateVelocity`（FixedUpdate）用**。不要在 FixedUpdate 里读 `Input.GetKeyDown` —— 会丢帧（一帧多次物理 tick 或零次）。
+
+### 13.3 UpdateVelocity（Control 的第二层：意图 → 速度）
+
+```csharp
+public void UpdateVelocity(ref Vector3 currentVelocity, float deltaTime) {
+    // ---- 地面：覆盖式目标速度 + 指数收敛 ----
+    if (Motor.GroundingStatus.IsStableOnGround && !Motor.MustUnground()) {
+        Vector3 targetVel = _moveInput * MaxStableMoveSpeed;
+        // 投影到坡面，并"保长度"：斜坡上不减速的关键
+        targetVel = Motor.GetDirectionTangentToSurface(targetVel, Motor.GroundingStatus.GroundNormal) * targetVel.magnitude;
+
+        // 指数收敛：与帧率无关，且 Sharpness 语义直觉
+        currentVelocity = Vector3.Lerp(currentVelocity, targetVel, 1f - Mathf.Exp(-StableMovementSharpness * deltaTime));
+
+        if (_jumpBufferTimer > 0f && _coyoteTimer > 0f) {
+            currentVelocity += Motor.CharacterUp * JumpUpSpeed;
+            _jumpBufferTimer = 0f; _coyoteTimer = 0f;
+            Motor.ForceUnground(0.1f);      // ← 必须有，否则起跳瞬间被吸附回地面
+        }
+    }
+    // ---- 空中：有限加速 + 阻力 ----
+    else {
+        Vector3 targetVel = _moveInput * AirMoveSpeed;
+        currentVelocity += targetVel * AirAccelerationSpeed * deltaTime;
+        currentVelocity += Motor.CharacterUp * (-Gravity * deltaTime);   // 重力只在空中加！
+        currentVelocity *= (1f - Drag * deltaTime);                       // 一阶阻力
+    }
+}
+```
+
+**四个"必须"：**
+
+1. **`1 - Mathf.Exp(-k * dt)` 而不是 `k * dt`**：帧率无关的指数收敛，`Sharpness` 大 = 更"硬"更跟手，小 = 更"滑"更重。这是 3C 调参的核心公式。
+2. **重力只在空中加**：贴地时加重力会被吸附逻辑吃掉，却会在斜坡上产生"下坡加速"；想要这种效果可以保留（很多游戏要），但要知道这是你自己造的，不是 KCC 给的。
+3. **跳跃必须 `ForceUnground`**（`1358`）：否则本 tick 的地面吸附会把刚起跳的角色拉回地面，表现为"跳不起来 / 跳跃高度随机"。
+4. **地面用覆盖、空中用累加，别混**：地面分支写的是"目标速度"（量纲是 m/s），空中分支写的是"加速度"（m/s²）。同一个函数里两种写法是正常的，但**同一分支里不能既 `+=` 又 `=`**，否则先加的会被后写的覆盖（新手最常犯的错）。
+5. **不要手动保留竖直速度**：贴地时竖直分量只会被吸附吃掉或造成贴地弹跳。真需要上抛，用 `ForceUnground` 明确表达意图。
+6. **写成流水线，而不是一个大 if**：优先级的正确顺序见 **12附.2**（位移驱动 → 外力 → 规则 → 兜底）。
+
+### 13.4 UpdateRotation（Control 的第三层：朝向）
+
+```csharp
+public void UpdateRotation(ref Quaternion currentRotation, float deltaTime) {
+    Vector3 forward = _moveInput.sqrMagnitude > 0.01f ? _moveInput.normalized
+                     : Vector3.ProjectOnPlane(currentRotation * Vector3.forward, Motor.CharacterUp);
+    if (forward.sqrMagnitude < 0.001f) return;
+    Quaternion target = Quaternion.LookRotation(forward, Motor.CharacterUp);
+    currentRotation = Quaternion.Slerp(currentRotation, target, 1f - Mathf.Exp(-OrientationSharpness * deltaTime));
+}
+```
+
+> 注意：**Motor 旋转的是胶囊体**。若你的模型挂在子物体上做"视觉转身"，可以在 Motor 上只转"移动朝向"，模型单独转；反之若用 Root Motion / Animator 驱动朝向，就别在这里转（否则打架）。
+> 面试点：**逻辑朝向 vs 视觉朝向**要分离。逻辑朝向决定碰撞与移动（必须平滑、可回滚），视觉朝向可以滞后、可以带过冲（弹簧）。
+
+### 13.5 其余回调（必须实现，但不必都写逻辑）
+
+接口方法**全部实现**是编译要求，不是设计要求。生产代码的做法：抽一个 `CharacterControllerBase : MonoBehaviour, ICharacterController` 把 10 个方法写成 `virtual` 空实现，业务类只重写需要的 3~5 个。**每个回调的语义、时机和禁忌见 12附.3 的矩阵**，这里给的是"不写会出事"的三个：
+
+```csharp
+public void BeforeCharacterUpdate(float dt) { /* 清空本帧缓存、记录上帧状态 */ }
+public void PostGroundingUpdate(float dt) { /* 落地特效、脚步声、动画参数 */ }
+public void AfterCharacterUpdate(float dt) {
+    // 这里处理"落地/离地"事件（最可靠的时机：一 tick 结束，状态已确定）
+    if (Motor.GroundingStatus.IsStableOnGround && !Motor.LastGroundingStatus.IsStableOnGround) OnLanded();
+}
+public bool IsColliderValidForCollisions(Collider coll) { return true; }
+public void OnGroundHit(Collider c, Vector3 n, Vector3 p, ref HitStabilityReport r) { }
+public void OnMovementHit(Collider c, Vector3 n, Vector3 p, ref HitStabilityReport r) { }
+public void ProcessHitStabilityReport(Collider c, Vector3 n, Vector3 p, Vector3 pos, Quaternion rot, ref HitStabilityReport r) { }
+public void OnDiscreteCollisionDetected(Collider c) { }
+```
+
+**三个容易写错的地方：**
+
+- **落地/离地不要用"当前状态"判断**，要用差分：`Motor.GroundingStatus.IsStableOnGround` 与 `Motor.LastGroundingStatus.IsStableOnGround` 比较。前者是本 tick 结果，后者是上 tick 结果，二者都在 `AfterCharacterUpdate` 里已经确定。
+- **`PostGroundingUpdate` 只适合"探地刚完成"的表现**（脚步材质、落地粒子），因为此时平台还没移动、角色还可能被推挤；需要最终位姿的表现放到 `AfterCharacterUpdate`。
+- **`OnMovementHit` 会被调用多次**（每次扫掠命中一次，最多 6 次）。在那里扣速度、放特效都要做"每 tick 只处理第一次"的保护，否则墙角会触发 5 次伤害。
+
+### 13.6 进阶手感清单（面试"你做过什么手感优化"的答案库）
+
+| 需求 | 实现位置 | 做法 |
+|---|---|---|
+| 土狼时间 | `Update` 计时 + `UpdateVelocity` 判定 | 离地 0.1s 内仍可跳 |
+| 跳跃缓冲 | 同上 | 落地前 0.1s 按键，落地即跳 |
+| 可变跳跃高度 | `UpdateVelocity` | 松键时若 `vy > 0` → `vy *= 0.5` |
+| 走/跑切换 | 输入层 | 改 `MaxStableMoveSpeed`，用同一个 Sharpness |
+| 斜坡不减速 | 已有（KCC 保长度投影） | 不要额外乘 `dot(vel, groundNormal)` |
+| 陡坡滑落 | `OnGroundHit` + `ProcessHitStabilityReport` | 判定 `!IsStable` 时把 `IsStable` 保持 false，让重力自然带走；或用 `HandleVelocityProjection` override 加下滑分量 |
+| 台阶不减速 | 默认行为 | 想要减速就在 `OnMovementHit` 里扣速度 |
+| 空中转向 | `UpdateVelocity` 空中分支 | 限制 `AirAccelerationSpeed`，或只在"起跳后 X 秒内"允许大转向 |
+| 落地缓冲动画 | `AfterCharacterUpdate` | 缓存"上一 tick 空中时"的 `Motor.BaseVelocity.y`，在落地差分帧消费（落地瞬间竖直速度已被 Phase1 投影清零，直接读会是 0） |
+| 推箱子手感 | Motor 的 `SimulatedCharacterMass` | 角色质量调大 → 推得更猛 |
+
+### 13.7 最小可运行清单（自检 8 条）
+
+1. `Motor.CharacterController = this` 已赋值
+2. Capsule 的 `direction = Y`、`localScale = 1`、`height >= 2*radius`
+3. 场景里有 `KinematicCharacterSystem`（或任意 Motor 的 `OnEnable` 自动创建）
+4. 地面 Layer 在 `StableGroundLayers` 内
+5. `MaxStableSlopeAngle` 与地形坡角匹配
+6. 跳跃时调用了 `ForceUnground`
+7. 重力只在 `!IsStableOnGround` 时施加
+8. 相机在 `LateUpdate` 跟随，且输入方向用相机 forward 投影
+
+---
+
+# 第 13 集附 · 状态机化 Controller 与 Root Motion
+
+**目标**：官方示例不是"一个大 if"，而是"状态类"。这是从"能跑"到"能维护"的分水岭，也是主程面试的分界线。
+
+### 一、为什么要把 Controller 拆成状态
+
+官方 Walkthrough 里的示例角色，把行为拆成了若干状态类（默认移动、**梯子攀爬**、锚定/脱离锚定、蹲伏……）。核心原因是：**同一个回调在不同玩法下的语义完全不同**。
+
+| 玩法定例 | UpdateVelocity 该做什么 | 用 if 写会怎样 |
+|---|---|---|
+| 普通移动 | 加速度 + 重力 | 还好 |
+| 攀爬梯子 | 取消重力，锁定梯子轴向速度 | 变成 `if (climbing) {...} else if (crouching)...` |
+| 被击飞 | 忽略输入，只受外力 | 分支嵌套 + 状态互相污染 |
+| 载具驾驶 | 完全交给载具 | 分支爆炸 |
+
+**状态机骨架（可直接抄）**
+
+```csharp
+public interface ICharacterState {
+    void OnEnter(MyCharacterController c);
+    void OnExit(MyCharacterController c);
+    void UpdateVelocity(MyCharacterController c, ref Vector3 v, float dt);
+    void UpdateRotation(MyCharacterController c, ref Quaternion r, float dt);
+    void AfterUpdate(MyCharacterController c, float dt);
+}
+
+public class MyCharacterController : MonoBehaviour, ICharacterController {
+    private ICharacterState _state;
+    public void SetState(ICharacterState next) {
+        _state?.OnExit(this);
+        _state = next;
+        _state?.OnEnter(this);
+    }
+    public void UpdateVelocity(ref Vector3 v, float dt) => _state.UpdateVelocity(this, ref v, dt);
+    public void UpdateRotation(ref Quaternion r, float dt) => _state.UpdateRotation(this, ref r, dt);
+    public void AfterCharacterUpdate(float dt) => _state.AfterUpdate(this, dt);
+}
+```
+
+**攀爬状态的实现要点（官方示例的核心技巧）**
+
+```csharp
+// 锚定阶段：把"我要去梯子上的某个点"翻译成速度
+if (anchoring)
+    velocity = Motor.GetVelocityForMovePosition(Motor.TransientPosition, targetPoint, dt); // 701/2206
+// 攀爬阶段：取消重力，速度只沿梯子轴向
+else
+    velocity = ladderUp * climbSpeed * inputY;   // 且不加重力
+// 旋转：直接对齐梯子朝向（不受平滑影响）
+rotation = Quaternion.LookRotation(-ladderNormal, Motor.CharacterUp);
+```
+
+> 关键点：**`GetVelocityForMovePosition` 是"用速度接口做位移插值"的官方推荐姿势**（`KinematicCharacterMotor.cs:2206`，`MoveCharacter` 内部也是这么做的 `846`）。它把"我要精确到达某点"转换为"这一 tick 该有的速度"，从而复用整套碰撞解算。爬梯、翻越、处决动画位移、传送门过渡都用它。
+
+### 二、Root Motion 与 FixedUpdate 的帧率矛盾（高频面试题）
+
+**矛盾**：Animator 在 `Update` 里按**可变帧率**产出 root motion 位移；KCC 在 `FixedUpdate` 里按**固定 50Hz** 消费。两者不同步 —— 一帧可能 0 次物理 tick，也可能 2 次。
+
+**标准解法：累加 + 消费**（官方 Walkthrough 的做法）
+
+```csharp
+private Vector3 _rootMotionDeltaPos;
+private Quaternion _rootMotionDeltaRot = Quaternion.identity;
+
+// 1) 动画帧：只累加，不使用
+void OnAnimatorMove() {
+    _rootMotionDeltaPos += Animator.deltaPosition;
+    _rootMotionDeltaRot = Animator.deltaRotation * _rootMotionDeltaRot;
+}
+
+// 2) 物理帧：消费并清零（在 UpdateVelocity 里）
+public void UpdateVelocity(ref Vector3 velocity, float dt) {
+    if (applyRootMotion) {
+        velocity = _rootMotionDeltaPos / dt;          // 位移 → 速度
+        _rootMotionDeltaPos = Vector3.zero;
+    }
+    // 重力、加速...
+}
+public void UpdateRotation(ref Quaternion rot, float dt) {
+    if (applyRootMotion) { rot = _rootMotionDeltaRot * rot; _rootMotionDeltaRot = Quaternion.identity; }
+}
+```
+
+**三个必踩的坑**
+
+1. **`Animator.applyRootMotion` 必须关掉**（`false`），否则 Unity 会自己把角色 Transform 挪走，和 KCC 打架
+2. **`Animator.updateMode`**：默认 `Normal`（Update 驱动）。改成 `AnimatePhysics` 会让动画在物理帧更新，能减少一层累加，但**动画会变卡**（50Hz 采样），一般不用
+3. **清零时机**：必须在 `UpdateVelocity` 里清零；写在 `LateUpdate` 会丢掉一帧位移；写在 `OnAnimatorMove` 会丢帧率差
+
+> 面试可答："Root Motion 的本质是**用动画曲线驱动位移**，它和物理 tick 的采样率不一致，所以要做'生产者-消费者'的累加缓冲。这和网络同步里的输入缓冲是同一个模式。"
+
+### 三、蹲伏（改胶囊尺寸）的正确姿势
+
+```csharp
+// 蹲下：先缩碰撞体，再缩视觉
+Motor.SetCapsuleDimensions(0.4f, 1.0f, 0.5f);   // 758
+// 站起：必须先检测"站立尺寸"的胶囊有没有被挡住，否则会顶穿天花板
+public bool CanStandUp() {
+    const float r = 0.5f, h = 2f,  yOff = 1f;               // 站立尺寸
+    Vector3 center = Motor.TransientPosition + Motor.TransientRotation * new Vector3(0f, yOff, 0f);
+    Vector3 bottom = center - Motor.CharacterUp * (h * 0.5f - r);
+    Vector3 top    = center + Motor.CharacterUp * (h * 0.5f - r);
+    // 用"站起来的胶囊"单独做一次检测，不污染 Motor 的缓存几何
+    return !Physics.CheckCapsule(bottom, top, r, ~0, QueryTriggerInteraction.Ignore);
+}
+```
+
+**注意**：`SetCapsuleDimensions` 会重算 5 个缓存偏移，**必须在同一 tick 内完成"改尺寸 → 重新探地"**，否则本 tick 的地面判定用的是旧几何。所以官方做法是：在 `BeforeCharacterUpdate` 里改尺寸，Phase1 的地面探测自然用新尺寸。
+
+---
+
+# 第 14 集 · 相机（Camera）与 3C 闭环
+
+**目标**：把 Camera 接进 Control 的坐标系，做出"跟手但不晕"的第三人称。
+
+### 三个必须做对的事
+
+**① 时序：相机在 `LateUpdate`，且读 Transform（已插值）**
+
+```csharp
+void LateUpdate() {
+    // 目标位置 = 角色 Transform（已被 KCC 插值到渲染时刻）
+    Vector3 focus = target.position + Vector3.up * heightOffset;
+    // 轨道：yaw/pitch 由鼠标驱动，pitch 必须 clamp
+    pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+    Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
+    Vector3 desired = focus - rot * Vector3.forward * distance;
+
+    // 相机碰撞：用 SphereCast 从 focus 到 desired
+    if (Physics.SphereCast(focus, camRadius, (desired - focus).normalized, out var hit, distance, mask))
+        desired = focus + (desired - focus).normalized * (hit.distance - camRadius);
+
+    transform.position = Vector3.SmoothDamp(transform.position, desired, ref _vel, smoothTime);
+    transform.rotation = rot;
+}
+```
+
+> 绝对不要在 `FixedUpdate` 里移动相机 —— 50Hz 的相机在 144Hz 屏幕上必然抖。也不要读 `Motor.TransientPosition`（那是逻辑位姿，会让相机也抖）。
+
+**② 输入参照系：相机是 Control 的"世界坐标系"**
+
+`UpdateVelocity` 里的 `_moveInput` 必须由**相机 forward/right 投影到地面**得到（`13.2`）。这带来两个经典问题：
+
+- **相机俯视时 forward 接近竖直** → 投影后长度趋近 0 → 方向抖动。修法：用 `Pitch` 计算"水平 forward"（只取 yaw），或对投影结果做 `sqrMagnitude < 0.001` 保护
+- **相机瞬移（切镜头）时角色方向突变** → 对 `_cameraForward` 做插值，或让角色朝向"是世界绝对方向"，相机只旋转视角
+
+**③ 插值三段论（防晕三件套）**
+
+| 层 | 频率 | 手段 |
+|---|---|---|
+| 角色逻辑 | FixedUpdate 50Hz | Transient 位姿 |
+| 角色渲染 | LateUpdate | KCC 的 Lerp/Slerp 插值 |
+| 相机 | LateUpdate（在角色之后） | SmoothDamp + 位置跟随 |
+
+> 面试点：**为什么相机要 SmoothDamp 而不是直接跟随？** 因为逻辑位移是离散的（每 tick 一步），直接跟随会把"台阶传送"和"平台位移"原样传给相机 → 画面弹跳。SmoothDamp 是低通滤波，把阶跃变成缓坡。
+> 但**相机碰撞检测不能用平滑后的位置**（会穿墙），要用"当前实际相机位置"去 cast。
+
+### 3C 闭环总结（口播收尾）
+
+```
+输入(Control) → 意图方向(相机空间) → UpdateVelocity/UpdateRotation(Control)
+    → KCC 解算(Character) → Transient 位姿 → 插值 → Transform(表现)
+    → 相机读 Transform 并平滑(Camera) → 新视角 → 影响下一帧输入方向
+```
+
+> 这就是 3C 的闭环：**相机改变参照系，参照系改变输入，输入改变运动，运动改变相机**。任何一环延迟或抖动，玩家都会觉得"不跟手"。
+
+---
+
+# 第 15 集 · 性能 / 多角色 / 网络与确定性
+
+### 15.1 每 tick 的查询预算（一个角色）
+
+| 阶段 | 查询 | 次数（典型） |
+|---|---|---|
+| Phase1 重叠解算 | `OverlapCapsuleNonAlloc` + `ComputePenetration` | 1 + 命中数 |
+| Phase1 地面 | `CapsuleCastNonAlloc` | 1~3 |
+| 每次命中判定 | 2 条 Raycast（ledge 内外） | 2/命中 |
+| Phase2 移动 | `CapsuleCastNonAlloc` | 1~6 |
+| 台阶 | 每次 1~2 次 CapsuleCast + 2~3 Raycast | 按需 |
+
+**全是 NonAlloc + 预分配数组**（`506-509`）：`MaxHitsBudget = 16`、`MaxCollisionBudget = 16`。零 GC 是 KCC 的硬指标 —— 面试可以强调"我在几百个角色下也没有 GC spike"。
+
+### 15.2 已知上限与坑
+
+- **16 命中预算**：密集场景（草丛碰撞体、碎块）会把最近命中挤出数组 → 表现为"随机穿模"。修法：精简碰撞体、提高 budget、或用 `LayerMask` 排除杂物
+- **静态 List 遍历**：回调里 `Destroy` 强制刷新 → `InvalidOperationException`。修法：延迟销毁
+- **静态 List 的顺序即模拟顺序**：想保证确定性（联机/回放），必须保证注册顺序一致
+- **多角色互相推挤**：见第 11 集的 `BaseVelocity` 时序问题
+
+### 15.3 网络与回滚
+
+KCC 天生适合帧同步/回滚，因为：
+
+- 状态可完整取出：`GetState()` → `KinematicCharacterMotorState`（`719`）
+- 可瞬时恢复：`ApplyState(state, bypassInterpolation)`（`741`）
+- 完全确定性（不依赖 Unity 物理积分），只要 **浮点/顺序/步长**一致
+
+```csharp
+// 回滚三件套
+var snapshot = motor.GetState();
+// ... 回滚若干帧，重放输入 ...
+motor.ApplyState(snapshot, bypassInterpolation: true);
+```
+
+**注意**：`GetState` 不含 `_movePositionDirty` / 动画状态 / 你的 Controller 字段。**你的 Controller 也必须可序列化**（输入缓冲、跳跃计时、朝向），否则回滚后手感错乱 —— 这是"引擎状态 vs 游戏状态"的分界线，面试高频。
+
+### 15.4 面试追问
+
+- **Q：如何优化 100 个角色同屏？**
+  → ① 远处角色降频 tick（1/2、1/4）；② 只用 `StableGroundLayers` 减少命中；③ 关掉 `LedgeAndDenivelationHandling` 和 `Extra` 台阶；④ 简化碰撞体层级；⑤ 用 Job/Burst 重写查询（但会失去 PhysX 的 `ComputePenetration`）。
+- **Q：为什么不用 Unity 的 `CharacterController` 做联机？**
+  → 黑盒、不同版本行为可能不同、拿不到命中法线 → 无法保证跨端一致。
+
+---
+
+# 第 16 集 · 排错手册
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 角色原地抖 | 稳定/不稳定来回翻转（坡角接近 `MaxStableSlopeAngle`） | 调 `MaxStableSlopeAngle` 留 5~10° 余量；检查 `GroundDetectionExtraDistance` |
+| 下坡"蹦蹦跳跳" | 吸附距离不足 / `StableGroundLayers` 不含地面 | 调大吸附（`StepHandling` 开启时自动用 `max(radius, MaxStepHeight)`）；检查 LayerMask |
+| 跳跃高度随机 | 跳跃时没 `ForceUnground` / 落地速度未投影 | 补 `ForceUnground(0.1f)`；确认 `942-947` 分支被执行（`LastGroundingStatus` 正确） |
+| 落地后移动"粘" | 落地下压速度未清零 | 同上；或在 `UpdateVelocity` 地面分支里显式 `vy = 0` |
+| 上台阶抽搐 | `MinRequiredStepDepth` 过大 / 台阶碰撞体有缝 | `ValidateData` 会 clamp 到 `CapsuleRadius`；合并碰撞体；调 `MaxStepHeight` |
+| 卡在墙角不动 | crease 误判 / 迭代预算耗尽 | 检查 `MaxMovementIterations`；确认 `LedgeAndDenivelationHandling` 没引入假 ledge |
+| 站在平台上抖动 | 平台用了 `Rigidbody.interpolation` / `MoveWithPhysics` 配错 / 角速度回绕 | 见第 10 集；修 `eulerAngles` |
+| 平台急停角色被甩飞 | 打滑检测阈值太敏感 | `RigidbodySlipVelocity` 调大；或 `PreserveAttachedRigidbodyMomentum = false` |
+| 角色被挤进墙里 | `MaxDecollisionIterations = 1` 不够 | 调到 3~5；`CheckMovementInitialOverlaps = true` 保持开启 |
+| 相机抖动 | 在 FixedUpdate 移动相机 / 读 TransientPosition | 改到 LateUpdate 读 `transform.position` |
+| 完全不动 / NullReferenceException | 忘了 `Motor.CharacterController = this` | 在 `Awake` 里赋值 |
+| 缩放后体积不对 | Transform 有缩放 | 保持 `localScale = 1`，改 `SetCapsuleDimensions` |
+| 100 个角色掉帧 | 每个都在做 ledge 射线 + 台阶 + 16 命中扫掠 | 分频 tick、关特效项、简化 Layer |
+| 高速上坡“一飞冲天” | 稳定命中把速度重定向到坡面切线，速度过大时切线朝上 | 限制最大速度 / 收紧 MaxStableSlopeAngle / override HandleVelocityProjection 加位移上限 |
+
+### "三问定位法"（面试可讲的方法论）
+
+1. **它是逻辑问题还是表现问题？** 看 `TransientPosition` 是否正常 → 正常则是插值/相机/动画。
+2. **它是"检测错"还是"解算错"？** 打日志 `GroundingStatus` / `HitStabilityReport` → 检测错就调参数，解算错就调迭代/投影。
+3. **它是单帧还是累积？** 单帧抖动 → 阈值；累积漂移 → 没复位（`InitialTick` / 状态没清）。
+
+---
+
+# 第 17 集 · 面试题库 50 题（含答案要点）
+
+### A. 概念与取舍（1-8）
+
+1. **KCC 和 Rigidbody 驱动的本质区别？**
+   要点：Kinematic 直接写位姿、不参与物理积分；确定性、可控、无物理"副作用"；代价是物理交互要自己模拟。
+2. **KCC 和 Unity CharacterController 的差别？**
+   要点：可拿到完整命中信息（法线/点/稳定报告）、可自定义投影、可台阶/平台/推箱子；代价是性能与实现复杂度。
+3. **为什么用胶囊体而不是 AABB / 圆柱？**
+   要点：胶囊对旋转不敏感（绕 Y 旋转形状不变）、无棱角（滑动连续）、与 PhysX CapsuleCast 原生匹配、贴合人体。
+4. **KCC 是"力"驱动的吗？**
+   要点：完全不是。`BaseVelocity` 是速度状态，`UpdateVelocity` 直接写速度，位移 = 速度 × dt 后做扫掠解算。
+5. **为什么强制 `localScale = 1`？**
+   要点：CapsuleCollider 的 radius/height 在本地空间，非等比缩放会导致"半径与高度比例失真"，扫掠体积与视觉不符；且 `CapsuleCast` 不支持非均匀缩放的精确椭球。
+6. **`MaxStableSlopeAngle` 与"可站立"的关系？**
+   要点：法线夹角 <= 阈值即稳定；> 阈值则交给重力滑落；临界值附近会抖，要留余量。
+7. **KCC 为什么不用 `Physics.Raycast` 做地面检测？**
+   要点：单条射线会被缝隙/斜面欺骗；KCC 用**胶囊扫掠**（体积检测）+ 多次迭代 + ledge 双边射线，鲁棒得多。
+8. **`GroundingStatus` 里 `InnerGroundNormal` / `OuterGroundNormal` 的意义？**
+   要点：命中点左右各一条射线的法线，用来检测"边缘（ledge）"与"落差角（denivelation）"，是"看起来能站但其实会掉"的判据。
+
+### B. 架构与调度（9-16）
+
+9. **为什么拆 Phase1 / Phase2？**
+   要点：平台先动还是后动的顺序问题；Phase1 在平台移动前做地面探测与跟随，Phase2 在平台移动后解算重叠与自身移动；避免"平台每帧把角色顶起又掉落"。
+10. **`KinematicCharacterSystem` 为什么是单例 + 静态列表？**
+    要点：全局唯一 tick 顺序、零查找开销、便于确定性；`EnsureCreation` 懒加载 + `DontDestroyOnLoad`。
+11. **`[DefaultExecutionOrder(-100)]` 的作用？**
+    要点：保证角色位姿在本帧其他逻辑读取前更新，避免 1 帧视觉延迟。
+12. **关掉 `AutoSimulation` 后怎么用？**
+    要点：服务器批量 tick、回放、暂停、自定义时间步；自己保证固定步长与顺序。
+13. **`MoveCharacter` 为什么延迟到下一 tick？**
+    要点：复用完整扫掠解算（不能瞬移穿墙）、避免在回调里重入移动、保证 tick 内状态一致。
+14. **`RotateCharacter` 与 `UpdateRotation` 的区别？**
+    要点：前者是"命令式瞬移旋转"（下一 tick 生效，`TransientRotation = target`），后者是"每 tick 的旋转意图"；两者都在 Phase2 处理（`1067-1075`）。
+15. **为什么回调设计成 `ref` 参数而不是返回值？**
+    要点：struct 零分配、可原地修改、调用方持有权威状态；也避免"忘记保存返回值"。
+16. **`ICharacterController` 有 10 个方法，为什么这么多？**
+    要点：覆盖 tick 的各个时机（before/postGrounding/after）+ 命中事件 + 稳定性干预 + 碰撞过滤；每个都对应一类玩法需求（落地特效、可穿透、特殊地形）。
+
+### C. 源码细节（17-30）
+
+17. **`InternalCharacterMove` 的循环终止条件有几个？**
+    要点：剩余位移为 0、扫掠次数超预算、上一轮没撞到东西。
+18. **为什么每轮只前进"命中距离 - 0.01"？**
+    要点：皮肤厚度，避免下一帧起点重叠与浮点抖动。
+19. **`MovementSweepState` 四个状态的含义？**
+    要点：Initial（首次命中）、AfterFirstHit（可能形成 crease）、FoundBlockingCrease（沿交线滑）、FoundBlockingCorner（完全卡死）。
+20. **`EvaluateCrease` 怎么判断"真墙角"？**
+    要点：两法线叉乘得交线，两法线近似平行则否决；把法线与入射速度投影到垂直交线平面做二维判定，确认速度同时被两面阻挡。
+21. **`GetObstructionNormal` 为什么要"重算"法线？**
+    要点：贴地撞墙时，用地面法线与命中法线的叉乘重新构造"沿地面的阻挡方向"，让角色沿墙滑而不是被顶起（`1584`）。
+22. **`GetDirectionTangentToSurface` 为什么不用 `ProjectOnPlane`？**
+    要点：保长度（能量不损失）、以角色 up 为参照（无横向偏移），专门用于斜坡行走。
+23. **`ProbeGround` 为什么要"迭代 3 次"？**
+    要点：一次垂直扫掠只能拿到第一个面；沿面重定向后再探，能穿过陡坡/缝隙找到真正可站的平面。
+24. **`MaxVelocityForLedgeSnap = 0` 是什么语义？**
+    要点：默认关闭"朝悬空侧吸附"——只要速度朝外就不吸附，让人自然走下落，而不是"沿着边缘飘出去"。
+25. **`ForceUnground` 的时间参数为什么是 0.1？**
+    要点：留出几个 tick 的"免吸附窗口"，保证起跳/被弹开时不会被地面吸回；`MustUnground()` 同时看标志与计时器。
+26. **台阶检测为什么要"取最远命中"？**
+    要点：向下扫掠的命中中，最远的是台阶顶面（再远就是地面），取最远 = 踩到顶面边缘、前进量最大。
+27. **为什么台阶执行时要把竖直速度清零？**
+    要点：否则带着下压速度上台，下一帧被地面顶回，产生抽搐/弹跳。
+28. **`ProcessVelocityForRigidbodyHits` 的质量比公式？**
+    要点：`mC/(mC+mB)`；非动态体为 0（角色吃全部反弹）；Kinematic 模式为 1（角色弹回、物体不动）。
+29. **为什么刚体冲量用 `ForceMode.VelocityChange`？**
+    要点：直接改速度、不受质量二次影响（质量已体现在 ratio 里），结果可预测。
+30. **`CharacterCollisionsSweep` 里 `SweepProbingBackstepDistance = 0.002` 干什么？**
+    要点：扫掠起点后撤 2mm，让"起点已接触"也能被检测到（否则 `CapsuleCast` 会漏掉 distance=0 的接触）；命中距离再减回去。
+
+### D. 设计与实战（31-40）
+
+31. **斜坡上角色会自己往下滑吗？为什么？**
+    要点：默认不会（稳定面上速度被投影到切面并保长度）；要滑就在 `UpdateVelocity` 里加重力沿坡分量，或用 `ProcessHitStabilityReport` 把陡坡判为不稳定。
+32. **怎么做"斜坡减速/加速"？**
+    要点：在 `UpdateVelocity` 里按 `Dot(moveDir, groundNormal)` 或坡角缩放目标速度；不要改 KCC 内部的投影。
+33. **移动平台上的角色为什么会抖？**
+    要点：平台插值与角色插值不同步、角速度回绕、`MoveWithPhysics` 配置错误、平台被物理推挤（未设 `maxDepenetrationVelocity`）。
+34. **两个玩家互相推，为什么感觉"软"？**
+    要点：冲量是"每 tick 一次"的离散交换，且 `BaseVelocity` 累加有时序差；可提高 `SimulatedCharacterMass`、降低迭代间隔、或加显式分离力。
+35. **角色被挤在两堵墙中间会怎样？**
+    要点：`IsBeingCrushed = !overlapSolved`（`1173`）；此时应触发"压死/传送"逻辑，否则会一直穿插。
+36. **如何实现"沿着墙滑行 + 不粘墙"？**
+    要点：稳定命中用保长度重定向、不稳定命中用 `ProjectOnPlane`；确保 `GetObstructionNormal` 的贴地重算法线生效。
+37. **如何实现"贴墙时轻微吸附"（wall stick）？**
+    要点：在 Controller 里检测 `OnMovementHit` 的法线，给一个朝墙的小速度；不要改 Motor。
+38. **网络同步要同步什么？**
+    要点：`KinematicCharacterMotorState`（位置/旋转/速度/接地/attached rb）+ 你的 Controller 状态（输入、计时器、跳跃阶段）+ 随机种子。
+39. **如何做"角色与载具"（车、船）？**
+    要点：载具做成 `PhysicsMover` + `IMoverController`；复杂姿态（翻滚）需要自己扩展 `CharacterUp`（KCC 假设 Up 由旋转决定，不支持任意重力方向）。
+40. **KCC 不支持哪些场景？**
+    要点：任意重力方向（球形星球）、可变形角色、需要真实物理反馈（被炸飞/布娃娃）、超高速（>100m/s 薄墙）。
+
+### E. 反向题（41-45，考"是否真读过"）
+
+41. **`_internalCharacterHits` 只有 16 个槽位，会有什么后果？**
+    要点：密集场景下最近命中可能被挤出缓冲 → 随机穿模；`CapsuleCastNonAlloc` 返回数被截断，KCC 无从得知。
+42. **`CopyFrom(CharacterGroundingReport)` 为什么把 `GroundCollider` 置 null？**
+    要点：`CharacterTransientGroundingReport` 要能序列化/回滚，不能持有场景引用（`88`）。
+43. **`PhysicsMover.AngularVelocity` 的 `eulerAngles` 有什么坑？**
+    要点：0~360 回绕导致 -1° 被算成 359°，角速度爆表 → 角色被甩飞；需归一化到 ±180。
+44. **`StoreRigidbodyHit` 里 `if (hitRigidbody.GetComponent<KinematicCharacterMotor>()) return;` 意味着什么？**
+    要点：撞到另一个 KCC 时**不进推挤记账**；因此 `ProcessVelocityForRigidbodyHits` 中所有 `hitBodyIsCharacter` 分支（`1800-1809`、`1846-1848`）在本版本是**死代码**。角色间只会互相阻挡，不会互推；要互推必须删掉这行并处理 tick 顺序。
+45. **`MaxGroundingSweepIterations = 2` 但循环条件 `<= 2`，实际最多几次？**
+    要点：3 次（0、1、2）。这类"边界差一"是读源码时必须核对的细节，也是面试官爱问的"你真的看了吗"。
+
+---
+
+### F. 加分题（46-50，来自官方手册与经典论文）
+
+46. **KCC 和 Quake 的 `PM_SlideMove` 是什么关系？**
+    要点：同一族算法（collide-and-slide）。Quake 用"4 次 bump + 5 个裁剪平面"处理多面滑动，KCC 用状态机（Initial/AfterFirstHit/Crease/Corner）表达同样的逻辑；KCC 额外加了地面吸附、稳定性报告、平台跟随、刚体交互。
+47. **官方 3 阶段里的 Phase3 + `PhysicsMover.Desimulate` 是干什么的？本仓库为什么能删掉？**
+    要点：老版本平台用物理速度驱动，需要"模拟到目标位姿 → 角色碰撞 → 退回原位"，避免物理引擎重复积分。本仓库平台直接用 `Rigidbody.MovePosition` 推进，不需要退回，所以塌缩成两阶段；代价是平台不再参与真实物理反作用。
+48. **Root Motion 和 FixedUpdate 的帧率不一致，怎么解？`applyRootMotion` 为什么要关？**
+    要点：`OnAnimatorMove` 累加 delta，`UpdateVelocity/UpdateRotation` 消费并清零（生产者-消费者）。`applyRootMotion = true` 时 Unity 会自己改 Transform，与 KCC 的 `Transient` 冲突 → 抽搐。
+49. **关掉 `Physics.autoSyncTransforms` 对角色有什么影响？**
+    要点：Transform 改动不会立即同步到物理世界，查询可能读到旧位姿。KCC 内部会在合适时机同步，但你在回调里自建的查询必须自己 `Physics.SyncTransforms()`（或者别关）。
+50. **蹲伏改胶囊尺寸要注意什么？**
+    要点：用 `SetCapsuleDimensions`（重算 5 个缓存偏移），并放在 `BeforeCharacterUpdate` 里，让 Phase1 的地面探测用新几何；站起前必须用"站立尺寸"的胶囊单独检测头顶净空，否则顶穿天花板。
+
+---
+
+# 附录 A · 常量表（`KinematicCharacterMotor.cs:549-563`）
+
+| 常量 | 值 | 作用 |
+|---|---|---|
+| `MaxHitsBudget` | 16 | CapsuleCast/Raycast 命中缓冲（官方 3.x 是 32） |
+| `MaxCollisionBudget` | 16 | Overlap 缓冲（官方 3.x 是 32） |
+| `MaxGroundingSweepIterations` | 2 | 地面探测额外迭代（最多 3 次扫掠） |
+| `MaxRigidbodyOverlapsCount` | 16 | 刚体命中记账上限 |
+| `CollisionOffset` | 0.01 | 皮肤厚度 |
+| `GroundProbeReboundDistance` | 0.02 | 地面探测回弹距离 |
+| `MinimumGroundProbingDistance` | 0.005 | 最小探测距离（离地时） |
+| `GroundProbingBackstepDistance` | 0.1 | 地面扫掠起点后撤 |
+| `SweepProbingBackstepDistance` | 0.002 | 移动扫掠起点后撤 |
+| `SecondaryProbesVertical` | 0.02 | 边缘检测抬高 |
+| `SecondaryProbesHorizontal` | 0.001 | 边缘检测横向偏移 |
+| `MinVelocityMagnitude` | 0.01 | 速度小于此值归零 |
+| `SteppingForwardDistance` | 0.03 | 台阶检测前探距离 |
+| `MinDistanceForLedge` | 0.05 | 不启用台阶时的边缘检测高度 |
+| `CorrelationForVerticalObstruction` | 0.01 | 判定"竖直障碍"的阈值 |
+
+# 附录 B · 关键字段默认值
+
+| 字段 | 默认 | 备注 |
+|---|---|---|
+| `MaxStableSlopeAngle` | 60 | 可站立最大坡角 |
+| `StableGroundLayers` | -1（全部） | 建议只勾地形/建筑 |
+| `MaxStepHeight` | 0.5 | 台阶高度 |
+| `MinRequiredStepDepth` | 0.1 | 台阶最小深度（clamp 到 radius） |
+| `LedgeAndDenivelationHandling` | true | 边缘处理开关 |
+| `MaxStableDistanceFromLedge` | 0.5 | 悬空超过此距离掉落 |
+| `MaxVelocityForLedgeSnap` | 0 | 0 = 朝外走就不吸附 |
+| `MaxStableDenivelationAngle` | 180 | 180 = 关闭落差判定 |
+| `InteractiveRigidbodyHandling` | true | 刚体交互总开关 |
+| `SimulatedCharacterMass` | 1 | 推箱子用的"伪质量" |
+| `RigidbodySlipVelocity` | 5 | 打滑检测阈值 |
+| `MaxMovementIterations` | 5 | 扫掠预算（最多 6 次） |
+| `MaxDecollisionIterations` | 1 | 重叠解算预算 |
+| `CheckMovementInitialOverlaps` | true | 移动前查起点重叠 |
+| `KillVelocityWhenExceedMaxMovementIterations` | true | 超预算清速度 |
+| `KillRemainingMovementWhenExceedMaxMovementIterations` | true | 超预算清剩余位移 |
+
+# 附录 C · 回调调用顺序（背下来）
+
+```
+Phase1: BeforeCharacterUpdate
+        → [内部：MoveCharacter / 重叠 / 地面 / 平台跟随]
+        → PostGroundingUpdate
+Phase2: UpdateRotation
+        → [内部：moveRotation / 重叠 / 压扁判定]
+        → UpdateVelocity
+        → [内部：移动解算]
+            ├─ OnMovementHit（每次扫掠命中）
+            ├─ OnGroundHit（地面探测命中时，在 Phase1 内）
+            ├─ ProcessHitStabilityReport（每次稳定性判定后）
+            └─ IsColliderValidForCollisions（每次查询过滤）
+        → OnDiscreteCollisionDetected（可选）
+        → AfterCharacterUpdate
+```
+
+> 注意：`OnGroundHit` 发生在 **Phase1**，比 `UpdateVelocity` 早！所以你不能在 `OnGroundHit` 里读"本帧最终速度"。
+
+# 附录 D · 术语表
+
+| 术语 | 含义 |
+|---|---|
+| Transient | 本 tick 解算出的权威位姿/速度 |
+| Sweep | 用体积扫掠检测碰撞（连续检测） |
+| Snap | 地面吸附（把角色拉到地面） |
+| Stable | 法线在可站立角内（且通过 ledge/台阶检查） |
+| Obstruction Normal | 用于投影的"有效阻挡法线"（可能被地面重算过） |
+| Crease | 两平面交线，角色沿其滑行 |
+| Attached Rigidbody | 当前站立的可跟随刚体（平台） |
+| Decollision | 把角色从重叠中推出来 |
+| Skin/Offset | 0.01 的安全缝 |
+| Denivelation | 内外法线夹角过大导致的"弹射"现象 |
+
+# 附录 E · 7 天学习计划
+
+| 天 | 内容 | 产出 |
+|---|---|---|
+| D1 | 第 1-4 集 + 通读 `KinematicCharacterMotor.cs` 字段区 | 画出系统时序图 |
+| D2 | 第 5 集（Phase1）+ 第 6 集（ProbeGround） | 手写 Phase1 五步 |
+| D3 | 第 7 集（InternalCharacterMove） | 手画扫掠循环流程图 |
+| D4 | 第 8-9 集（投影 + 台阶） | 白板推导 `GetDirectionTangentToSurface` |
+| D5 | 第 10-11 集（平台 + 刚体） | 做一个旋转平台 + 推箱子 |
+| D6 | 第 13-14 集（Controller + 相机） | 从零写出可玩角色（跳跃/土狼/缓冲） |
+| D7 | 第 16-17 集（排错 + 题库） | 口述 50 题，录音自检 |
+
+**如果你只想学 Controller（gameplay 路线，5 天）**
+
+| 天 | 内容 | 产出 |
+|---|---|---|
+| G1 | **12 集附 12附.0~12附.2** + 第 13.1~13.4 节 | 画出"速度合成表"，写出可跑的 Controller |
+| G2 | **12 集附 12附.3~12附.4** + 第 5、6 集只看"会改我速度的三处"（吸附 `919`、落地投影 `942`、平台动量 `1002`） | 落地/离地/撞墙事件全部改为状态差分 |
+| G3 | **12 集附 12附.5** + 13 集附（状态机、Root Motion、蹲伏） | 调出一套自己满意的移动/跳跃手感，参数写进配置 |
+| G4 | 第 14 集 + 13.6 手感清单 | 第三人称相机闭环，跟手不晕 |
+| G5 | **12 集附 12附.6~12附.8** + 第 16 集 | 完成 4 个练习，产出一份"可迁移原则"笔记 |
+
+> 这条路线**不需要读 InternalCharacterMove 的代码**。你只要记住它的三个副作用：会投影你的速度、会因预算耗尽清零速度（`1563-1568`）、会把平台速度加到位移上。其余都是 Controller 的事。
+
+---
+
+# 附录 F · 方案对比表（面试"你了解哪些角色方案"）
+
+| 维度 | Dynamic Rigidbody | Unity CharacterController | **KCC（本仓库）** | OpenKCC | DOTS KCC |
+|---|---|---|---|---|---|
+| 移动方式 | 力/速度积分 | `Move()`（C++ 黑盒） | 直接写位姿 + 扫掠解算 | 同左（`MovePlayer`） | ECS + 物理查询 |
+| 命中信息 | 碰撞回调 | 只有 `CollisionFlags` | 法线/点/稳定性/台阶/边缘**全都有** | 近似（`KCCGroundedState`） | 有（`TrackedTransform`） |
+| 斜坡 | 摩擦模型决定 | 内置（不可调） | 可调角/可滑/可吸附 | 可调（`maxWalkAngle`） | 可调 |
+| 台阶 | 靠碰撞体斜角 | 内置 | 算法级（Standard/Extra） | 两段式 Snap-Up | 有 |
+| 移动平台 | 物理约束 | 需手写 | 一等公民（两阶段） | `IMovingGround` | `TrackedTransform` |
+| 性能 | 中（物理求解） | 高 | 高（NonAlloc、固定预算） | 高（可换 ColliderCast） | 极高（Burst） |
+| 确定性/回滚 | 差 | 差 | **好**（`GetState/ApplyState`） | 好（有 Netcode 实现） | 好（原生支持） |
+| 扩展性 | 低（改物理参数） | 无 | **高**（10 个回调 + 3 个 virtual） | 高（全接口化） | 中（要写 System） |
+| 适用 | 布娃娃/物理谜题 | 快速原型 | 动作游戏主角 | 需要测试/网络的团队 | 大规模同屏 |
+
+> 一句话回答："**要真实物理选 Rigidbody；要快速出原型用 CharacterController；要手感、要网络、要可控，选 KCC 这类 kinematic 方案。**"
+
+# 附录 G · 常见误区 FAQ（12 条，全部来自实战）
+
+1. **"我把 `transform.position` 直接改了，为什么角色瞬移后卡住？"**
+   → 必须用 `Motor.SetPosition()`（`652`）或 `Motor.MoveCharacter()`（`701`）。直接改 Transform，`_transientPosition` 没同步，下一 tick 会被拉回原地，且重叠没解算 → 卡在墙里。
+
+2. **"为什么我加的竖直速度立刻消失了？"**
+   → 站在地上时地面吸附会把你拉回去。上抬前必须 `ForceUnground()`（`1358`）。这是官方手册明确写的第一条注意事项。
+
+3. **"为什么我每帧 `+= gravity` 之后角色越跑越快？"**
+   → `BaseVelocity` 是持久字段。地面分支里要**赋目标速度**（覆盖），而不是累加；空中才累加。想不清就记住：**每 tick 只写一次最终速度**。
+
+4. **"角色在平地上也有微小抖动"**
+   → 检查 ① `transform` 是否有缩放；② 是否同时开了 Rigidbody 插值和 KCC 插值；③ 地面碰撞体是否和角色 capsule 初始就重叠（`CheckMovementInitialOverlaps`）；④ 坡角是否贴着 `MaxStableSlopeAngle`（临界角会让"稳定/不稳定"每 tick 翻转，表现为高频抖动）。
+
+5. **"为什么角色能在 45° 斜坡上站着，但 61° 就滑？"**
+   → `MaxStableSlopeAngle` 默认 60。注意：**超过阈值不会自动滑**，只是"判定为不稳定"，滑不滑取决于你在 `UpdateVelocity` 里是否还施加了重力沿坡分量。
+
+6. **"改了 `Capsule` 的 radius 但角色碰撞没变"**
+   → 必须用 `SetCapsuleDimensions`（`758`），它会同步 `Capsule` 并重算缓存偏移；直接改 `Capsule.radius` 会让 `CharacterCollisionsSweep` 里的半球球心算错。
+
+7. **"为什么我的角色会被平台一点点挤进墙里？"**
+   → `MaxDecollisionIterations` 默认只有 1。平台推 + 墙挤压同时发生时，一次解算不够 → 调 3~5；并确认 `Rigidbody.maxDepenetrationVelocity` 为 Infinity（`PhysicsMover.cs:149`）。
+
+8. **"角色踩在别的角色头上会抖"**
+   → 角色之间不进刚体记账（`1610`），只能靠"碰撞体互撞"；两个 kinematic 胶囊互相视为静态几何，稳定性判定会来回翻转。要么禁止叠人，要么给角色加一个专门的"可站立"层并处理。
+
+9. **"物理查询偶尔返回空，角色穿地"**
+   → 关闭 `Physics.autoSyncTransforms` 时，Transform 改动不会立刻反映到物理世界。KCC 自己在合适时机同步，但**你在回调里做的查询**可能读到旧位姿 —— 手动 `Physics.SyncTransforms()`，或干脆别关。
+
+10. **"怎么做'被击退'？"**
+    → `ForceUnground()` + 直接赋 `BaseVelocity`（不要用 `AddForce`，这里没有刚体）。若需要"击退期间不受输入控制"，切换到击飞状态（第 13 集附）。
+
+11. **"为什么我的动画根运动让角色瞬移？"**
+    → `Animator.applyRootMotion` 没关，Unity 直接改了 Transform，KCC 下一个 tick 又把它拉回 Transient → 视觉上"抽搐/瞬移"。见第 13 集附。
+
+12. **"KCC 能用于 2D 吗？"**
+    → 不能直接用。`CapsuleCast` / `CharacterUp` 都是 3D 假设；2D 需要换成 `CapsuleCast`(2D) + `Rigidbody2D`，本质要重写查询层（但"投影 + 迭代"的思想可以照搬）。
+
+### 玩法向 FAQ（对应 12 集附：手感与状态的 7 个高频问题）
+
+> 以下编号独立，便于单独引用。
+
+1. **"角色像在冰上，松手滑很远"**
+    → 地面分支写成了累加（`velocity += ...`）而不是覆盖；或收敛用了 `Lerp(a, b, k * dt)` 且 k 太小。地面必须是"目标速度 + `1 - exp(-k·dt)`"，k 取 10~15；只有空中才允许累加。
+
+2. **"角色像磁铁，贴着斜坡和墙不放"**
+    → 双重补偿：Controller 里又自己贴了一次地，Motor 也在吸附；或 `GroundDetectionExtraDistance` 给太大。另外关掉 `LedgeAndDenivelationHandling` 会让"脚一半悬空"也判成可站。
+
+3. **"上坡变慢，平路正常"**
+    → 在 Controller 里又乘了一次 `Vector3.Dot(velocity, groundNormal)`。`GetDirectionTangentToSurface` 已经"保长度"投影，再投影一次等于乘 `cos(坡角)`。
+
+4. **"跳上移动平台被甩飞"**
+    → 手动把 `Motor.AttachedRigidbodyVelocity` 加进了 `BaseVelocity`。Motor 在脱离平台时自动做动量守恒（`1002-1005`），你再加一次就是双倍。
+
+5. **"攻击/技能期间角色还在转身"**
+    → 朝向也要状态化：在 `UpdateRotation` 里按状态直接 `return`（不动 `currentRotation`）。不要指望 Animator 帮你锁朝向——它和 Motor 抢的是同一个旋转通道，见 13 集附的 Root Motion 部分。
+
+6. **"落地那帧读 `Motor.Velocity.y` 怎么是 0？"**
+    → 落地瞬间 Phase1 已经做了"落地位移投影"（`942-947`），把竖直速度清零并转到坡面。要算落地伤害/落地特效，缓存**上一 tick 空中时**的 `Motor.BaseVelocity`，在落地差分帧消费。
+
+7. **"为什么我把重力写进地面分支，角色反而更飘？"**
+    → 地面分支是覆盖式写入，`+重力` 会被后面的 `=` 目标速度覆盖；真正生效的是"目标速度的竖直分量"，通常为 0。坡上想要下滑就显式加"沿坡分量"，并且用 `IsStableOnGround` 判断是否该滑（陡坡判定为不稳定时会自动走空中分支）。
+
+# 附录 H · 8 个实验课（录制演示用）
+
+每个实验都能在 10 分钟内做完，且**肉眼可见地验证源码结论**。
+
+| # | 实验 | 操作 | 验证的源码结论 |
+|---|---|---|---|
+| 1 | 关掉吸附 | 把 `MaxStableSlopeAngle` 调 0 | 角色在平地也"跳着走"→ 理解稳定判定 |
+| 2 | 下坡不飞 | 做 30° 斜坡跑下去 | `GroundDetectionExtraDistance = 0` 时开始"蹦"；加 0.5 后贴地 |
+| 3 | 跳不起来 | 注释掉 `ForceUnground` | 跳跃高度为 0 或随机 → 吸附的威力 |
+| 4 | 台阶临界 | 做 0.5 / 0.6 两个台阶 | `MaxStepHeight = 0.5` 的硬边界；看场景里的黄色圆圈（`KinematicCharacterMotorEditor.cs:19`） |
+| 5 | 迭代预算 | 把 `MaxMovementIterations` 改 1 | 走进墙角立刻卡住 → 理解 crease |
+| 6 | 平台相位 | 平台来回平移，角色站上去 | 对照 `_attachedRigidbodyVelocity` 的两笔位移；再把 `MoveWithPhysics` 关掉看抖动 |
+| 7 | 打滑 | 平台速度从 5 突降到 0 | `RigidbodySlipVelocity` 触发 `ForceUnground`，角色被甩出 |
+| 8 | 插值 | `KCCSettings.Interpolate = false` | 144Hz 下肉眼可见的 50Hz 抖动 → 理解三套位姿 |
+
+> 录制技巧：用 `OnDrawGizmos` 画 `GroundingStatus.GroundPoint`、`Overlaps`、`Velocity`，观众能"看见"源码在做什么。可视化比读码有效 10 倍。
+
+# 附录 I · 视频分镜表（每集通用模板）
+
+| 时间 | 画面 | 内容 |
+|---|---|---|
+| 0:00-0:30 | 标题卡 | 本集问题（一句话） |
+| 0:30-2:00 | 白板/示意图 | 先讲"为什么需要它"，不碰代码 |
+| 2:00-8:00 | IDE | 代码走读：按 `文件:行号` 逐段 |
+| 8:00-12:00 | Unity | 实验演示：改参数 → 观察行为差异 |
+| 12:00-14:00 | 白板 | 画出数据流/向量图 |
+| 14:00-15:00 | 标题卡 | 面试追问 3 连 + 下集预告 |
+
+**录制清单（开录前 60 秒自检）**
+
+- [ ] 代码字号 ≥ 18，主题深色，行号打开
+- [ ] 关键行用书签/断点高亮（IDE 里标 3~5 个锚点，别满屏红）
+- [ ] Unity 场景已搭好可复现的"临界案例"（台阶 0.5/0.6、斜坡 30°/61°）
+- [ ] Gizmos 已开（`GroundPoint`、`Overlaps`、`Velocity`、`TransientPosition`）
+- [ ] 每集至少一个"反例演示"（改坏它，看现象）
+
+# 附录 J · 面试官视角：评分表 + 白板题
+
+**评分表（面试官其实在打这 6 项）**
+
+| 维度 | 及格 | 优秀 |
+|---|---|---|
+| 方案选择 | 知道 KCC 是 kinematic | 能说清"什么项目该用/不该用 KCC" |
+| 时序理解 | 知道 FixedUpdate + 插值 | 能画出两阶段 + 平台移动的完整时序，并解释为何不能合并 |
+| 算法细节 | 知道扫掠 + 投影 | 能讲 crease/corner、迭代预算、皮肤厚度、吸附距离的取值理由 |
+| 数学素养 | 会用 `ProjectOnPlane` | 能推 `GetDirectionTangentToSurface` 并解释"保长度 vs 投影"的能量含义 |
+| 手感工程 | 会调参数 | 能给出"跳跃高度/时间 → 重力与初速"的公式、土狼/缓冲的实现位点 |
+| 工程判断 | 能改 | 能指出源码的坑（`eulerAngles` 回绕、16 命中预算、字符互推死代码），并给修法 |
+
+**5 道白板题（现场画，不要背）**
+
+1. 画出"平台从 A 移到 B，角色站在上面"的一个 tick 的完整时序，标注角色的两次位移。
+2. 给定角色速度 `v`、命中法线 `n`、地面法线 `g`，写出"贴地撞墙"时的速度投影步骤（提示：先构造 `obstructionUpAlongGround`）。
+3. `MaxMovementIterations = 5` 时最多几次扫掠？为什么是"预算"而不是"收敛"？
+4. 为什么 `ForceUnground(0.1f)` 里要传 0.1 而不是 0？这 0.1 秒里发生了什么？
+5. 你要在网络里同步一个 KCC 角色，列出必须同步的字段，并说明哪些属性能从别的推出（减少带宽）。
+
+**反问环节（显示你真的做过）**
+
+- "你们的角色是 KCC 自研还是买的？如果是 KCC，`MaxDecollisionIterations` 调过吗？多人叠在一起会不会挤墙？"
+- "移动平台是 velocity 驱动还是 transform 驱动？角色被平台侧推时会不会继承动量？"
+
+# 附录 K · 资源清单
+
+| 资源 | 用途 |
+|---|---|
+| 官方 User Guide：`https://usermanual.wiki/Pdf/UserGuide.1230143095.pdf` | 三阶段架构、5 条 Additional Information（注意是老版本） |
+| 官方中文翻译（B 站专栏 `cv18765023`） | 快速对照术语；同样基于老版本 |
+| 本仓库 `package.json` 里的 `documentationUrl`（Google Doc） | 官方最新手册入口 |
+| OpenKCC：`https://github.com/nicholas-maltbie/OpenKCC` | 另一套工业实现：接口化 ColliderCast、独立状态机、单元测试、Netcode |
+| Fauerby 2003：`https://www.peroxide.dk/papers/collision/collision.pdf` | Collide-and-Slide 的学术版（椭球空间） |
+| Quake3 `bg_slidemove.c`：`https://github.com/suijingfeng/vkOpenArena/blob/master/code/game/bg_slidemove.c` | `PM_SlideMove` 原始实现，对照 crease/预算 |
+| 知乎《KinematicCharacterController 源码解读》（`p/662752593`） | 中文最系统的源码走读：移动四类情况、step、slide、crease/corner |
+| B 站《Unity Try To Learn Kcc》系列（`BV1agcazfEca`，15 集） | 视频跟练，含“应用根运动”一集 —— 对应本课程第 13 集附 |
+| CSDN《unity 最完美的 CharacterController》（`qq_36303853/134984516`） | **对照组**：官方 CC 的跳跃/下蹲/下坡抖动标准做法 |
+| 本仓库 9 个 C# 文件 | 唯一权威（文档与代码冲突时以代码为准） |
+
+---
+
+# 附录 L · 读完后自测 20 问（一句话答案）
+
+> 用法：遮住答案，**出声**回答。答不出来的，回到对应集数重读那一节。20 题全过 = 你能把 KCC 讲明白。
+
+### A 组 · 架构与调度（第 2、3、12 集）
+
+**1. KCC 为什么不产生力？**
+因为它是 kinematic：直接写位姿，速度只是"期望位移 / dt"，重力与加速全在你的 Controller 里。
+
+**2. 一个 tick 里角色的位置被移动几次？**
+**两次**：Phase1 跟随平台移动一次（`attachedRigidbodyVelocity`），Phase2 按自身速度移动一次。
+
+**3. 为什么必须两阶段？**
+因为"平台必须先动"和"角色必须在平台动之前探地"矛盾：Phase1 用旧位姿探地，Phase2 在新位姿上解算重叠与自身移动。
+
+**4. 三套位姿分别是什么？谁读谁？**
+`Transform`（渲染/外部读）、`Transient`（逻辑真相，所有查询读它）、`InitialTick`（插值起点）。逻辑只写 Transient，渲染只读 Transform。
+
+**5. 一帧跑两次 FixedUpdate，插值为什么不会坏？**
+`PostSimulationInterpolationUpdate` 每次把 Transform **复位**到本 tick 的 InitialTick，下一次 PreSimulation 又拉回 Transient，不会累积。
+
+### B 组 · 探地与稳定性（第 5、6 集）
+
+**6. 地面探测的距离是怎么选的？**
+上一帧稳定（或上轮移动中踩到地）→ `max(radius, MaxStepHeight) + GroundDetectionExtraDistance`；否则只探 `0.005`。
+
+**7. ProbeGround 为什么要迭代？**
+一次垂直扫掠只拿到第一个面；若它不可站，就沿该面重定向、只留 0.02 距离再探，最多 3 次，从而穿过陡坡/缝隙找到真正的平地。
+
+**8. 稳定性判定有哪三层？**
+① 法线夹角 ≤ `MaxStableSlopeAngle`（60°）→ ② ledge / denivelation 特例 → ③ 不稳定的再看能不能上台阶。
+
+**9. ledge 为什么要左右各打一条向下射线？**
+判断"脚是不是悬空"：一边稳定一边不稳定 → 处在边缘，再按距离/朝外速度决定要不要吸附。
+
+**10. 坡度超过 60° 会自动滑下去吗？**
+不会。KCC 只判"不稳定"，滑不滑取决于你在 `UpdateVelocity` 里是否还施加沿坡重力分量。
+
+### C 组 · 移动与投影（第 7、8、9 集 + 辨析）
+
+**11. InternalCharacterMove 为什么先做 Overlap 而不是直接 CapsuleCast？**
+因为起点已重叠时 `CapsuleCast` 返回 `distance = 0` 且法线不可靠；先用 `ComputePenetration` 拿分离法线，选最阻碍前进的那个当命中。
+
+**12. 为什么每次只前进到"命中点 − 0.01"？**
+皮肤厚度 `CollisionOffset`：永远不真接触，避免浮点误差导致下一帧起点重叠、抖动。
+
+**13. crease 和 corner 的判定本质是什么？**
+"两个面是否**同时**约束住了速度"：用交线方向、把法线与入射速度投影到垂直交线的平面做二维比较（`EvaluateCrease`），不是简单点积。
+
+**14. 稳定命中与不稳定命中的投影差别？**
+稳定：`GetDirectionTangentToSurface × 原长度`（**保长度**，斜坡不减速）；不稳定：`ProjectOnPlane`（**砍掉法线分量**，撞墙会减速）。
+
+**15. 迭代超预算会怎样？**
+剩余位移清零 + 速度清零 + 返回 `false`（`KillRemainingMovement…` / `KillVelocity…` 两个开关）。
+
+### D 组 · 平台、交互与工程（第 10、11、15 集）
+
+**16. attached rigidbody 是怎么识别的？**
+稳定站在某 collider 上 + 它带 Rigidbody + （是 `PhysicsMover` 或 不是 kinematic）→ 认作可跟随平台。
+
+**17. 平台"打滑"检测是什么？**
+平台速度**骤降**超过 `RigidbodySlipVelocity` 时 `ForceUnground` 并把 attached 置空，让角色按自身惯性被甩出去。
+
+**18. 推箱子为什么用 `ForceMode.VelocityChange`？**
+直接改速度，质量影响已经包含在 `characterToBodyMassRatio` 里，结果可预测、不会被质量二次放大。
+
+**19. 为什么要 GetState / ApplyState？**
+联机与回滚需要"完整、可序列化、不含场景引用"的状态；注意 **Controller 自己的状态（输入缓冲、计时器）不在里面**，要你自己存。
+
+**20. KCC 最大的三个局限？**
+① 不支持任意重力方向（假设 Up 由旋转决定）；② 角色间互推是死代码（`1610` 的提前 return）；③ 平台不参与真实物理反作用（换了 `MovePosition` 驱动）。
+
+---
+
+## 结语（视频收尾口播）
+
+> 读 KCC 源码真正学到的不是"怎么用 KCC"，而是三件事：
+> **第一，任何角色控制器都是"意图 → 速度 → 位移 → 碰撞解算 → 表现"的流水线**，KCC 只是把中间两步做到了极致。
+> **第二，所有"手感玄学"背后都是可量化的数学**：吸附距离、皮肤厚度、指数收敛、保长度投影、迭代预算。
+> **第三，工程上的优雅来自"约束"**：固定预算、零 GC、确定性顺序、状态可序列化 —— 这些才是能在面试里讲出深度、能在项目里扛住压力的东西。

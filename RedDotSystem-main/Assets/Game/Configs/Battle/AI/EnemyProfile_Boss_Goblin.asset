@@ -1,0 +1,160 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e2f17109826344441a487728c79df41a, type: 3}
+  m_Name: EnemyProfile_Boss_Goblin
+  m_EditorClassIdentifier: 
+  moveSpeed: 1.6
+  turnSpeedDeg: 240
+  attackRange: 2.3
+  stopDistance: 1.9
+  sightRange: 25
+  sightAngle: 160
+  loseTargetSeconds: 5
+  reactionDelay: 0.18
+  maxPoise: 60
+  poisePerDamage: 1.2
+  poiseRecoverDelay: 2
+  poiseRecoverSeconds: 3
+  staggerSeconds: 0.9
+  hurtStaggerSeconds: 0.4
+  heavyHitDamage: 15
+  lightHitInterruptChance: 0.3
+  flinchClip: {fileID: -1837773511420484736, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  flinchMask: {fileID: 31900000, guid: d4ffc7d71358c094c8db21c0e7fddd9b, type: 2}
+  flinchSeconds: 0.8
+  heavyHitFrontClip: {fileID: 3301660742571461909, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  heavyHitBackClip: {fileID: 1595277625356204253, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  heavyHitSeconds: 0.9
+  heavyHitSpeed: -1
+  phaseIntroClip: {fileID: 0}
+  phaseIntroSeconds: 0.8
+  phaseAttackSpeedBonus: 0.1
+  tauntClip: {fileID: 0}
+  tauntSeconds: 1.2
+  tauntIntervalMin: 15
+  tauntIntervalMax: 25
+  tauntMinDistanceFactor: 1.5
+  globalCooldown: 0.55
+  intervalJitterMin: 0.85
+  intervalJitterMax: 1.15
+  strafeChance: 0.45
+  strafeDuration: 0.5
+  strafeRadius: 2.6
+  backstepChance: 0.35
+  backstepDistance: 2
+  attacks:
+  - id: stamp
+    clip: {fileID: -8791453557880034616, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+    fadeIn: 0.06
+    speed: 1.15
+    hitFrames:
+    - 0.45
+    recoveryStart: 0.62
+    startNormalized: 0
+    endNormalized: 0.74
+    followUps:
+    - attackId: stamp
+      atNormalized: 0.8
+      chance: 0.55
+    - attackId: swing
+      atNormalized: 0.82
+      chance: 0.35
+    damage: 8
+    poiseDamage: 12
+    range: 2
+    arc: 110
+    advanceDistance: 0.5
+    advanceEnd: 0.35
+    cooldown: 1.4
+    weight: 1.25
+    minPhase: 1
+    telegraphVfxKey: 
+  - id: swing
+    clip: {fileID: -3568453503579113454, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+    fadeIn: 0.08
+    speed: 1.25
+    hitFrames:
+    - 0.33
+    - 0.52
+    recoveryStart: 0.72
+    startNormalized: 0
+    endNormalized: 0.84
+    followUps:
+    - attackId: stamp
+      atNormalized: 0.9
+      chance: 0.45
+    damage: 12
+    poiseDamage: 20
+    range: 2.4
+    arc: 100
+    advanceDistance: 0.9
+    advanceEnd: 0.3
+    cooldown: 2.2
+    weight: 1
+    minPhase: 1
+    telegraphVfxKey: 
+  - id: slam
+    clip: {fileID: 12983523418525675, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+    fadeIn: 0.1
+    speed: 1.45
+    hitFrames:
+    - 0.45
+    recoveryStart: 0.78
+    startNormalized: 0
+    endNormalized: 0.88
+    followUps: []
+    damage: 18
+    poiseDamage: 30
+    range: 2.8
+    arc: 120
+    advanceDistance: 1.1
+    advanceEnd: 0.32
+    cooldown: 3
+    weight: 0.7
+    minPhase: 1
+    telegraphVfxKey: 
+  - id: slam_phase2
+    clip: {fileID: -7878026066155401312, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+    fadeIn: 0.1
+    speed: 1.15
+    hitFrames:
+    - 0.4
+    - 0.62
+    recoveryStart: 0.76
+    startNormalized: 0
+    endNormalized: 0.84
+    followUps:
+    - attackId: stamp
+      atNormalized: 0.88
+      chance: 0.5
+    damage: 16
+    poiseDamage: 26
+    range: 2.9
+    arc: 120
+    advanceDistance: 1.2
+    advanceEnd: 0.3
+    cooldown: 2.6
+    weight: 1
+    minPhase: 2
+    telegraphVfxKey: 
+  idleClip: {fileID: -6197149268509949104, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  runClip: {fileID: 1275926326739213637, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  hurtClip: {fileID: 3301660742571461909, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  walkLeftClip: {fileID: -5954985257845531946, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  walkRightClip: {fileID: 9160966505602295481, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  walkForwardClip: {fileID: 3562186347886755870, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  walkBackClip: {fileID: 6733344748642250728, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  walkClipSpeed: 1
+  staggerClip: {fileID: -3804751593570551859, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  dodgeClip: {fileID: 8742447364452139131, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  deathClip: {fileID: 7753710542118689880, guid: f5255da99f6af944b907e552b710ca49, type: 3}
+  phaseHpPercents: 6400000032000000

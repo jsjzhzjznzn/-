@@ -1,0 +1,29 @@
+-- xLua 接入自检脚本
+-- 文件：Assets/Game/Resources/Lua/main.lua.txt
+-- 加载：require "Lua.main"（xLua 内置规则：模块名点号换斜杠 + ".lua"，由 Resources 读取）
+
+local M = {}
+
+M.module = "Lua.main"
+
+-- 1) Lua 的 print 被 xLua 转发到 UnityEngine.Debug.Log
+print("[Lua] hello from Lua —— xLua 已接入本项目")
+
+-- 2) 通过 CS 前缀访问 C# 类型
+function M.add(a, b)
+    local sum = a + b
+    CS.UnityEngine.Debug.Log("[Lua] C# 被 Lua 调用：a + b = " .. sum)
+    return sum
+end
+
+-- 3) 返回中文字符串，验证 UTF-8 链路
+function M.greet(who)
+    return "你好，" .. tostring(who) .. "！这是 Lua 返回的字符串"
+end
+
+-- 4) 调用 C# 的静态方法并读取 C# 属性
+function M.timeScale()
+    return CS.UnityEngine.Time.timeScale
+end
+
+return M

@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d7a9020a9136f3a44b94da2c2d9315e5, type: 3}
+  m_Name: RedDotKeyAsset
+  m_EditorClassIdentifier: 
+  m_AllRedDotList:
+  - id: 1
+    des: "\u4E3B\u754C\u9762"
+  - id: 2
+    des: "\u63D0\u5347"
+  - id: 3
+    des: "\u89D2\u8272\u4FE1\u606F"
+  - id: 4
+    des: "\u80CC\u5305"
+  - id: 5
+    des: "\u90AE\u7BB1"
+  - id: 6
+    des: "\u5C5E\u6027\u70B9"
+  - id: 7
+    des: "\u7269\u54C1"
+  - id: 8
+    des: "\u7CFB\u7EDF\u90AE\u4EF6"
+  - id: 9
+    des: "\u4E2A\u4EBA\u90AE\u4EF6"
+  - id: 10
+    des: "\u5546\u57CE"
+  - id: 11
+    des: "\u62BD\u5956"
+  - id: 12
+    des: "\u5E7F\u544A\u5546\u54C1"
+  - id: 13
+    des: 111
+  - id: 14
+    des: "\u597D\u53CB\u5165\u53E3"
+  - id: 15
+    des: "\u597D\u53CB\u7533\u8BF7"

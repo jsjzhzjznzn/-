@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f0117b483616124ab79859e5126cb0c, type: 3}
+  m_Name: anbi_ATK2
+  m_EditorClassIdentifier: Assembly-CSharp::ComboData
+  characterName: 3
+  _attackStyle: 0
+  _comboName: 
+  _attackClip:
+    _FadeDuration: 0.25
+    _Events:
+      _NormalizedTimes: []
+      _Callbacks: []
+      _Names: []
+    _Clip: {fileID: -6955234144985721900, guid: 98daa5f85ba9dc146824d7488da418e9, type: 3}
+    _Speed: 1
+    _NormalizedStartTime: NaN
+  _attackEndClip:
+    _FadeDuration: 0.25
+    _Events:
+      _NormalizedTimes: []
+      _Callbacks: []
+      _Names: []
+    _Clip: {fileID: 6840355032206441725, guid: 98daa5f85ba9dc146824d7488da418e9, type: 3}
+    _Speed: 1
+    _NormalizedStartTime: NaN
+  _comboColdTime: 0
+  _damageMultiplier: 0.09
+  _critRate: 0.2
+  _critMultiplier: 2
+  _hitBuff: {fileID: 0}
+  _attackDistance: 1.7
+  _comboOffset: 1
+  _enemyLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  _hitFrameTime: 0.35
+  _pauseFrameTime: 0.06
+  _shakeForce: 0.18
+  appAudioPrefab: 1
+  _weaponSound:
+  - {fileID: 8300000, guid: f6b7d84faf3f2e24590394e6228d3417, type: 3}
+  _characterVoice:
+  - {fileID: 8300000, guid: 67962eeb9da990d4880a13891fe5c269, type: 3}
+  _universalSound: 0
+  _linkCancelTime: 0.6

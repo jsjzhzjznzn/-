@@ -1,0 +1,75 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 802c0613ab6284c45bae9f2440b82d45, type: 3}
+  m_Name: HitFeelProfile
+  m_EditorClassIdentifier: 
+  localHitStopMax: 0.09
+  globalHitStopScale: 0.05
+  enemyHitStopSeconds: 0.07
+  enemyHitStopScale: 0.06
+  lightHitShake: 0.18
+  heavyHitShake: 0.55
+  enemyHitShake: 0.32
+  lightHitVfxKey: enemy_hit
+  heavyHitVfxKey: enemy_hit
+  lightVfxScale: 0.75
+  heavyVfxScale: 1.15
+  lightImpactClips:
+  - {fileID: 8300000, guid: 8b8b4df240a6fa14ea7ebd3fe0b21785, type: 3}
+  - {fileID: 8300000, guid: a115633b2991dcb429aac3a3fa0f5c92, type: 3}
+  - {fileID: 8300000, guid: be02bdee965f653479dd40ea69fb00ec, type: 3}
+  - {fileID: 8300000, guid: 1446ebbeff438dd44909fe9e79430622, type: 3}
+  - {fileID: 8300000, guid: d16ba61156149714b987b2f4c22add33, type: 3}
+  heavyImpactClips:
+  - {fileID: 8300000, guid: 0d6dc35c38370414eb65a79891e2898c, type: 3}
+  - {fileID: 8300000, guid: 570d1578c42b1cf439826d67dc1410b4, type: 3}
+  - {fileID: 8300000, guid: 2ce7d73c645d672488595a8d2b8cef4d, type: 3}
+  lightImpactVolume: 0.7
+  heavyImpactVolume: 0.95
+  stickMaxDistance: 0.35
+  stickMaxAngle: 70
+  flashSeconds: 0.12
+  jitterAmplitude: 0.035
+  jitterSeconds: 0.12
+  knockbackLight: 0.14
+  knockbackHeavy: 0.32
+  heavyDamageThreshold: 15
+  hitStopOnPlayerHit: 0
+  deflectHitStopSeconds: 0.2
+  deflectHitStopScale: 0.02
+  deflectShake: 0.9
+  deflectFovKick: 3
+  deflectKnockbackPlayer: 0.25
+  deflectKnockbackEnemy: 0.45
+  deflectStaggerSeconds: 0.6
+  deflectCooldown: 1.2
+  deflectClips:
+  - {fileID: 8300000, guid: b97ffed8c0171224f91bb0a6dd0e00f2, type: 3}
+  - {fileID: 8300000, guid: bad7fe6f406990349af57e52c79bebc2, type: 3}
+  - {fileID: 8300000, guid: ccceba05c41964c4cb826cc9a28aa7c6, type: 3}
+  - {fileID: 8300000, guid: cadf52f9fc224e448bc3b4bf383f9947, type: 3}
+  - {fileID: 8300000, guid: b2e2b8813c822cd4ea5627ef7fb9aaf4, type: 3}
+  deflectVolume: 1
+  dodgeSlowSeconds: 0.35
+  dodgeSlowScale: 0.25
+  dodgeFovKick: 4
+  dodgeFlashAlpha: 0.22
+  killSlowSeconds: 0.5
+  killSlowScale: 0.15
+  killFovKick: 6
+  killFlashAlpha: 0.3
+  deflectFlashColor: {r: 1, g: 0.85, b: 0.25, a: 1}
+  dodgeFlashColor: {r: 0.85, g: 0.95, b: 1, a: 1}
+  killFlashColor: {r: 1, g: 0.95, b: 0.8, a: 1}
+  deflectFlashSeconds: 0.16
+  dodgeFlashSeconds: 0.14
+  killFlashSeconds: 0.22

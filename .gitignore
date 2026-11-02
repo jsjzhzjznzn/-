@@ -107,3 +107,9 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# --- snapshot exclusions (2026-11-02) ---
+.codely-cli/
+.codely.packages/
+.tmp_trash/
+_PerfBackup_20261022/

@@ -1,0 +1,16 @@
+{
+    "name": "MiMieEventBus.Unity",
+    "rootNamespace": "MiMieEventBus.Unity",
+    "references": [
+        "MiMieEventBus"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

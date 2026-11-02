@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8e3c1a29b4d6e7f8a0b1c2d3e4f5a6b, type: 3}
+  m_Name: Quest_3002
+  m_EditorClassIdentifier: 
+  questId: 3002
+  category: 0
+  title: "\u661F\u6D77\u6765\u4FE1"
+  description: "\u6D41\u8424\u624B\u4E2D\u6709\u4E00\u5C01\u6765\u8DEF\u4E0D\u660E\u7684\u59D4\u6258\u4FE1\u3002\u542C\u5979\u8BF4\u5B8C\uFF0C\u518D\u51B3\u5B9A\u662F\u5426\u63A5\u53D7\u3002"
+  acceptMode: 1
+  timeLimit: 0
+  goalList:
+  - type: 0
+    targetKey: 
+    dialogueGraph: {fileID: 11400000, guid: 7930b1e7630e2554dbef30590bd71dae, type: 2}
+    dialogueEventKey: firefly_accept
+    count: 1
+    description: "\u63A5\u53D7\u6D41\u8424\u7684\u59D4\u6258"
+  prerequisiteIdList: 
+  rewardList:
+  - itemId: 1008
+    count: 1
+  npcKey: firefly

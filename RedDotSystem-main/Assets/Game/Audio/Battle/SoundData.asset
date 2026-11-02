@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26008289c5c2abe46910aad0a5844816, type: 3}
+  m_Name: SoundData
+  m_EditorClassIdentifier: Assembly-CSharp::SoundData
+  soundInfoList:
+  - soundStyle: 1
+    characterName: 9
+    clips:
+    - {fileID: 8300000, guid: 2e3cdcff2932f5845bbf2354c0b92df9, type: 3}
+    - {fileID: 8300000, guid: a7d39bb78dd35ed438aa29d107294902, type: 3}
+    clipPaths:
+    - "Assets/Content/Resource/audoi/Audio\u7EDD\u533A\u96F6/FOOT/\u811A\u6B65\u58F01.wav"
+    - "Assets/Content/Resource/audoi/Audio\u7EDD\u533A\u96F6/FOOT/\u811A\u6B65\u58F0.wav"
+  - soundStyle: 7
+    characterName: 9
+    clips:
+    - {fileID: 8300000, guid: 1b292d51434f0624482dfefda493f788, type: 3}
+    - {fileID: 8300000, guid: 4fe7ab52a66467542b7c634975304f46, type: 3}
+    clipPaths:
+    - "Assets/Content/Resource/audoi/Audio\u7EDD\u533A\u96F6/Wind/\u95EA\u907F\u58F01.wav"
+    - "Assets/Content/Resource/audoi/Audio\u7EDD\u533A\u96F6/Wind/\u95EA\u907F\u58F02.wav"
+  - soundStyle: 2
+    characterName: 9
+    clips:
+    - {fileID: 8300000, guid: 8b8b4df240a6fa14ea7ebd3fe0b21785, type: 3}
+    clipPaths:
+    - "Assets/Content/Resource/audoi/Audio\u7EDD\u533A\u96F6/Combo/Hit/IMPT-punch-1.wav"

@@ -1,0 +1,11 @@
+{
+  "name": "com.hakisheep.mm-eventbus",
+  "version": "1.0.0",
+  "displayName": "Mm EventBus",
+  "description": "EventKey typed EventBusCore runtime for MiMieEventBus. Framework shell ships with HakiSheep.",
+  "unity": "2021.3",
+  "documentationUrl": "https://github.com/Haki-sheep/MmCSharp-EventBus",
+  "author": {
+    "name": "Haki-sheep"
+  }
+}

@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8e3c1a29b4d6e7f8a0b1c2d3e4f5a6b, type: 3}
+  m_Name: NarrativeTestQuest
+  m_EditorClassIdentifier: 
+  questId: 1001
+  category: 1
+  title: "\u8BD5\u70BC\uFF1A\u51FB\u6740\u8BD5\u70BC\u573A\u5B88\u536B"
+  description: "\u51FB\u8D25 3 \u53EA demo_enemy\u3002\u7528\u4E8E\u9A8C\u8BC1\u53D9\u4E8B\u4EFB\u52A1\uFF08Mm\u6846\u67B6\uFF09\u7684\u670D\u52A1\u5668\u6301\u4E45\u5316\u3002"
+  acceptMode: 1
+  timeLimit: 0
+  goalList:
+  - type: 1
+    targetKey: demo_enemy
+    dialogueGraph: {fileID: 0}
+    dialogueEventKey: GraphFinished
+    count: 3
+    description: "\u51FB\u8D25 demo_enemy \xD73"
+  prerequisiteIdList: 

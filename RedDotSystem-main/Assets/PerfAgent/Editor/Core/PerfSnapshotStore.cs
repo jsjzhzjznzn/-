@@ -1,0 +1,201 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using UnityEditor;
+using UnityEngine;
+using PerfAgent.Utils;
+
+namespace PerfAgent.Core
+{
+    /// <summary>
+    /// 快照存储：放在 ProjectSettings/PerfAgent/Snapshots 下。
+    /// 刻意不放进 Assets/，避免每次抓帧都触发资源导入与版本库噪声。
+    /// </summary>
+    public static class PerfSnapshotStore
+    {
+        public static string RootDir
+        {
+            get
+            {
+                var projectRoot = Directory.GetParent(Application.dataPath).FullName;
+                return Path.Combine(Path.Combine(Path.Combine(projectRoot, "ProjectSettings"), "PerfAgent"), "Snapshots");
+            }
+        }
+
+        public static string RawDir { get { return Path.Combine(RootDir, "Raw"); } }
+
+        public static void EnsureDirs()
+        {
+            if (!Directory.Exists(RootDir)) Directory.CreateDirectory(RootDir);
+            if (!Directory.Exists(RawDir)) Directory.CreateDirectory(RawDir);
+        }
+
+        public static string Save(PerfSnapshot snapshot)
+        {
+            EnsureDirs();
+            if (string.IsNullOrEmpty(snapshot.id))
+                snapshot.id = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+            if (string.IsNullOrEmpty(snapshot.capturedUtc))
+                snapshot.capturedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+
+            string path = Path.Combine(RootDir, snapshot.id + ".json");
+            File.WriteAllText(path, JsonUtility.ToJson(snapshot, true));
+
+            // 分析目录（index.jsonl）：这是「流程追溯」的入口 ——
+            // 后续不管是人还是 AI，都能从这份目录知道「做过几次分析、什么场景、多少结论」。
+            PerfHistory.RecordAnalysis(snapshot.id, snapshot.Label(), snapshot.scenePath, snapshot.label,
+                snapshot.capturedFrameCount > 0 ? snapshot.capturedFrameCount : snapshot.frames.Count,
+                snapshot.metrics.Count, snapshot.findings.Count);
+
+            Prune();
+            return path;
+        }
+
+        /// <summary>
+        /// 只保留最近 N 个快照（N 取 <see cref="PerfBudget.keepSnapshots"/>，0 = 不清理）。
+        ///
+        /// 以前每个快照要存几千帧的逐帧数组（一份几百 KB），长期跑会把 ProjectSettings 撞大；
+        /// 现在数据直接读 Profiler 面板，快照本身已经瘦下来了，再加上保留策略就不会无限增长。
+        /// </summary>
+        static void Prune()
+        {
+            int keep = PerfAgentSettings.Config.budget.keepSnapshots;
+            if (keep <= 0) return;
+
+            try
+            {
+                var all = List();          // 新的在前
+                for (int i = keep; i < all.Count; i++) Delete(all[i]);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[PerfAgent] 清理旧快照失败: " + e.Message);
+            }
+        }
+
+        public static List<string> List()
+        {
+            var result = new List<string>();
+            if (!Directory.Exists(RootDir)) return result;
+            var files = Directory.GetFiles(RootDir, "*.json");
+            Array.Sort(files);
+            Array.Reverse(files);
+            result.AddRange(files);
+            return result;
+        }
+
+        public static PerfSnapshot Load(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+                var json = File.ReadAllText(path);
+                var snap = JsonUtility.FromJson<PerfSnapshot>(json);
+                if (snap != null)
+                {
+                    if (snap.metrics == null) snap.metrics = new List<PerfMetric>();
+                    if (snap.frames == null) snap.frames = new List<FrameStat>();
+                    if (snap.markers == null) snap.markers = new List<MarkerStat>();
+                    if (snap.assetIssues == null) snap.assetIssues = new List<AssetIssue>();
+                    if (snap.sceneIssues == null) snap.sceneIssues = new List<SceneIssue>();
+                    if (snap.codeIssues == null) snap.codeIssues = new List<CodeIssue>();
+                    if (snap.findings == null) snap.findings = new List<PerfFinding>();
+                    if (snap.notes == null) snap.notes = new List<string>();
+                    if (snap.capturedSources == null) snap.capturedSources = new List<string>();
+                }
+                return snap;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[PerfAgent] 快照读取失败: " + e.Message);
+                return null;
+            }
+        }
+
+        public static PerfSnapshot Latest()
+        {
+            var all = List();
+            return all.Count == 0 ? null : Load(all[0]);
+        }
+
+        public static bool Delete(string path)
+        {
+            try
+            {
+                if (File.Exists(path)) { File.Delete(path); return true; }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[PerfAgent] 快照删除失败: " + e.Message);
+            }
+            return false;
+        }
+
+        /// <summary>删除全部快照，返回实际删掉的个数。</summary>
+        public static int DeleteAll()
+        {
+            int deleted = 0;
+            var all = List();
+            for (int i = 0; i < all.Count; i++)
+                if (Delete(all[i])) deleted++;
+            return deleted;
+        }
+
+        /// <summary>把 baseline 的指标填进 current.previous / delta，并返回回归项名称列表。</summary>
+        public static List<string> Diff(PerfSnapshot baseline, PerfSnapshot current)
+        {
+            var regressions = new List<string>();
+            if (baseline == null || current == null) return regressions;
+
+            for (int i = 0; i < current.metrics.Count; i++)
+            {
+                var m = current.metrics[i];
+                var b = baseline.FindMetric(m.name);
+                if (b == null) continue;
+                m.previous = b.value;
+                m.delta = m.value - b.value;
+                if (Math.Abs(m.delta) > 1e-6) regressions.Add(m.name);
+            }
+            return regressions;
+        }
+
+        /// <summary>把当前预算写进指标，便于报告里直接展示「值 / 预算」。</summary>
+        public static void ApplyBudget(PerfSnapshot snapshot, PerfBudget budget)
+        {
+            if (snapshot == null || budget == null) return;
+            SetBudget(snapshot, "主线程帧耗时", budget.FrameBudgetMs(), "ms");
+            // 「每帧托管分配」是含编辑器开销的实测值，不能直接套播放器预算 ——
+            // 否则空工程也会被标成超标。预算只套在归因后的「项目每帧分配」上，
+            // 而且残差还得先越过「归因地板」（编辑器 Play 模式自身开销上界）：
+            // 地板以下的残差无法归因，给它标个红只会重演「空工程报严重」这个假问题。
+            var projectAlloc = snapshot.FindMetric("项目每帧分配");
+            if (projectAlloc != null)
+            {
+                double floor = Math.Max(budget.maxManagedAllocBytesPerFrame, budget.editorPlayModeOverheadBytes);
+                if (projectAlloc.value > floor) SetBudget(snapshot, "项目每帧分配", budget.maxManagedAllocBytesPerFrame, "B");
+                else projectAlloc.severity = Severity.Info;   // 不设预算、不标红，原因写进附录的口径说明
+            }
+
+            SetBudget(snapshot, "Draw Calls", budget.maxDrawCalls, "次");
+            // 面板序列给的 Draw Call 叫「Draw Calls 均值」（覆盖整段窗口，比单点读数可信）——
+            // 两个名字都尝试：SetBudget 对不存在的指标是空操作。
+            SetBudget(snapshot, "Draw Calls 均值", budget.maxDrawCalls, "次");
+            SetBudget(snapshot, "SetPass Calls", budget.maxSetPassCalls, "次");
+            SetBudget(snapshot, "Triangles", budget.maxTriangles, "个");
+            SetBudget(snapshot, "TempAllocator", budget.maxTempAllocatorMB * 1024L * 1024L, "B");
+            SetBudget(snapshot, "总分配内存", budget.maxTotalMemoryMB * 1024L * 1024L, "B");
+            SetBudget(snapshot, "纹理内存(估算)", budget.maxTextureMemoryMB * 1024L * 1024L, "B");
+        }
+
+        static void SetBudget(PerfSnapshot s, string metricName, double value, string unit)
+        {
+            var m = s.FindMetric(metricName);
+            if (m == null) return;
+            m.budget = value.ToString("0.##", CultureInfo.InvariantCulture);
+            m.budgetUnit = unit;
+            if (value > 0)
+                m.severity = Severity.FromRatio(m.value, value * 0.8, value);
+        }
+    }
+}

@@ -1,0 +1,75 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dcaae7be139afe243b772224a2a78854, type: 3}
+  m_Name: PlayerSOshatyu
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSO
+  <movementData>k__BackingField:
+    <turnBackAngle>k__BackingField: 135
+    <SidewaysCameraRecenteringData>k__BackingField: []
+    <BackWardsCameraRecenteringData>k__BackingField: []
+    <idleData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 1827226128182048838, guid: 4c0965f85110e2b48894845f31a37292, type: 3}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.15
+      <rotationTime>k__BackingField: 0.04
+    <walkData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 1827226128182048838, guid: 537b4c28f1c72a743864c23e3d17c119, type: 3}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.2
+      <rotationTime>k__BackingField: 0.04
+      <walkStopClip>k__BackingField: {fileID: 1827226128182048838, guid: 1273cb5b0a8edf24f9edbef8b7a4e3b8, type: 3}
+    <dashData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 1827226128182048838, guid: e682b12bd0524f14199dcaf6c54107a6, type: 3}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.15
+      <rotationTime>k__BackingField: 1
+    <dodgeData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 1827226128182048838, guid: eef83630ede704945afa73e39de7996a, type: 3}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.3
+      <rotationTime>k__BackingField: 0.04
+      <invincibleWindow>k__BackingField: 0.3
+      <cooldown>k__BackingField: 0
+    <hurtData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 1827226128182048838, guid: 837dc85263eca2f4c880bb1303caed89, type: 3}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.3
+      <rotationTime>k__BackingField: 0.04
+    <deadData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 1827226128182048838, guid: c38cbddf4f997724fae0e74c116a819e, type: 3}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.3
+      <rotationTime>k__BackingField: 0.04
+    <movementNullData>k__BackingField:
+      <animationClip>k__BackingField: {fileID: 0}
+      <playSpeed>k__BackingField: 1
+      <fadeDuration>k__BackingField: 0.15
+      <rotationTime>k__BackingField: 0.04
+  <comboData>k__BackingField:
+    <comboData>k__BackingField:
+      <lightCombo>k__BackingField: {fileID: 11400000, guid: 1f5286155e68bb54cbab3f4f405fc9b0, type: 2}
+      <skillCombo>k__BackingField: {fileID: 0}
+      <finishSkillCombo>k__BackingField: {fileID: 0}
+      <autoAimEnabled>k__BackingField: 1
+      <autoAimRadius>k__BackingField: 5
+      <autoAimMaxAngle>k__BackingField: 130
+      <autoAimDistanceWeight>k__BackingField: 0.5
+      <autoAimAngleWeight>k__BackingField: 0.5
+      <autoAimAttackingMeBonus>k__BackingField: 0.3
+      <autoAimStickyBonus>k__BackingField: 0.35
+      <autoAimTurnSpeed>k__BackingField: 720
+      <autoAimInputRespectAngle>k__BackingField: 60
+  <statsData>k__BackingField:
+    <baseAttack>k__BackingField: 100
+    <baseDefense>k__BackingField: 0
+    <baseMaxHP>k__BackingField: 100
+  characterId: 1

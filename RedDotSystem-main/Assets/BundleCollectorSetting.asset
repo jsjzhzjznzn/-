@@ -1,0 +1,124 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36d0f749f27dda9498a23d08b4d5ad2c, type: 3}
+  m_Name: BundleCollectorSetting
+  m_EditorClassIdentifier: 
+  ShowPackageView: 0
+  ShowEditorAlias: 0
+  UniqueBundleName: 0
+  Packages:
+  - PackageName: ui
+    PackageDesc: "UI / Lua / \u56FE\u6807"
+    EnableAddressable: 1
+    SupportExtensionless: 1
+    LocationToLower: 0
+    IncludeAssetGUID: 0
+    AutoCollectShaders: 1
+    IgnoreRuleName: NormalIgnoreRule
+    Groups:
+    - GroupName: GameUI
+      GroupDesc: "UI \u9884\u5236\u4F53 + UIConfig"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Game/UI
+        CollectorGUID: 5de221aea39940b4e9ea59bc9b16486d
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackSeparately
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+    - GroupName: LuaScripts
+      GroupDesc: "Lua \u6A21\u5757"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Content/LuaScripts
+        CollectorGUID: 9c73c880930cdfb44b6bcf844cd6bd02
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackSeparately
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+    - GroupName: ItemIcons
+      GroupDesc: "\u7269\u54C1\u56FE\u6807"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Game/Resources/ui
+        CollectorGUID: 51498a182d2e2164795a43bd24a3392c
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackSeparately
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+    - GroupName: Audio
+      GroupDesc: "\u97F3\u9891\uFF08BGM / \u73AF\u5883\u97F3 / \u7279\u6548\uFF09"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Content/Resource/audoi
+        CollectorGUID: dea735ab50ba2ac47abb941a8776cb94
+        CollectorType: 0
+        AddressRuleName: AddressDisable
+        PackRuleName: PackSeparately
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+  - PackageName: activity
+    PackageDesc: "\u6D3B\u52A8\u70ED\u66F4\u5185\u5BB9\u5305\uFF08Lua + UI + \u56FE\u7247\uFF09"
+    EnableAddressable: 1
+    SupportExtensionless: 1
+    LocationToLower: 0
+    IncludeAssetGUID: 0
+    AutoCollectShaders: 1
+    IgnoreRuleName: NormalIgnoreRule
+    Groups:
+    - GroupName: content
+      GroupDesc: "HotContent \u5168\u76EE\u5F55\uFF08\u6BCF\u4E2A\u8D44\u6E90\u72EC\u7ACB\u5206\u5305
+        \u2192 \u589E\u91CF\u53D1\u5E03\u53EA\u4E0B\u8F7D\u53D8\u5316\u6587\u4EF6\uFF09"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Content/HotContent
+        CollectorGUID: fd5caa6475b8ca643946b2d172655c1a
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackSeparately
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+  - PackageName: battle
+    PackageDesc: "\u6218\u6597\u8D44\u6E90\uFF08\u89D2\u8272/\u52A8\u4F5C/\u97F3\u6548/VFX/\u914D\u7F6E\uFF09"
+    EnableAddressable: 1
+    SupportExtensionless: 1
+    LocationToLower: 0
+    IncludeAssetGUID: 0
+    AutoCollectShaders: 1
+    IgnoreRuleName: NormalIgnoreRule
+    Groups:
+    - GroupName: BattleArt
+      GroupDesc: "\u89D2\u8272/\u52A8\u4F5C/\u97F3\u6548/VFX/\u914D\u7F6E"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Game/Art/Battle
+        CollectorGUID: ba2c119ff13fb954d84344e0bd30fc39
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackSeparately
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 

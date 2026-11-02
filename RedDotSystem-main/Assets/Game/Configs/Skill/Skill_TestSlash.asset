@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6ab23c14a7c14d34ab26dacabb30fb30, type: 3}
+  m_Name: Skill_TestSlash
+  m_EditorClassIdentifier: 
+  _skillId: skill_test_slash
+  _displayName: "\u6D4B\u8BD5\u65A9\u51FB"
+  _icon: {fileID: 0}
+  _combo: {fileID: 11400000, guid: 5d319ba18e59d59418f2df765ee7e6a7, type: 2}
+  _cooldown: 3
+  _maxCharges: 1
+  _chargeRecoverSeconds: 0
+  _cooldownGroupId: 
+  _gcdSeconds: 0

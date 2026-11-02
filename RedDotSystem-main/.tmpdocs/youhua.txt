@@ -1,0 +1,99 @@
+优化
+c#
+原文目标：**微信小游戏，锁 60 帧，战斗飘字（伤害数字）** 测试结论：单 Mesh 全量每帧重绘方案性能拉胯、GC 爆炸；最终选型思路：**对象池 + 区块限流 + 分帧加载 + 多 Mesh 动态合批**。 > 核心思路：**同帧、同类飘字打包进同一个 Mesh，一个 Mesh 内所有飘字共用一套动画；开多个独立 Mesh 实例，每个 Mesh 内部行为统一，Mesh 之间可以各自独立运动**。 > 优点：上万飘字同屏也能维持高帧率；缺点：**单个 Mesh 内部，所有飘字不能做各自独立的动画（位置 / 透明度 / 缩 放曲线必须一致）**。、
+
+方案 原理 瓶颈 优点 缺点 适用场景
+
+1. 粒子做飘字 用粒子系统 + 字体图集模拟飘字 粒子系统开销、图集维护 简单，自带粒子动效 图集制作麻烦，
+
+TMP/UGUI 文本不好定制 少量飘字，简单弹跳飘字
+
+2. 对象池 + TMP+GPU Instancing（主流现成方案） 对象池复用 TMP 文本，同材质开 GPU Instancing；战斗区域
+
+分块 + 数量上限 + 分帧生成 对象池实例数量、DrawCall 开发成熟，每个飘字独立动画 大量飘字时实例多、DC 上
+
+涨；微信小游戏 GC 压力明显 常规战斗，飘字数量中等
+
+3. 单 Mesh 每帧全量重绘 所有飘字全部合并到同一个 Mesh，Update 每帧重建顶点
+
+每帧重建 Mesh、字体
+
+Texture 产生大量 GC 高度自由，增删灵活，完全自定义字符 GC 问题很难根治，CPU 顶点重建开销巨大；不能用
+
+Animation 动效 极少数量文本，不推荐微信小游戏大量飘字场景；可尝试 ComputeShader 卸载顶点计算
+
+4. 队列攒批，N 帧合并成一个 Mesh 队列缓存 N 帧新产生飘字，攒一批统一合到一个 Mesh，不每帧重建 Mesh 数量
+
+累积、同 Mesh 动效统一 不用每帧重绘，逻辑简单，挂载一个对象驱动动画 同一个 Mesh 内所有飘字动作完全一样，复
+
+杂多曲线飘字不行；依赖对象池 爆发式批量飘字，伤害数字扎堆弹出
+
+5. 多 Mesh 分组合批（原文最终推荐方案） 同帧、同类飘字打包为 1 个 Mesh，多个 Mesh 并存，每个 Mesh 独立动
+
+画。一个 Mesh 内所有飘字共享运动曲线，Mesh 之间互不干扰
+
+Mesh 数量上限控制 性能极强，原文测试：15000 飘
+
+字可跑 100 帧 +；代码示例基于 CanvasRenderer + 原生 Font 手动构建字符 Mesh
+
+同一个 Mesh 内所有文本
+
+不能单独运动，只能整批统一飘；字符需要手动解析 CharacterInfo 大
+
+批量战斗飘字、伤害数字，微信小游戏首选候选方案
+
+## 方案 5 的生产落地思路（完整链路）
+
+1. **飘字管理器**：接收战斗飘字请求，按**类型（普通伤害 / 暴击 / 治疗）、生成时间**分组。同批次同类型的飘字
+
+打包为一组，交给一个`UGUIFloatingTextBatch`实例。
+
+2. **Mesh 对象池**：预先创建一批`UGUIFloatingTextBatch`，复用而不是动态实例化。设置全局最大 Mesh 数量上
+
+限（做限流，保护微信小游戏内存）。
+
+3. **分帧投递**：战斗瞬间爆发大量飘字时，分多帧入队，不要同一帧瞬间生成几十个 Mesh，避免卡顿尖峰。
+
+4. 每组 Mesh 内部：统一运动曲线（向上飘 + 透明度淡出），组内所有飘字起点可以不一样，但速度 / 淡出时间统一；
+
+5. 回收：Mesh 动画播放完毕，回收到对象池，清空文本列表，重置顶点数据，等待下一次复用
+
+1 / 5
+
+## 二、GPU Slider（GPU 血条）方案核心思想 **把所有血条打包到同一个 / 少数几个 Mesh，血条填充比例、颜色、位置、透明度全部放到 GPU Shader 里计算；CPU 只负责提交一份实例数据，不再逐血条做 UI 网格重建。** > 本质：血条不再是 UGUI 元素，而是**世界空间的面片（Quad）**，用 GPU Instancing 批量渲染。 > 一个 Quad = 一个血条面片，所有血条共享同一份 Mesh、同一份材质。
+### 两种实现路线 ### 路线 A：GPU Instancing + MeshRenderer（最常用，兼顾开发成本与性能）
+1. 准备一个基础血条 Quad Mesh（静态，固定 4 顶点）； 2. CPU 维护**实例数据缓冲区**：每个实例存储：怪物世界坐标、血条总宽度、当前血量比例、血条背景色 / 前景色、偏 移高度、是否显示等； 3. 每帧 CPU 只更新**实例数据数组**，传给材质的`MaterialPropertyBlock`或实例 Buffer； 4. Shader 内部：
+- 用实例 ID 拿到对应怪物数据； - 把 Quad 顶点从模型空间变换到怪物头顶世界位置； - 在片元着色器里，根据**血量比例做裁剪 /alpha discard**，实现血条填充效果； - 计算屏幕空间偏移、Billboard（血条始终面向相机）； 5. 渲染：GPU Instancing 一次性渲染成千上万个血条实例，**只消耗 1 个 DrawCall**。 ✅ 优点
+- DC 极低，上万血条依然 1~ 几个 DC； - CPU 不再逐血条更新 Transform，不需要 Mono 每帧跟随；CPU 仅更新实例数据数组； - 不依赖 UGUI，没有 Canvas Rebuild 开销； - 可以搭配对象池管理怪物逻辑，血条渲染完全剥离。
+⚠️ 局限
+- 实例数组有上限，需要预先分配；超出上限需要分多个 Instancing 批； - 屏幕外怪物，CPU 依然需要填充实例数据（可做 CPU 侧预剔除，不把不可见单位写入实例数组）； - 动态文本（血量数字）不能直接进这套方案，数字要单独处理（可以复用前面聊的**多 Mesh 飘字合批**方案搭配）； - 实例数据数组如果每帧 new 会产生 GC，需要**预分配数组，原地覆盖写入**。
+### 路线 B：ECS + ECS Graphics（最高负载，几万～几十万单位，适合开放世界 / 大规模怪物群） > ECS Graphics（Unity DOTS）本质：彻底抛弃 GameObject + MonoBehaviour，用纯数据驱动。 1. 所有单位是 Entity，血条信息是 Component（血量、颜色、位置）； 2. ECS Graphics 直接把 Entity 数据作为实例 Buffer 送入 GPU； 3. JobSystem 多线程在 CPU 更新位置、血量；Burst 编译大幅降低 CPU 开销； 4. GPU Instancing 合批渲染，没有 GameObject/Transform 组件开销。
+✅ 优点 - 内存极致紧凑，没有对象头、组件额外内存； - Job+Burst 并行更新实例数据，能扛几十万单位； - 没有 Mono 的遍历开销。
+2 / 5
+
+ecs ## 方案 A：预缓存 TMP 文字网格 + Entities Graphics 实例渲染
+
+> ⚠️ 适用场景：**飘字数量少（几十～一两百），文字集合固定，不会出现海量随机伤害数字** > ❗ 不适合战斗瞬时爆发大量飘字；TMP 运行时`SetText`不能放 Burst Job，网格生成是托管瓶颈 > 原理：离线预先生成所有会出现的文字 Mesh（比如暴击、格挡、miss 等固定文案），每个飘字 Entity Mesh + 材质，Entities Graphics 自动 BRG 合批。
+
+绑定一份预存
+
+## 案 B：全局单动态顶点 Buffer（单 Mesh 渲染，极限 1DC） > ✅ 适用场景：**瞬时上万飘字，动画行为统一**；弹幕、大范围 AOE 爆炸数字 > ❗ 缺点：CPU 每帧组装顶点提交 GPU；自定义差异化轨迹 / 排版会大幅提升复杂度；需要自己做视锥剔除、顶点池管理 > 原理：只保留**1 个渲染 Entity**；大量逻辑 Entity 存储飘字参数；每帧 Job 遍历逻辑 Entity，把所有字符 Quad 顶点写入`NativeArray`顶点缓冲区；主线程一次性把顶点数据提交给一个动态 Mesh，全程仅 1 个 DrawCall。
+
+###、 > 注意 > - 顶点数组需要预先分配最大容量，避免每帧扩容 > - Job 内部写顶点数组需要小心原子计数；多线程并行写入顶点需要用`NativeAtomicInt`做顶点偏移分配 > - 视锥剔除要在 Job 里提前做，屏幕外飘字跳过顶点写入，节省带宽
+
+## 方案 C：图集字符 + Entities Graphics + GPU PerInstance 数据（生产首选）
+> ✅ 适用场景：**战斗伤害飘字几百～数千，每个飘字独立轨迹 / 颜色**，凉屋类游戏战斗最推荐方案 > 核心思路： > 1. 离线：数字 / 符号图集，UV 表存 BlobAsset，Burst 可读取 > 2. 1 串飘字 = 1 个 Entity，不是 1 个字符 1 个 Entity > 3. CPU Burst Job：计算飘字原点位置、生命周期；解析 FixedString，读取 Blob 图集，打包**PerInstance 附加数据**传给 Shader > 4. Shader 读取 PerInstance 数据，GPU 内部完成字符横向排版、图集采样、透明度动画 > 5. Entities Graphics 自动 BRG 合批，相同图集材质自动合并批次
+## 路线 2：路线 B 1 字符 = 1Entity（工程平衡高性能，你现在在用，推荐实战首选） > Entities Graphics 高层 API，1 字符 1Entity，每个 Entity 带`MaterialProperty`DOTS 实例数据 （UVRect、life、scale、偏移），全部共用同一个 Quad Mesh、同一张图集材质。
+### 性能特征 - Entities Graphics 底层会自动把同 Mesh 同 Material 的实体打包进同一个 BRG 批次，**自动合并成少数 DrawInstanced**。
+3 / 5
+
+- CPU：Burst IJobEntity 并行更新所有字符实体；实体池复用，消除 Create/Destroy Churn 开销。 - 渲染：BRG 自带 RenderBounds 视锥剔除，屏幕外实例不会提交 GPU，开箱即用。 ✅ 优点 - **在 Entities 生态内，代码好调试，Profiler/FrameDebugger 原生支持**，没有底层 BRG 样板代码灾难。 - 几百～2000 字符区间，性能足够战斗场景使用；凉屋类 roguelike 大量伤害飘字都是这个路线。 - 可以单独给每个字符做错开弹跳、抖动等动画，逻辑直观。 ❌ 上限短板 - **实体数量 = 字符数量**，当峰值冲到 3000 + 字符，ECS Chunk 遍历、实体组件内存带宽开销会逐步上来。 - 每一个 Entity 自带 LocalToWorld、RenderBounds 等内置组件，有固定内存开销。 > 适用：**峰值几千字符以内，战斗伤害数字，想要稳定性 + 可维护性优先**，这是性价比最高的方案。 > 配套必做优化（把这条路线性能拉满） > 1. AlphaClip (Cutout)，禁用 AlphaBlend，消除透明排序闪烁。 > 2. 实体池，避免频繁 Create/Destroy 实体带来 Chunk 分配。 > 3. 系统加`[UpdateBefore(typeof(TransformSystemGroup))]`，消除渲染延迟一帧。 > 4. 数字用 BlobArray 查表，不用 BlobHashMap。 > 5. DOTS Instance Shader（`DOTS_INSTANCING_ON`宏，`UNITY_ACCESS_DOTS_INSTANCED_PROP`）。 > 6. Spawn 限流：每帧最多生成 N 条飘字，压制瞬间爆发峰值。
+# 通用必加优化（全部方案适用） 1. **实体池**：禁用频繁 Create/DestroyEntity，用`IsActive`组件标记，空闲实体复用 2. **Spawn 限流**：每帧最大生成 N 个飘字，抑制 AOE 瞬时峰值 3. **视锥剔除**：Simulation Job 提前剔除屏幕外飘字，不送入渲染阶段 4. **Burst 检查**：禁止托管类型，字符串一律 FixedString，查找表用 BlobAsset 5. 材质开启 GPU Instancing，否则 Entities Graphics 无法 BRG 合批
+动画驱动：如果用 DOTween 等补间动画，每次初始化都有 GC 开销。有项目经验表明，直接在 Update 里用数学计算坐标 （如 Mathf.Lerp、贝塞尔曲线）代替 DOTween 来驱动飘字运动，性能更好且无 GC。 闭 Pixel Perfect 确实能解决很多 UI 卡顿问题，但它的作用机制是消除了“移动触发重建”这一环，而不是解决所有性能 问题。
+为什么 Pixel Perfect 会导致卡顿 Pixel Perfect 开启后，Unity 会强制所有 UI 元素的顶点对齐到像素网格。这意味着每当飘字发生位移（哪怕只移动了 零点几个像素），引擎就需要重新计算它的顶点位置，把它“吸附”到最近的像素边缘。 飘字恰好是持续移动的元素，所以 Pixel Perfect 会让它每帧都触发顶点重建，进而导致整个飘字 Canvas 的网格被标 记为 dirty，触发 Canvas.SendWillRenderCanvases 开销。 但有一个反例需要注意 有开发者报告过一个看似相反的情况：在特定情况下，开启 Pixel Perfect 反而解决了 Canvas 首次加载时的大量资源 消耗问题。分析原因可能是开启后简化了部分 GPU 缓冲设置和布局重算。
+4 / 5
+
+这说明 Pixel Perfect 的利弊取决于具体场景。对于你的飘字问题，飘字持续移动这个特征决定了：关闭它是对的，因为 移动触发的重建开销远大于开启可能带来的一点简化收益。
+5 / 5
+
+

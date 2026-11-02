@@ -1,0 +1,146 @@
+{
+  "Quests": [
+    {
+      "QuestId": 1002,
+      "Category": 1,
+      "Title": "试炼：与NPC交谈（对话目标）",
+      "Description": "与 Demo NPC 对话并选择「选项1 去结尾A」。用于验证服务端权威下对话型目标的事件匹配。",
+      "AcceptMode": 1,
+      "TimeLimitSec": 0.0,
+      "PrereqIds": [],
+      "Goals": [
+        {
+          "Type": 0,
+          "TargetKey": "",
+          "Count": 1,
+          "GraphName": "SimpleDemoGraph",
+          "EventKey": "demo_choice_a",
+          "Description": "选择「选项1 去结尾A」"
+        }
+      ],
+      "Rewards": []
+    },
+    {
+      "QuestId": 1001,
+      "Category": 1,
+      "Title": "试炼：击杀试炼场守卫",
+      "Description": "击败 3 只 demo_enemy。用于验证叙事任务（Mm框架）的服务器持久化。",
+      "AcceptMode": 1,
+      "TimeLimitSec": 0.0,
+      "PrereqIds": [],
+      "Goals": [
+        {
+          "Type": 1,
+          "TargetKey": "demo_enemy",
+          "Count": 3,
+          "GraphName": "",
+          "EventKey": "GraphFinished",
+          "Description": "击败 demo_enemy ×3"
+        }
+      ],
+      "Rewards": []
+    },
+    {
+      "QuestId": 3001,
+      "Category": 0,
+      "Title": "初次见面",
+      "Description": "黑海岸的丹妮娅捎来口信，说有要事相商。去见她一面吧。",
+      "AcceptMode": 1,
+      "TimeLimitSec": 0.0,
+      "PrereqIds": [],
+      "Goals": [
+        {
+          "Type": 0,
+          "TargetKey": "",
+          "Count": 1,
+          "GraphName": "DialogueGraph_Daniya",
+          "EventKey": "GraphFinished",
+          "Description": "与丹妮娅交谈"
+        }
+      ],
+      "Rewards": [
+        {
+          "ItemId": 1001,
+          "Count": 3
+        }
+      ]
+    },
+    {
+      "QuestId": 3002,
+      "Category": 0,
+      "Title": "星海来信",
+      "Description": "流萤手中有一封来路不明的委托信。听她说完，再决定是否接受。",
+      "AcceptMode": 1,
+      "TimeLimitSec": 0.0,
+      "PrereqIds": [],
+      "Goals": [
+        {
+          "Type": 0,
+          "TargetKey": "",
+          "Count": 1,
+          "GraphName": "DialogueGraph_Firefly",
+          "EventKey": "firefly_accept",
+          "Description": "接受流萤的委托"
+        }
+      ],
+      "Rewards": [
+        {
+          "ItemId": 1008,
+          "Count": 1
+        }
+      ]
+    },
+    {
+      "QuestId": 3003,
+      "Category": 1,
+      "Title": "收集矿石",
+      "Description": "城外的矿脉还没人开采。带上五块铁矿回来，我给你换些好东西。",
+      "AcceptMode": 1,
+      "TimeLimitSec": 0.0,
+      "PrereqIds": [],
+      "Goals": [
+        {
+          "Type": 2,
+          "TargetKey": "1003",
+          "Count": 5,
+          "GraphName": "",
+          "EventKey": "",
+          "Description": "收集铁矿 ×5"
+        }
+      ],
+      "Rewards": [
+        {
+          "ItemId": 1005,
+          "Count": 2
+        }
+      ]
+    },
+    {
+      "QuestId": 3004,
+      "Category": 1,
+      "Title": "再访",
+      "Description": "答应过丹妮娅的事，该去给个答复了。",
+      "AcceptMode": 1,
+      "TimeLimitSec": 0.0,
+      "PrereqIds": [
+        3001
+      ],
+      "Goals": [
+        {
+          "Type": 0,
+          "TargetKey": "",
+          "Count": 1,
+          "GraphName": "DialogueGraph_Daniya",
+          "EventKey": "daniya_ready",
+          "Description": "告诉丹妮娅你准备好了"
+        }
+      ],
+      "Rewards": [
+        {
+          "ItemId": 1007,
+          "Count": 1
+        }
+      ]
+    }
+  ]
+}

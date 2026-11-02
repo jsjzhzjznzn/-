@@ -1,0 +1,207 @@
+using Animancer;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+/// <summary>
+/// 玩家连击状态基类
+/// 子类构造时传入连击状态机，通过 stateMachine 访问 player / reusableData
+///
+/// 连击流程：
+/// - OnEnter 订阅攻击输入事件，OnExit 退订
+/// - PlayAttackClip 播放段动画：前段（linkCancelTime 归一化时间，默认 60%）打开输入窗口，
+///   窗口内按键 → 缓冲攻击输入（时间戳）；到检查点 OnLinkCheckpoint 由子类统一消费（切下一段）
+/// - 动画播完进 OnAnimationEndEvent，由子类决定连下一段还是收招
+/// - PlayAttackEndClip 播放收尾动画，播完自动回待机
+/// </summary>
+public abstract class PlayerComboState : IState
+{
+    protected readonly PlayerComboStateMachine stateMachine;
+    protected readonly Player player;
+    protected readonly PlayerComboReusableData reusableData;
+
+    protected PlayerComboState(PlayerComboStateMachine stateMachine)
+    {
+        this.stateMachine = stateMachine;
+        player = stateMachine.Player;
+        reusableData = stateMachine.ReusableData;
+    }
+
+    /// <summary>状态类型（网络同步标识，子类必须实现）</summary>
+    public abstract ComboStateType StateType { get; }
+
+    // ==================== IState ====================
+
+    public virtual void Enter()
+    {
+        AddInputActionCallBacks();
+    }
+
+    public virtual void Update()
+    {
+        HandInput();
+    }
+
+    public virtual void Exit()
+    {
+        RemoveInputActionCallBacks();
+        ClearAnimationEnd();
+    }
+
+    // ==================== 输入事件订阅 ====================
+
+    protected virtual void AddInputActionCallBacks()
+    {
+        // 远程镜像端不订阅输入（全局输入单例，避免多角色争抢）
+        if (player.IsRemote) return;
+
+        CharacterInputSystem.MainInstance.inputActions.player.attack.started += OnAttackInput;
+        CharacterInputSystem.MainInstance.inputActions.player.defense.started += OnHeavyAttackInput;
+        CharacterInputSystem.MainInstance.inputActions.player.skill.started += OnSkillInput;
+    }
+
+    protected virtual void RemoveInputActionCallBacks()
+    {
+        if (player.IsRemote) return;
+
+        CharacterInputSystem.MainInstance.inputActions.player.attack.started -= OnAttackInput;
+        CharacterInputSystem.MainInstance.inputActions.player.defense.started -= OnHeavyAttackInput;
+        CharacterInputSystem.MainInstance.inputActions.player.skill.started -= OnSkillInput;
+    }
+
+    // ==================== 输入回调（子类按需覆写） ====================
+
+    /// <summary>
+    /// 轻攻击按下：缓冲已由 CharacterInputSystem 统一写入框架 InputBuffer3D，
+    /// 这里不再写缓冲、也不再按 canInput 拦门（拦在写入点会直接丢键）。
+    /// 子类只按需覆写"按下这一刻要不要立即响应"
+    /// </summary>
+    protected virtual void OnAttackInput(InputAction.CallbackContext context) { }
+
+    /// <summary>重攻击按下</summary>
+    protected virtual void OnHeavyAttackInput(InputAction.CallbackContext context) { }
+
+    /// <summary>技能按下</summary>
+    protected virtual void OnSkillInput(InputAction.CallbackContext context) { }
+
+    /// <summary>每帧输入轮询，子类覆写做状态切换判断</summary>
+    protected virtual void HandInput() { }
+
+    // ==================== 动画播放辅助 ====================
+
+    /// <summary>
+    /// 播放当前段的攻击动画，播完触发 OnAnimationEndEvent
+    /// 连击缓冲：本段配置了 linkCancelTime（0~1 归一化时间，默认 0.6），
+    /// 动画前段打开输入窗口，窗口内按键只缓冲输入（不立即出手），
+    /// 到检查点 OnLinkCheckpoint 时由子类统一决定是否切下一段
+    /// </summary>
+    protected void PlayAttackClip()
+    {
+        var combo = reusableData.currentCombo;
+        if (combo == null) return;
+
+        var transition = combo.GetAttackClip(reusableData.currentIndex.Value);
+        if (transition == null) return;
+
+        var state = player.characterAnimancer.Play(transition);
+        player.ApplyRemotePhaseOffset(state);   // 远程端：按拥有者已播放时长定位起点
+
+        // 清除该状态上可能残留的动画事件：同一 clip 被重复播放时会复用同一个 state，
+        // 不清除会导致检查点/打击帧回调重复注册、同一帧被多次触发
+        state.Events.Clear();
+
+        // 远程镜像端：只播动画并保留收尾 OnEnd（与拥有者同时进收尾），
+        // 不注册连击检查点/打击帧事件（避免远程端重复伤害判定与全局顿帧），也不播音效语音
+        if (player.IsRemote)
+        {
+            state.Events.OnEnd = OnAnimationEndEvent;
+            return;
+        }
+
+        state.Events.OnEnd = OnAnimationEndEvent;
+
+        // 触发本段的角色语音与武器挥砍音效，并把实际播出的片段广播给其它客户端
+        int comboIndex = reusableData.currentIndex.Value;
+        var data = combo.GetComboData(comboIndex);
+        int voiceIndex = stateMachine.characterCombo.PlayCharacterVoice(data);
+        int weaponIndex = stateMachine.characterCombo.PlayWeaponSound(data);
+        player.BroadcastComboAudio(comboIndex, voiceIndex, weaponIndex);
+        // 触发本段的攻击刀光特效（电光蓝弧线，挂到武器骨骼跟随挥砍）
+        stateMachine.characterCombo.PlayAttackVFX(data);
+
+        // 连击缓冲检查点：linkTime 之前接受攻击输入，到点统一出手（子类覆写 OnLinkCheckpoint）
+        float linkTime = combo.GetLinkCancelTime(reusableData.currentIndex.Value);
+        if (linkTime > 0f)
+        {
+            // 不再在此清缓冲：缓冲的过期由 InputBuffer3D 按剩余时间判定，
+            // 开新段就清会把玩家在上一段检查点之后的合法提前输入也一起清掉
+            reusableData.canInput = true;         // 打开输入窗口（窗口内按键只缓冲，不立即出手）
+            state.Events.Add(linkTime, OnLinkCheckpoint);
+        }
+
+        // 打击帧事件：动画播到本段 hitFrameTime 处触发伤害判定（CharacterCombo.ATK 入口）
+        // 与 OnLinkCheckpoint 同一套 Animancer 事件机制，判定与动画严格同步
+        float hitFrameTime = combo.GetComboHitFrameTime(reusableData.currentIndex.Value);
+        if (hitFrameTime > 0f)
+        {
+            state.Events.Add(hitFrameTime, () => stateMachine.characterCombo.ATK());
+        }
+    }
+
+    /// <summary>
+    /// 连击检查点回调：动画播放到 linkCancelTime（默认 60%）处触发。
+    /// 子类在此一次性消费缓冲的攻击输入（ATKIngState 用于切下一段）
+    /// </summary>
+    protected virtual void OnLinkCheckpoint() { }
+
+    /// <summary>播放当前段的收尾动画，播完自动回待机</summary>
+    protected void PlayAttackEndClip()
+    {
+        var transition = reusableData.currentCombo?.GetAttackEndClip(reusableData.currentIndex.Value);
+        if (transition == null) return;
+
+        var state = player.characterAnimancer.Play(transition);
+        state.Events.OnEnd = OnRecoveryEnd;
+    }
+
+    /// <summary>设置当前段数（变化时自动通知动画/UI 订阅方，并同步给网络）</summary>
+    protected void SetATKIndex(int index)
+    {
+        reusableData.currentIndex.Value = index;
+        player.SyncComboIndex(index);   // 拥有者端写入网络，远程端据此重播新段动画
+    }
+
+    /// <summary>清除动画结束回调，避免切换状态后误触发</summary>
+    protected void ClearAnimationEnd()
+    {
+        var state = player.characterAnimancer.States.Current;
+        if (state != null) state.Events.OnEnd = null;
+    }
+
+    // ==================== 动画事件（子类覆写） ====================
+
+    /// <summary>本段攻击动画播完：子类在此判断连下一段 or 进收招</summary>
+    protected virtual void OnAnimationEndEvent() { }
+
+    /// <summary>收尾动画播完：恢复移动并回到待机（子类可覆写为其它行为）</summary>
+    protected virtual void OnRecoveryEnd()
+    {
+        RestoreMovement();
+        stateMachine.SwitchState(stateMachine.NullState);
+    }
+
+    /// <summary>恢复移动：移动状态机从空状态切回待机/行走（攻击流程结束时调用）</summary>
+    protected void RestoreMovement()
+    {
+        var moveMachine = player.MovementStateMachine;
+        if (moveMachine == null) return;
+
+        moveMachine.SwitchState(
+            player.IsMoving ? moveMachine.walkingState : moveMachine.idlingState);
+    }
+
+    /// <summary>动画事件触发的强制状态切换（保留原接口）</summary>
+    public virtual void OnAnimationTranslateEvent(IState state)
+    {
+        stateMachine.SwitchState(state);
+    }
+}

@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d2b9fef51a4a9f746b6cc0d56505685c, type: 3}
+  m_Name: SkillDatabase
+  m_EditorClassIdentifier: 
+  _skills:
+  - {fileID: 11400000, guid: cafe0b994984957448bf2c21282c41bc, type: 2}
+  - {fileID: 11400000, guid: fbf99157794e05b48824625854ca8a06, type: 2}

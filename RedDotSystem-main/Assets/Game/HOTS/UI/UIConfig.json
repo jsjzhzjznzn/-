@@ -1,0 +1,50 @@
+{
+    "items": [
+        {
+            "uiType": "Dating",
+            "path": "Assets/Game/HOTS/UI/Prefabs/Dating.prefab",
+            "isWindow": false,
+            "uiLayer": "NormalLayer",
+            "isAutoNavigation": false,
+            "isLuaUI": false,
+            "luaModuleName": ""
+        },
+        {
+            "uiType": "Xuanze",
+            "path": "Assets/Game/HOTS/UI/Prefabs/Xuanze.prefab",
+            "isWindow": false,
+            "uiLayer": "NormalLayer",
+            "isAutoNavigation": false,
+            "isLuaUI": false,
+            "luaModuleName": ""
+        },
+        
+        {
+            "uiType": "room",
+            "path": "Assets/Game/HOTS/UI/Prefabs/room.prefab",
+            "isWindow": true,
+            "uiLayer": "NormalLayer",
+            "isAutoNavigation": false,
+            "isLuaUI": false,
+            "luaModuleName": ""
+        },
+        {
+            "uiType": "jiaru",
+            "path": "Assets/Game/HOTS/UI/Prefabs/jiaru.prefab",
+            "isWindow": true,
+            "uiLayer": "NormalLayer",
+            "isAutoNavigation": false,
+            "isLuaUI": false,
+            "luaModuleName": ""
+        },
+        {
+            "uiType": "bloodpanel",
+            "path": "Assets/Game/HOTS/UI/Prefabs/bloodpanel.prefab",
+            "isWindow": false,
+            "uiLayer": "NormalLayer",
+            "isAutoNavigation": false,
+            "isLuaUI": false,
+            "luaModuleName": ""
+        }
+    ]
+}

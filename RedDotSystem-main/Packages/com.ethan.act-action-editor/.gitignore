@@ -1,0 +1,10 @@
+.ycombat-sync.json
+Releases~/*/package/
+Library/
+Temp/
+Logs/
+obj/
+.vs/
+.DS_Store
+/ROADMAP.zh-CN.md
+/ROADMAP.zh-CN.md.meta

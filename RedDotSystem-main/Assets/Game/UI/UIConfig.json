@@ -1,0 +1,238 @@
+{
+  "items": [
+    {
+      "uiType": "SmokeView",
+      "path": "Assets/Game/UI/SmokeView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "LeaderboardView",
+      "path": "Assets/Game/UI/Leaderboard/LeaderboardView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "ChallengeHudView",
+      "path": "Assets/Game/UI/Challenge/ChallengeHudView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "BattleLobbyView",
+      "path": "Assets/Game/UI/Battle/BattleLobbyView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "JoinRoomView",
+      "path": "Assets/Game/UI/Battle/JoinRoomView.prefab",
+      "isWindow": true,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "BattleRoomView",
+      "path": "Assets/Game/UI/Battle/BattleRoomView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "bloodpanel",
+      "path": "Assets/Game/UI/Battle/bloodpanel.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "FriendView",
+      "path": "Assets/Game/UI/Friends/FriendView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "HomeView",
+      "path": "Assets/Game/UI/Home/HomeView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "QuestView",
+      "path": "Assets/Game/UI/Quest/QuestView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "MailView",
+      "path": "Assets/Game/UI/Mail/MailView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "WorldChatView",
+      "path": "Assets/Game/UI/Chat/WorldChatView.prefab",
+      "isWindow": true,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "AgentView",
+      "path": "Assets/Game/UI/Agent/AgentView.prefab",
+      "isWindow": true,
+      "uiLayer": "TopLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "BagView",
+      "path": "Assets/Game/UI/Bag/BagView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "SettingsView",
+      "path": "Assets/Game/UI/Settings/SettingsView.prefab",
+      "isWindow": true,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "ActivityView",
+      "path": "Assets/Game/UI/Activity/ActivityView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "LuaDemoView",
+      "path": "Assets/Game/UI/LuaDemo/LuaDemoView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": true,
+      "luaModuleName": "UI/LuaDemoView"
+    },
+    {
+      "uiType": "LoginView",
+      "path": "Assets/Game/UI/Login/LoginPanel.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "BattleInviteView",
+      "path": "Assets/Game/UI/Battle/BattleInviteView.prefab",
+      "isWindow": true,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "BattleInvitePopupView",
+      "path": "Assets/Game/UI/Battle/BattleInvitePopupView.prefab",
+      "isWindow": true,
+      "uiLayer": "TopLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "DialogueView",
+      "path": "Assets/Game/UI/Dialogue/DialogueView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "AchievementView",
+      "path": "Assets/Game/UI/Achievement/AchievementView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "CharacterView",
+      "path": "Assets/Game/UI/Character/CharacterView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "DashijieHudView",
+      "path": "Assets/Game/UI/Dashijie/DashijieHudView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "DashijieMapView",
+      "path": "Assets/Game/UI/Dashijie/DashijieMapView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    },
+    {
+      "uiType": "ProfileView",
+      "path": "Assets/Game/UI/Profile/ProfileView.prefab",
+      "isWindow": false,
+      "uiLayer": "NormalLayer",
+      "isAutoNavigation": false,
+      "isLuaUI": false,
+      "luaModuleName": ""
+    }
+  ]
+}

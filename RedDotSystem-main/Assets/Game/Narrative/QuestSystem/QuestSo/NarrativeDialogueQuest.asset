@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8e3c1a29b4d6e7f8a0b1c2d3e4f5a6b, type: 3}
+  m_Name: NarrativeDialogueQuest
+  m_EditorClassIdentifier: 
+  questId: 1002
+  category: 1
+  title: "\u8BD5\u70BC\uFF1A\u4E0ENPC\u4EA4\u8C08\uFF08\u5BF9\u8BDD\u76EE\u6807\uFF09"
+  description: "\u4E0E Demo NPC \u5BF9\u8BDD\u5E76\u9009\u62E9\u300C\u9009\u98791
+    \u53BB\u7ED3\u5C3EA\u300D\u3002\u7528\u4E8E\u9A8C\u8BC1\u670D\u52A1\u7AEF\u6743\u5A01\u4E0B\u5BF9\u8BDD\u578B\u76EE\u6807\u7684\u4E8B\u4EF6\u5339\u914D\u3002"
+  acceptMode: 1
+  timeLimit: 0
+  goalList:
+  - type: 0
+    targetKey: 
+    dialogueGraph: {fileID: 11400000, guid: a1b2c3d4e5f6478899aabbccddeeff01, type: 2}
+    dialogueEventKey: demo_choice_a
+    count: 1
+    description: "\u9009\u62E9\u300C\u9009\u98791 \u53BB\u7ED3\u5C3EA\u300D"
+  prerequisiteIdList: 

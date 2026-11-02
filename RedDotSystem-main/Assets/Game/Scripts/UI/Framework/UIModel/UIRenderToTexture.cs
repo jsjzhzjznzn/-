@@ -1,0 +1,275 @@
+﻿using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+
+namespace SkierFramework
+{
+
+    public class UIRenderToTexture : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerClickHandler
+    {
+        public struct Target
+        {
+            public GameObject gameObject;
+            public bool canDrag;
+        }
+
+        private Camera m_Camera;
+        private RawImage m_RawImage;
+        private RenderTexture m_RenderTexture;
+        private Dictionary<int, Target> m_Targets = new Dictionary<int, Target>();
+        private int m_Index = -1;
+        private Transform m_DragTarget;
+        private float m_orthographicSize = 1;
+
+        public Camera Camera => m_Camera;
+        public Dictionary<int, Target> Targets => m_Targets;
+        public int Index => m_Index;
+        /// <summary>
+        /// 目标被点击
+        /// </summary>
+        public event Action<GameObject> OnTargetClick;
+
+        /// <summary>
+        /// 界面被隐藏（关闭窗口/切场景时 UI 只是 SetActive(false) 缓存）时立即停止后台渲染：
+        /// 卸载模型 + 回收 RTT 相机 + 释放 RenderTexture。
+        /// 不清理的话，隐藏的 RawImage 背后 CameraRTT 仍每帧渲染模型，切场景后还在空转。
+        /// 下次打开界面重新点选英雄时会重新加载，功能不受影响。
+        /// </summary>
+        private void OnDisable()
+        {
+            if (m_Targets == null || m_Targets.Count == 0) return;
+            try
+            {
+                UIModelManager.Instance.UnLoadModelByRawImage(m_RawImage);
+            }
+            catch (Exception)
+            {
+                // 应用退出等回收器不可用的场景下忽略（OnDestroy 兜底会再清一次）
+            }
+        }
+
+        void OnDestroy()
+        {
+            // 补：组件销毁时把挂在自己身上的预览模型一并回收。
+            // 否则模型会残留在 DontDestroyOnLoad 的 UIModelRoot 下（关界面/切场景即泄漏）。
+            if (m_Targets != null && m_Targets.Count > 0)
+            {
+                foreach (var target in m_Targets.Values)
+                {
+                    if (target.gameObject != null)
+                    {
+                        try
+                        {
+                            ResourceManager.Instance.Recycle(target.gameObject);
+                        }
+                        catch (Exception)
+                        {
+                            // 退出游戏等回收器不可用的场景下直接销毁兜底
+                            Destroy(target.gameObject);
+                        }
+                    }
+                }
+                m_Targets.Clear();
+            }
+            if (m_Camera != null)
+                UIModelManager.Instance.RecyleCamera(m_Camera);
+            ReleaseRenderTexture();
+        }
+
+
+        public void Init(Vector3 vec, bool isOrth, float orth, int index, float cameraDistance = 20f)
+        {
+            InitCamera(isOrth, orth);
+            m_Index = index;
+            if (m_Camera)
+            {
+                m_Camera.transform.localPosition = vec + new Vector3(0, 0, cameraDistance);
+                m_Camera.transform.localEulerAngles = new Vector3(0, 180, 0);
+            }
+
+            if (m_RawImage == null)
+                m_RawImage = GetComponent<RawImage>();
+
+            if (m_RenderTexture == null)
+            {
+                // 布局可能还没在本帧结算完（预制体刚实例化/刚激活时 rect 为 0），
+                // 先强制刷新一次；仍拿不到尺寸时退回画布尺寸，避免创建 0x0 的 RT。
+                Canvas.ForceUpdateCanvases();
+                float width = m_RawImage.rectTransform.rect.width;
+                float height = m_RawImage.rectTransform.rect.height;
+                if (width < 2f || height < 2f)
+                {
+                    var canvas = GetComponentInParent<Canvas>();
+                    Rect canvasRect = canvas != null ? canvas.pixelRect : new Rect(0, 0, Screen.width, Screen.height);
+                    width = canvasRect.width * 0.5f;
+                    height = canvasRect.height * 0.5f;
+                }
+                m_RenderTexture = RenderTexture.GetTemporary(
+                    Mathf.Max(2, (int)width),
+                    Mathf.Max(2, (int)height),
+                    1,
+                    RenderTextureFormat.ARGB32);
+                m_RenderTexture.name = "UIRenderToTexture";
+            }
+            m_Camera.targetTexture = m_RenderTexture;
+            m_RawImage.texture = m_RenderTexture;
+        }
+
+        private void InitCamera(bool isOrth, float orth)
+        {
+            if (m_Camera == null)
+            {
+                m_Camera = UIModelManager.Instance.SpawnCamera();
+            }
+            else
+            {
+                m_Camera.gameObject.SetActive(true);
+            }
+            m_Camera.orthographic = isOrth;
+            m_Camera.orthographicSize = orth;
+            m_Camera.fieldOfView = orth;
+            m_orthographicSize = orth;
+        }
+
+        private void ReleaseRenderTexture()
+        {
+            if (m_RenderTexture != null)
+            {
+                RenderTexture.ReleaseTemporary(m_RenderTexture);
+                m_RenderTexture = null;
+                m_RawImage.texture = null;
+            }
+        }
+        public bool AddTarget(GameObject target, bool canDrag)
+        {
+            if (target)
+            {
+                if (m_Targets == null)
+                    m_Targets = new Dictionary<int, Target>();
+
+                int id = target.GetInstanceID();
+                if (!m_Targets.ContainsKey(id))
+                {
+                    m_Targets.Add(id, new Target { gameObject = target, canDrag = canDrag });
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public void ResetTarget()
+        {
+            m_Targets.Clear();
+            if (m_Camera != null)
+            {
+                UIModelManager.Instance.RecyleCamera(m_Camera);
+                m_Camera = null;
+            }
+            m_Index = -1;
+            ReleaseRenderTexture();
+        }
+
+        private void Update()
+        {
+            if (m_Targets != null)
+            {
+                foreach (var target in m_Targets.Values)
+                {
+                    if (m_DragTarget == null || m_DragTarget.gameObject != target.gameObject)
+                        target.gameObject.transform.rotation = Quaternion.Lerp(target.gameObject.transform.rotation, Quaternion.identity, Time.deltaTime * 5);
+                }
+            }
+        }
+
+        private void SetClickTarget(Vector2 clickPos)
+        {
+            if (m_Targets.Count == 1)
+            {
+                foreach (var item in m_Targets.Values)
+                {
+                    m_DragTarget = item.gameObject.transform;
+                }
+                return;
+            }
+            // 通过射线检测当前点击的模型
+            // 拿到点击位置与UI位置的偏移百分比
+            Camera uiCamera = UIModelManager.Instance.UICamera;
+            if (uiCamera == null)
+            {
+                // 框架 UI 相机尚未就绪时无法把屏幕坐标换算到画布空间，保持"不选中"即可
+                return;
+            }
+            float width = m_RawImage.rectTransform.rect.width;
+            float height = m_RawImage.rectTransform.rect.height;
+            Vector2 screenPos = RectTransformUtility.WorldToScreenPoint(uiCamera, transform.position);
+            screenPos += new Vector2(width * (0.5f - m_RawImage.rectTransform.pivot.x), height * (0.5f - m_RawImage.rectTransform.pivot.y));
+            Vector2 offset = clickPos - screenPos;
+            offset = new Vector2(offset.x / width, offset.y / height);
+            if (m_Camera.orthographic)
+            {
+                // 正交相机的渲染大小height=size*2， width = 宽高比*height
+                float screenHeight = m_Camera.orthographicSize * 2;
+                float screenWidth = m_Camera.pixelWidth * 1.0f / m_Camera.pixelHeight * screenHeight;
+                Vector3 startPoint = m_Camera.transform.position + m_Camera.transform.right * offset.x * screenWidth + m_Camera.transform.up * offset.y * screenHeight;
+
+                Debug.DrawLine(startPoint, startPoint + m_Camera.transform.forward * 100, Color.red, 5f);
+                if (Physics.Raycast(startPoint, m_Camera.transform.forward, out RaycastHit hit, 100, 1 << Layer.UIRenderToTarget))
+                {
+                    m_DragTarget = hit.transform;
+                }
+            }
+            else
+            {
+                // 透视相机通过FOV和near可以求height， width同正交相机
+                float screenHeight = Mathf.Tan(m_Camera.fieldOfView * 0.5f * Mathf.Deg2Rad) * m_Camera.nearClipPlane * 2;
+                float screenWidth = m_Camera.pixelWidth * 1.0f / m_Camera.pixelHeight * screenHeight;
+                Vector3 endPoint = m_Camera.transform.position + m_Camera.transform.forward * m_Camera.nearClipPlane
+                    + m_Camera.transform.right * offset.x * screenWidth + m_Camera.transform.up * offset.y * screenHeight;
+                Vector3 dir = (endPoint - m_Camera.transform.position).normalized;
+
+                Debug.DrawLine(m_Camera.transform.position, endPoint, Color.red, 5f);
+                if (Physics.Raycast(m_Camera.transform.position, dir, out RaycastHit hit, m_Camera.farClipPlane, 1 << Layer.UIRenderToTarget))
+                {
+                    m_DragTarget = hit.transform;
+                }
+            }
+        }
+
+        public void OnBeginDrag(PointerEventData eventData)
+        {
+            m_DragTarget = null;
+            SetClickTarget(eventData.position);
+
+            // 不能拖拽时置空
+            if (m_DragTarget != null && m_Targets.TryGetValue(m_DragTarget.GetInstanceID(), out Target target) && !target.canDrag)
+            {
+                m_DragTarget = null;
+            }
+        }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            if (m_DragTarget != null)
+                m_DragTarget.localEulerAngles -= new Vector3(0, eventData.delta.x, 0);
+        }
+
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            m_DragTarget = null;
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            m_DragTarget = null;
+            SetClickTarget(eventData.position);
+
+            if (m_DragTarget != null)
+            {
+                // 点中模型，发送事件或者其他操作
+                OnTargetClick?.Invoke(m_DragTarget.gameObject);
+            }
+        }
+    }
+}

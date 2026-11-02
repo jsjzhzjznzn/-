@@ -1,0 +1,97 @@
+飘
+c#
+Q1. 为什么飘字不能每次命中都 Instantiate/Destroy？ Instantiate/Destroy 的代价不是“一个函数调用”，而是三笔账： 托管堆分配 + GC 尖刺：Instantiate 会 new 出 GameObject/Component 托管包装，Destroy 后这些对象变成垃 圾；高频命中时分配速率飙升，GC 一触发就是帧尖刺。 原生层装配与层级登记：创建 Transform、RectTransform、CanvasRenderer、Text/TMP 组件，挂进父子链，注册到 Canvas 的批次/重建系统里；销毁时还要反注册、断引用。 UGUI 连坐：新对象激活/父级变化会让所在 Canvas 走 SyncTransform，甚至触发 Rebuild/Rebatch；如果飘字和主 UI 同 Canvas，一次命中可能让整屏 UI 跟着重算。 战斗命中是高频事件，以上成本会被“命中次数 × 同时飘字数”乘法放大。 对策 = 对象池：预创建 N 个飘字，借出时重父级、写内容、设位置、最后激活；归还时先禁用、再重父级回池、清数据。隐 藏优先用 CanvasGroup.alpha = 0 + blocksRaycasts = false，而不是 SetActive——SetActive 一样会触发层 级脏化和 SyncTransform，只是比 Instantiate 便宜，不是免费。 借还顺序（加分点）： 借出：先 SetParent 到目标层 → 更新文本/颜色/位置 → 最后 SetActive(true) 或 alpha 置 1。激活放在最后， 是因为激活会触发一次全 Canvas SyncTransform，万事俱备再激活只脏一次。 归还：先 SetActive(false) 或 alpha 置 0 → 再 SetParent 回池。先禁用再重父级，旧层级只脏一次；反过来会先 因父级变化脏一次，禁用时再脏一次。 补一句：池化后仍要注意隐藏方式。SetActive 开关在 UGUI 下仍有连坐成本；高频显隐优先用 CanvasGroup/禁用 Canvas 组件，而不是反复 SetActive。
+Q5. UI 对象池的归还是“先禁用再重父级”还是反过来？ 归还：先禁用，再重父级。 借出：先重父级 → 更新数据 → 最后激活。 原因：每次父级变化都会让旧层级和新层级参与布局/同步计算。先禁用再重父级，旧层级只脏一次；先重父级再禁用，父级变 化脏一次，禁用又脏一次，等于两次。 借出时最后激活，是因为激活会触发全 Canvas SyncTransform；把重父级、写文本、设位置都做完再激活，只脏一次。
+
+Q3. 什么是 UGUI 的 Canvas 重建？为什么飘字会“连累”整个 UI？
+
+UGUI 重建分两层：
+
+C# 层 SendWillRenderCanvases：元素自身内容变化（文本、颜色、Sprite、Layout）触发 Rebuild，包括
+
+Layout 重建和 Mesh 重建。
+
+C++ 层 Canvas.BuildBatch（Rebatch）：任何元素顶点脏了，整个 Canvas 按深度/材质重新贪心合批。
+
+关键：合批以 Canvas 为单位，对全部元素生效。一个飘字变字，同 Canvas 下几千个元素跟着重排/重批。再加上
+
+SyncTransform：父级或自身 Transform 变化会让该层级参与同步。
+
+三段流水线触发条件表（加分点）：
+
+流水线 触发条件 代价
+
+SendWillRenderCanvases 元素内容变化：text/color/sprite/layout
+
+中～高，看元素数
+
+Canvas.BuildBatch 任意元素顶点脏，整 Canvas 重批 高，随 Canvas 元素数上升
+
+SyncTransform Transform/RectTransform 变化 低，但激活/父级变化会放大
+
+1 / 5
+
+关键结论：Transform 动画（位移/缩放/旋转）不触发前两者，只走 SyncTransform；文本/颜色变化才触发 Rebuild + Rebatch。所以飘字要动静分离：主 UI 一个 Canvas，飘字独立 Canvas，飘字内部再尽量只动 Transform。
+
+SyncTransform 到底管什么？ UWA 在 Unity 2021/2022 上的实测揭示了 SyncTransform 的触发条件： 操作 SyncTransform 触发范围 单个元素 Transform 变化（位移/旋转/缩放） 仅该元素自身触发一次 SetActive(true) 激活 UI 当前 Canvas + 其父 Canvas 下所有 UI 元素全部触发 SetActive(false) 隐藏 UI 不触发 Instantiate 当前 Canvas + 父 Canvas 下所有元素触发 Destroy 当前 Canvas 下所有元素触发
+
+关键点：CanvasGroup 可以挂在一个完全没有 Canvas 的普通 GameObject 上，只要它的子节点最终归属于某个
+
+Canvas 渲染就行。它本身不要求所在节点是 Canvas。
+
+Canvas (根)
+
+├── Panel A
+
+← 挂 CanvasGroup(A)
+
+│ ├── Image 1
+
+│ └── Text 2
+
+└── Panel B
+
+← 挂 CanvasGroup(B)
+
+└── Button 3
+
+CanvasGroup(A).alpha = 0 → Panel A 及其所有子节点（Image 1、Text 2）的最终顶点 alpha 归零，不影响
+
+Panel B。
+
+CanvasGroup(B).interactable = false → Button 3 不可交互，不影响 Panel A。
+
+如果 Panel A 下再挂一个 CanvasGroup(C)，则 C 的 alpha 与 A 的 alpha 相乘，形成层级继承
+
+Q9. 协程驱动飘字动画的隐藏成本 修正版脚本： 每个 StartCoroutine 的代价： 协程对象分配：IEnumerator 实例化（如果方法里用了闭包/lambda，还有闭包分配）。 调度登记：Unity 把协程挂到 MonoBehaviour 的调度列表，每帧检查 MoveNext。 yield return new WaitForSeconds：每个 new 都是一次托管堆分配。必须缓存为字段或静态字典。 生命周期绑定：协程挂在 MonoBehaviour 上，对象销毁/禁用时协程中断。池化后如果协程挂在每字身上，归还池时协程还 在跑，下次借出会双重启动。 替代方案——数据驱动： 一个管理器 + struct[] 数组 + 单 Update： struct PopupData {
+public Vector3 startPos, endPos; public float elapsed, duration; public int poolIndex; // 对应池中哪个 GameObject
+2 / 5
+
+} PopupData[] active = new PopupData[MAX]; int activeCount = 0; void Update() {
+float dt = Time.deltaTime; for (int i = 0; i < activeCount; i++) {
+active[i].elapsed += dt; float t = active[i].elapsed / active[i].duration; // 插值位置、alpha if (t >= 1f) { 归还池(active[i].poolIndex); activeCount--;
+active[i] = active[activeCount]; // swap-back 紧凑 i--; } } } 加分点——池化后协程挂谁： 协程挂在管理器上，不是挂在每个飘字对象上。管理器持有池引用，协程只负责驱动数据数组的更新。swap-back 紧凑数组 的细节：删除元素时用“最后一个元素覆盖删除位，activeCount--”，O(1) 删除，保持活跃数据连续，扫描时无空洞
+二、为什么飘字场景特别在意字符串 因为飘字是高频 + 每次内容都不同的。 血条：数值变化频率低，偶尔一次 string 分配无所谓。 飘字：每次命中都要显示一个新数字，一秒可能几十次。 如果每次都写： tmpText.text = $"伤害{damage}"; 那么每次命中都会 damage.ToString() → 分配一个 string $"伤害{...}" 插值 → 再分配一个 string 赋值给 .text → TMP 内部再解析这个 string，生成字符和顶点 第 1、2 步是纯托管堆垃圾，跟渲染没关系，纯粹是“为了拼出这行字”产生的。高频命中下，这些垃圾快速堆积，GC 一触发 就是帧尖刺。 所以问题不在飘字本身，而在于“用字符串给飘字填内容”这个习惯。
+三、那不用字符串，飘字怎么填内容 TMP 提供了绕过 string 的接口： // 不用 string，直接给字符数组 tmpText.SetCharArray(charArray, start, length); 于是链路变成： 旧：int → ToString() → string → 插值 → string → TMP 解析 → 字符/顶点 新：int → WriteInt() → char[] → SetCharArray → 字符/顶点 WriteInt 那段代码，就是“int → char[]”这一步的手动实现，替代 ToString()。 目标不是消灭字符串这个概念，而是消灭“每次飘字都 new 一个 string”这个分配行为。
+3 / 5
+
+Q12. TMP 的 .text、SetText(string)、SetCharArray 性能差异 这三者的核心差异在 是否做相同性检查 和 是否强制重新生成文本网格： 方法 相同性检查 行为 适用场景 .text 有（内容不变零成本） 内容变了才 GenerateTextMesh 多数帧不变的文本（血条、分数） SetText(string) 无 每次强制 GenerateTextMesh，即使内容相同 内容每帧都变的场景，但仍有 string 分配 SetCharArray 无 每次强制 GenerateTextMesh，但零分配直写 飘字、每帧都不同的高频文本
+Q16. DrawMeshInstanced 与 DrawMeshInstancedIndirect 的区别？飘字用哪个？ 两者都是绕过 GameObject/Renderer 提交、直接向 GPU 提交实例数据的 API，核心差异在 实例数据存在哪、谁传、上 限多少：
+维度 DrawMeshInstanced DrawMeshInstancedIndirect 实例数据位置 CPU 侧数组（Matrix + MPB） GPU Buffer CPU 每帧工作 每帧传 Matrix + MPB 数组 只传 count（+ 少量参数） 每批上限 1023 无 1023 限制（到 GPU/缓冲上限） 适用规模 几百 ~ 几千 万级及以上 数据更新 CPU 改数组，重新提交 GPU Buffer 更新（可 GPU 侧写） 飘字选型： 飘字几百 ~ 几千实例：DrawMeshInstanced 1–4 批足够（1023/批）。 已到万级（割草极端）：再上 DrawMeshInstancedIndirect。 加分点： 报出实测数字——本项目 1 万 quad = 3 材质 × 10 批、提交 0.011ms/帧、123FPS。有数据的答案和没数据 的答案差一个档次 ，因为它证明你不仅懂 API，还真的压测过
+Q18. “顶点数 <256 的网格不适合 GPU Instancing”——那 4 顶点的数字 quad 用 instancing 矛盾吗？ 不矛盾，因为手册警告的前提不适用。 Unity 手册的警告针对的是 单实例 GPU 吞吐：顶点太少，喂不满 GPU，单实例效率低。但飘字/图标的瓶颈在 CPU 侧提 交与 DrawCall 数，不在单实例 GPU 效率。 实测： 4 顶点 × 1 万实例 → 123FPS，GPU 完全无压力。 关键辨析： 手册结论有适用前提，教条套用会错过正确方案。飘字场景下，CPU 提交成本才是矛盾主要方面，GPU 吞吐是次 要方面。 加分点： 把这类“官方文档需要辨析前提”的意识扩展： 不要用“<256 结论”否定 UI instancing。 也不要用instancing 万能论”去合批 SRP Batcher 已搞定的场景。 核心： 看瓶颈在哪一侧，而不是背结论
+Q20. 一个多位数字的“位”怎么在 instancing 里拼起来？ 核心思路：一位数字 = 一个 quad 实例。 _DigitIndex：第几位。 横向偏移 = index × advance，在顶点着色器里用相机右向量算。 矩阵只存锚点（整体位置/缩放/旋转）。
+4 / 5
+
+这样设计的好处： 飘字整体缩放/上浮动画不用改每实例矩阵，只改锚点或 shader 位宽用等宽数字字体（tabular）或 advance 查找表。 负号/小数点/单位字符也进图集当“字形”
+
+里的全局参数。
+
+改 Transform → 便宜。 改 text / color → 触发 TMP GenerateTextMesh → 贵（见 Q12）。 原神式四段动效（过冲出现 → 上浮 → seed 随机跃动 → 重力下坠渐隐）每段都是 t 的纯函数，纯函数就能 GPU 化。。
+
+Q34. 为什么不建议给每个飘字挂 Animator？美术想要所见即所得怎么办？ 为什么每个飘字挂 Animator 是灾难 每个 Animator 是完整状态机： Update 调度开销。 曲线采样开销。 状态残留 Reset 问题。 实测数据： UE 论坛实测 30 个飘字 widget 同时动画直接掉到 40FPS，改成容器级动画掉帧减半（附录
+
+D-7）。
+
+5 / 5
+
+
