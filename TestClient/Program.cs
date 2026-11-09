@@ -112,6 +112,9 @@ string? signListText = GetArg(args, "--sign-list");       // 拉取签到状态�
 string? signClaimText = GetArg(args, "--sign-claim");     // 签到一次（[活动ID]，省略 = 3号签到活动）
 string? grantText = GetArg(args, "--grant");
 string? scoreText = GetArg(args, "--score");
+
+// 开局回执带回的本局标识：ReceiveLoop 在后台线程写入，上报前轮询等待
+string? scoreRunId = null;
 bool wantAchievementList = args.Contains("--ach-list");
 string? achievementClaimText = GetArg(args, "--ach-claim");
 string? achievementGmText = GetArg(args, "--ach-gm");
@@ -710,14 +713,40 @@ if (signClaimText != null)
 }
 
 // 可选：挑战比分上报（--score 90），用于挑战/生涯/成就统计
+// 服务端要求成绩必须带开局下发的 runId：先发开局请求 → 等回执拿 runId → 再上报
 if (scoreText != null && int.TryParse(scoreText, out int scoreValue))
 {
-    await SendAsync(stream, MessageID.ScoreSubmitRequest, new ScoreSubmitRequest
+    await SendAsync(stream, MessageID.ChallengeStartRequest, new ChallengeStartRequest
     {
         ChallengeId = 1,
-        Score = scoreValue,
     });
-    Console.WriteLine($"[已发送] 挑战比分 {scoreValue}");
+    Console.WriteLine("[已发送] 挑战开局 挑战1");
+
+    // 等开局回执把 runId 写进共享字段（ReceiveLoop 在后台线程写，最多等 3 秒）
+    for (int i = 0; i < 30 && string.IsNullOrEmpty(scoreRunId); i++)
+        await Task.Delay(100);
+
+    if (string.IsNullOrEmpty(scoreRunId))
+    {
+        Console.WriteLine("[成绩上报失败] 未拿到开局 runId（服务端未响应或拒绝开局）");
+    }
+    else
+    {
+        // 服务端要求本局耗时 >= 1 秒才入账：默认等 1.2 秒，模拟真实游玩时长（--score-wait 可覆盖）
+        int waitMs = 1200;
+        string? waitText = GetArg(args, "--score-wait");
+        if (waitText != null && int.TryParse(waitText, out int parsedWait) && parsedWait >= 0)
+            waitMs = parsedWait;
+        await Task.Delay(waitMs);
+
+        await SendAsync(stream, MessageID.ScoreSubmitRequest, new ScoreSubmitRequest
+        {
+            ChallengeId = 1,
+            Score = scoreValue,
+            RunId = scoreRunId,
+        });
+        Console.WriteLine($"[已发送] 挑战比分 {scoreValue} run={scoreRunId}");
+    }
     await Task.Delay(800);
 }
 
@@ -1012,9 +1041,15 @@ async Task ReceiveLoop(NetworkStream stream)
                     : $"[发送失败] {sendResponse.Message}");
                 break;
 
+            case MessageID.ChatUnreadSnapshotNotify:
+                ChatUnreadSnapshotNotify snapshot = ChatUnreadSnapshotNotify.Parser.ParseFrom(body);
+                Console.WriteLine($"[未读快照] {snapshot.Entries.Count}个会话有未读: " +
+                    string.Join(", ", snapshot.Entries.Select(entry => $"{entry.FriendId}={entry.UnreadCount}")));
+                break;
+
             case MessageID.ChatReceiveNotify:
                 ChatReceiveNotify notify = ChatReceiveNotify.Parser.ParseFrom(body);
-                Console.WriteLine($"[收到消息] 来自{notify.Message.SenderId}(类型{notify.Message.ContentType}): {notify.Message.Content}");
+                Console.WriteLine($"[收到消息] 来自{notify.Message.SenderId}(类型{notify.Message.ContentType}): {notify.Message.Content} | 服务端未读数={notify.UnreadCount}");
                 // 自动回复模式：模拟真实聊天对象，收到即回，实现全自动闭环测试
                 if (autoreplyText != null)
                 {
@@ -1268,6 +1303,28 @@ async Task ReceiveLoop(NetworkStream stream)
                 BagGrantResponse bagGrant = BagGrantResponse.Parser.ParseFrom(body);
                 Console.WriteLine($"[发放结果] success={bagGrant.Success} | {bagGrant.Message}");
                 break;
+
+            case MessageID.ChallengeStartResponse:
+            {
+                ChallengeStartResponse start = ChallengeStartResponse.Parser.ParseFrom(body);
+                if (start.Success)
+                {
+                    scoreRunId = start.RunId;
+                    Console.WriteLine($"[开局成功] run={start.RunId}");
+                }
+                else
+                {
+                    Console.WriteLine($"[开局失败] {start.Message}");
+                }
+                break;
+            }
+
+            case MessageID.ScoreSubmitResponse:
+            {
+                ScoreSubmitResponse score = ScoreSubmitResponse.Parser.ParseFrom(body);
+                Console.WriteLine($"[成绩结果] success={score.Success} | {score.Message} | 最高={score.BestScore} 排名={score.MyRank} 新纪录={score.NewRecord}");
+                break;
+            }
 
             case MessageID.BagDiscardResponse:
             {
