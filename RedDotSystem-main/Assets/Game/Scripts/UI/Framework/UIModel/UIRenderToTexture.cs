@@ -23,6 +23,13 @@ namespace SkierFramework
         private Transform m_DragTarget;
         private float m_orthographicSize = 1;
 
+        /// <summary>
+        /// 预览 RenderTexture 的最长边上限。界面上的 RawImage 动辄 700+ 像素，
+        /// 按原尺寸开会白占内存，而角色预览实际只需要这么多像素就够清晰。
+        /// </summary>
+        private const int MaxRenderTextureSize = 512;
+
+
         public Camera Camera => m_Camera;
         public Dictionary<int, Target> Targets => m_Targets;
         public int Index => m_Index;
@@ -50,8 +57,9 @@ namespace SkierFramework
             }
         }
 
-        void OnDestroy()
+        private void OnDestroy()
         {
+
             // 补：组件销毁时把挂在自己身上的预览模型一并回收。
             // 否则模型会残留在 DontDestroyOnLoad 的 UIModelRoot 下（关界面/切场景即泄漏）。
             if (m_Targets != null && m_Targets.Count > 0)
@@ -106,9 +114,12 @@ namespace SkierFramework
                     width = canvasRect.width * 0.5f;
                     height = canvasRect.height * 0.5f;
                 }
+                // RT 直接按 RawImage 的显示尺寸分配，界面上的大预览（如 760x780）会占掉约 2.3MB，
+                // 多个预览同时存在时内存线性叠加。最长边压到上限内，内存不再随界面排版放大。
+                float scale = Mathf.Min(1f, MaxRenderTextureSize / Mathf.Max(width, height));
                 m_RenderTexture = RenderTexture.GetTemporary(
-                    Mathf.Max(2, (int)width),
-                    Mathf.Max(2, (int)height),
+                    Mathf.Max(2, (int)(width * scale)),
+                    Mathf.Max(2, (int)(height * scale)),
                     1,
                     RenderTextureFormat.ARGB32);
                 m_RenderTexture.name = "UIRenderToTexture";
@@ -131,6 +142,56 @@ namespace SkierFramework
             m_Camera.orthographicSize = orth;
             m_Camera.fieldOfView = orth;
             m_orthographicSize = orth;
+            ApplyCullingMask();
+        }
+
+        /// <summary>
+        /// 预览模型与相机都按索引独占一个 Layer：相机只渲染自己那条隔离带，
+        /// 否则每台相机的 cullingMask 都会把别人的模型过一遍、再被 farClipPlane 挡掉。
+        /// 独占层做不到（已用尽或撞上系统层）时退回共用 UIRenderToTarget，跟原来一致。
+        /// </summary>
+        private void ApplyCullingMask()
+        {
+            if (m_Camera == null) return;
+
+            int layer = -1;
+            if (m_Index >= 0)
+            {
+                if (UIModelManager.Instance == null)
+                {
+                    m_Camera.cullingMask = 1 << Layer.UIRenderToTarget;
+                    return;
+                }
+                layer = UIModelManager.Instance.GetExclusiveLayer(m_Index);
+            }
+
+            if (layer >= 0)
+            {
+                foreach (var target in m_Targets.Values)
+                    if (target.gameObject != null) target.gameObject.SetLayerRecursively(layer);
+
+                // 相机是从池里取的，掩码可能还停在上一个预览的独占层上，
+                // 不等 UI 层判定就必须直接改成本层，否则这一帧会渲染成空图。
+                m_Camera.cullingMask = 1 << layer;
+            }
+            else
+            {
+                m_Camera.cullingMask = 1 << Layer.UIRenderToTarget;
+            }
+        }
+
+        /// <summary>新目标加入时套用当前预览的层，避免和别的预览挤在同一个 Layer。</summary>
+        public void ApplyLayerTo(GameObject target)
+        {
+            if (target == null) return;
+
+            int indexLayer = -1;
+            if (m_Index >= 0 && UIModelManager.Instance != null)
+                indexLayer = UIModelManager.Instance.GetExclusiveLayer(m_Index);
+            int layer = indexLayer >= 0 ? indexLayer : Layer.UIRenderToTarget;
+            target.SetLayerRecursively(layer);
+
+            if (m_Camera != null) m_Camera.cullingMask = 1 << layer;
         }
 
         private void ReleaseRenderTexture()

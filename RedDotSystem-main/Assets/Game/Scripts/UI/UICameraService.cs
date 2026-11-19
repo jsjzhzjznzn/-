@@ -44,7 +44,7 @@ public static class UICameraService
     {
         if (camera == null)
         {
-            Debug.LogWarning("[UICameraService] SetExternalCamera 收到 null，已忽略");
+            GameLog.Warn("[UICameraService] SetExternalCamera 收到 null，已忽略");
             return;
         }
 
@@ -54,7 +54,7 @@ public static class UICameraService
         // 框架相机到位 → 兜底相机全部退场（是"销毁"不是"禁用"：层级里不留第二台 UI 相机）
         int removed = DestroyFallbackCameras(camera);
         fallbackCamera = null;
-        Debug.Log($"[UICameraService] 框架 UI 相机注入 {camera.name}（清理兜底相机 {removed} 台）");
+        GameLog.Info($"[UICameraService] 框架 UI 相机注入 {camera.name}（清理兜底相机 {removed} 台）");
 
         ConfigureCamera(camera);
         SweepAll();
@@ -133,7 +133,7 @@ public static class UICameraService
             fallbackCamera = reuse;
             uiCamera = reuse;
             ConfigureCamera(reuse);
-            if (existing.Length > 1) Debug.Log($"[UICameraService] 复用兜底 UI 相机并清理重复项 {existing.Length - 1} 台");
+            if (existing.Length > 1) GameLog.Info($"[UICameraService] 复用兜底 UI 相机并清理重复项 {existing.Length - 1} 台");
             return reuse;
         }
 
@@ -143,7 +143,7 @@ public static class UICameraService
         fallbackCamera = camera;
         uiCamera = camera;
         ConfigureCamera(camera);
-        Debug.Log("[UICameraService] 创建兜底 UI 相机（本场景框架 UI 尚未初始化）");
+        GameLog.Info("[UICameraService] 创建兜底 UI 相机（本场景框架 UI 尚未初始化）");
         return camera;
     }
 
@@ -182,7 +182,7 @@ public static class UICameraService
             while (data.cameraStack.Remove(camera)) { }
         }
 
-        Debug.Log($"[UICameraService] 销毁 UI 相机对象 {camera.name}");
+        GameLog.Info($"[UICameraService] 销毁 UI 相机对象 {camera.name}");
         UnityEngine.Object.Destroy(camera.gameObject);
     }
 
@@ -222,7 +222,7 @@ public static class UICameraService
         int removed = data.cameraStack.RemoveAll(cam => cam == null);
         if (removed > 0)
         {
-            Debug.Log($"[UICameraService] {baseCamera.name}: 清理 {removed} 个已销毁的相机栈项");
+            GameLog.Info($"[UICameraService] {baseCamera.name}: 清理 {removed} 个已销毁的相机栈项");
         }
         if (data.cameraStack.Contains(uiCam)) return;
         data.cameraStack.Add(uiCam);
@@ -270,7 +270,7 @@ public static class UICameraService
                 UniversalAdditionalCameraData rttData = other.GetUniversalAdditionalCameraData();
                 if (rttData != null && rttData.cameraStack != null && rttData.cameraStack.Remove(camera))
                 {
-                    Debug.Log($"[UICameraService] {other.name}: 摘除 UI 相机栈项（RTT 预览相机不叠 UI）");
+                    GameLog.Info($"[UICameraService] {other.name}: 摘除 UI 相机栈项（RTT 预览相机不叠 UI）");
                 }
                 continue;
             }

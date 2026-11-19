@@ -15,7 +15,7 @@ using UnityEngine;
 /// </summary>
 public static class AgentUiSpriteBaker
 {
-    private const string OutDir = "Assets/Game/Resources/Agent/ui";
+    private const string OutDir = "Assets/Game/Art/UI/Agent/ui";
 
     [MenuItem("Tools/阿福面板/生成 UI 贴图")]
     public static void Bake()

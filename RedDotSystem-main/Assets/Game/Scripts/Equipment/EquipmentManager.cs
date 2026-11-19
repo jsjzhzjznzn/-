@@ -1,7 +1,16 @@
 using System;
 using System.Collections.Generic;
 
+using Game.Bag;
+
+using Game.Equipment;
+using MieMieFrameWork.Business;
+
 using Common.Network;
+
+using MiMieEventBus;
+
+using MieMieFrameWork;
 
 using UnityEngine;
 
@@ -12,34 +21,29 @@ using UnityEngine;
 /// slots = 角色 × 槽位 → 实例（"穿在哪"的唯一真相）。
 /// UI（CharacterView / 背包"已装备"标注）只订阅 Changed 渲染，不直接碰网络（与 BagManager 同款分层）。
 /// </summary>
-public class EquipmentManager : MonoBehaviour
+public class EquipmentManager : SingletonBehaviour<EquipmentManager>, IEquipmentService
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（UI 层访问装备数据的入口）</summary>
-    public static EquipmentManager Instance { get; private set; }
 
-    /// <summary>运行时自举：进入 Play 自动创建，无需手动挂载</summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("EquipmentManager");
-        holder.AddComponent<EquipmentManager>();
-        DontDestroyOnLoad(holder);
-    }
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+        base.Awake();
     }
 
     // ──────────────────────────────
@@ -47,13 +51,12 @@ public class EquipmentManager : MonoBehaviour
     // ──────────────────────────────
 
     /// <summary>装备数据变化（列表到达 / 穿戴成功，UI 重渲染）</summary>
-    public event Action Changed;
+    /// <summary>全局业务事件总线（装备对外通知：Changed / Status / Result）</summary>
+    public static readonly EventBusCore Bus = new();
 
     /// <summary>提示文案（穿戴结果/失败原因，UI 状态栏显示）</summary>
-    public event Action<string> StatusChanged;
 
     /// <summary>穿戴请求结算（成功与否 + 文案）：角色页据此在成功后收回二级页</summary>
-    public event Action<bool, string> EquipResult;
 
     // ──────────────────────────────
     // 缓存
@@ -93,10 +96,10 @@ public class EquipmentManager : MonoBehaviour
     private void Start()
     {
         ClientNetworkManager net = ClientNetworkManager.Instance;
-        if (net == null) return;
+        if (net == null || net.Network == null) return;
 
-        net.EquipmentListResponseReceived += OnEquipmentListResponse;
-        net.EquipResponseReceived += OnEquipResponse;
+        net.Network.Subscribe<EquipmentListResponse>(OnEquipmentListResponse);
+        net.Network.Subscribe<EquipResponse>(OnEquipResponse);
         net.LoginResponseReceived += OnLoginResponse;
         net.ConnectionBroken += OnConnectionBroken;
 
@@ -104,13 +107,13 @@ public class EquipmentManager : MonoBehaviour
         if (net.MyPlayerId > 0) RequestEquipment();
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         ClientNetworkManager net = ClientNetworkManager.Instance;
         if (net == null) return;
 
-        net.EquipmentListResponseReceived -= OnEquipmentListResponse;
-        net.EquipResponseReceived -= OnEquipResponse;
+
         net.LoginResponseReceived -= OnLoginResponse;
         net.ConnectionBroken -= OnConnectionBroken;
     }
@@ -121,7 +124,7 @@ public class EquipmentManager : MonoBehaviour
         if (Time.unscaledTime - equipSentAt < EquipTimeoutSeconds) return;
 
         equipSentAt = 0f;
-        StatusChanged?.Invoke("装备操作超时，请重试");
+        Bus.Publish(EquipmentEvents.Status, "装备操作超时，请重试");
     }
 
     // ──────────────────────────────
@@ -163,18 +166,23 @@ public class EquipmentManager : MonoBehaviour
             if (config != null && config.SlotType == SlotWeapon) list.Add(instance);
         }
 
-        list.Sort((left, right) =>
+        // 先投影再排序：稀有度/攻击力每件只查一次，否则比较器里 O(n log n) 次比较各查一遍
+        var rows = new List<(EquipInstanceInfo Instance, int Rarity, float Attack)>(list.Count);
+        foreach (EquipInstanceInfo instance in list)
+            rows.Add((instance, GetRarity(instance.ItemId), GetAttrValue(instance.ItemId, AttrType.Attack)));
+
+        rows.Sort((left, right) =>
         {
-            int rarityCompare = GetRarity(right.ItemId).CompareTo(GetRarity(left.ItemId));
+            int rarityCompare = right.Rarity.CompareTo(left.Rarity);
             if (rarityCompare != 0) return rarityCompare;
 
-            float leftAttack = GetAttrValue(left.ItemId, AttrType.Attack);
-            float rightAttack = GetAttrValue(right.ItemId, AttrType.Attack);
-            int attackCompare = rightAttack.CompareTo(leftAttack);
+            int attackCompare = right.Attack.CompareTo(left.Attack);
             if (attackCompare != 0) return attackCompare;
 
-            return left.InstanceId.CompareTo(right.InstanceId);
+            return left.Instance.InstanceId.CompareTo(right.Instance.InstanceId);
         });
+
+        for (int i = 0; i < rows.Count; i++) list[i] = rows[i].Instance;
         return list;
     }
 
@@ -201,7 +209,7 @@ public class EquipmentManager : MonoBehaviour
             }
             catch (Exception exception)
             {
-                Debug.LogWarning($"[Equipment] 属性配置解析失败 itemId={itemId} json={config.AttrJson}: {exception.Message}");
+                GameLog.Warn($"[Equipment] 属性配置解析失败 itemId={itemId} json={config.AttrJson}: {exception.Message}");
             }
         }
 
@@ -261,7 +269,8 @@ public class EquipmentManager : MonoBehaviour
     /// <summary>取物品稀有度（配置未加载时按 1 处理，保证排序稳定）</summary>
     private int GetRarity(int itemId)
     {
-        ItemConfigInfo item = BagManager.Instance != null ? BagManager.Instance.GetConfig(itemId) : null;
+        IBagService bag = GameHub.Get<IBagService>();
+        ItemConfigInfo item = bag != null ? bag.GetConfig(itemId) : null;
         return item != null ? item.Rarity : 1;
     }
 
@@ -306,7 +315,8 @@ public class EquipmentManager : MonoBehaviour
         if (!IsLoaded) RequestEquipment();
 
         // 名称/图标/稀有度来自背包的物品配置表：没拉过就顺手拉一次（复用同一份数据，不新增协议）
-        if (BagManager.Instance != null && BagManager.Instance.Capacity == 0) BagManager.Instance.RequestBag();
+        IBagService bag = GameHub.Get<IBagService>();
+        if (bag != null && bag.Capacity == 0) bag.RequestBag();
     }
 
     /// <summary>请求装备列表（配置 + 实例 + 槽位）</summary>
@@ -317,7 +327,7 @@ public class EquipmentManager : MonoBehaviour
         if (IsLoading) return;
 
         IsLoading = true;
-        Changed?.Invoke();
+        Bus.Publish(EquipmentEvents.Changed);
         _ = SendListAsync(net);
     }
 
@@ -330,8 +340,8 @@ public class EquipmentManager : MonoBehaviour
         catch (Exception exception)
         {
             IsLoading = false;
-            StatusChanged?.Invoke($"装备数据读取失败：{exception.Message}");
-            Changed?.Invoke();
+            Bus.Publish(EquipmentEvents.Status, $"装备数据读取失败：{exception.Message}");
+            Bus.Publish(EquipmentEvents.Changed);
         }
     }
 
@@ -361,7 +371,7 @@ public class EquipmentManager : MonoBehaviour
         catch (Exception exception)
         {
             equipSentAt = 0f;
-            StatusChanged?.Invoke($"装备操作失败：{exception.Message}");
+            Bus.Publish(EquipmentEvents.Status, $"装备操作失败：{exception.Message}");
         }
     }
 
@@ -375,8 +385,8 @@ public class EquipmentManager : MonoBehaviour
 
         if (!response.Success)
         {
-            StatusChanged?.Invoke(response.Message);
-            Changed?.Invoke();
+            Bus.Publish(EquipmentEvents.Status, response.Message);
+            Bus.Publish(EquipmentEvents.Changed);
             return;
         }
 
@@ -384,7 +394,7 @@ public class EquipmentManager : MonoBehaviour
         ApplyInstances(response.Instances);
         ApplySlots(response.Slots);
         IsLoaded = true;
-        Changed?.Invoke();
+        Bus.Publish(EquipmentEvents.Changed);
     }
 
     private void OnEquipResponse(EquipResponse response)
@@ -396,18 +406,18 @@ public class EquipmentManager : MonoBehaviour
             // 回执带全量槽位与实例（服务端权威），失败路径也可能带，只应用成功态
             ApplyInstances(response.Instances);
             ApplySlots(response.Slots);
-            if (!string.IsNullOrEmpty(response.Message) && !response.Unchanged) StatusChanged?.Invoke(response.Message);
+            if (!string.IsNullOrEmpty(response.Message) && !response.Unchanged) Bus.Publish(EquipmentEvents.Status, response.Message);
 
             // 背包里的"已装备"标注跟着刷新（设计约定：装备变更后静默拉一次背包）
-            BagManager.Instance?.RequestBag();
-            Changed?.Invoke();
-            EquipResult?.Invoke(true, response.Message);
+            GameHub.Get<IBagService>()?.RequestBag();
+            Bus.Publish(EquipmentEvents.Changed);
+            Bus.Publish(EquipmentEvents.Result, true, response.Message);
             return;
         }
 
-        if (!string.IsNullOrEmpty(response.Message)) StatusChanged?.Invoke(response.Message);
-        Changed?.Invoke();
-        EquipResult?.Invoke(false, response.Message);
+        if (!string.IsNullOrEmpty(response.Message)) Bus.Publish(EquipmentEvents.Status, response.Message);
+        Bus.Publish(EquipmentEvents.Changed);
+        Bus.Publish(EquipmentEvents.Result, false, response.Message);
     }
 
     private void ApplyConfigs(IEnumerable<EquipConfigInfo> source)
@@ -438,7 +448,7 @@ public class EquipmentManager : MonoBehaviour
     {
         if (!response.Success) return;
         ClearCache();
-        Changed?.Invoke();
+        Bus.Publish(EquipmentEvents.Changed);
         RequestEquipment();
     }
 
@@ -448,7 +458,7 @@ public class EquipmentManager : MonoBehaviour
         IsLoaded = false;
         IsLoading = false;
         equipSentAt = 0f;
-        Changed?.Invoke();
+        Bus.Publish(EquipmentEvents.Changed);
     }
 
     private void ClearCache()
@@ -461,23 +471,4 @@ public class EquipmentManager : MonoBehaviour
         IsLoading = false;
         equipSentAt = 0f;
     }
-}
-
-/// <summary>装备加成合计（只含装备部分，不含角色基础白值）</summary>
-public struct EquipAttrTotals
-{
-    /// <summary>攻击力加成（白值）</summary>
-    public float Attack;
-
-    /// <summary>防御力加成（白值）</summary>
-    public float Defense;
-
-    /// <summary>增伤系数</summary>
-    public float DamageUp;
-
-    /// <summary>减伤系数</summary>
-    public float DamageDown;
-
-    /// <summary>移速系数</summary>
-    public float MoveSpeed;
 }

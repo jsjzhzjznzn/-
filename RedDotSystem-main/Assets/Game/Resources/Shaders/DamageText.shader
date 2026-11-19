@@ -41,12 +41,16 @@ Shader "Game/DamageText"
             // Atlas pixel size and monospace cell width (atlas pixels).
             float2 _AtlasSize;
             float _CellWidth;
-            // x = uvMin.xy, z = uvMax.xy for glyph index (0-9 digits, 10 = minus).
-            float4 _DigitUV[16];
+            // x = uvMin.xy, z = uvMax.xy for glyph index (0-9 digits, 10 = minus,
+            // 11-36 = 'A'..'Z', 37 = '+'). One table serves both numbers and labels.
+            float4 _DigitUV[38];
 
             UNITY_INSTANCING_BUFFER_START(Props)
-                // _Digits.x = digits packed as 4-bit nibbles (least significant first)
-                // _Digits.y = valid digit count
+                // _Digits.x = digit or label glyph indices packed as 4-bit nibbles
+                //   numbers: least significant nibble is the rightmost digit
+                //   labels : least significant nibble is the leftmost character
+                // _Digits.y = valid glyph count
+                // _Digits.z = 1 for labels (left to right), 0 for numbers (right to left)
                 UNITY_DEFINE_INSTANCED_PROP(float4, _Digits)
                 UNITY_DEFINE_INSTANCED_PROP(float4, _Tint)
             UNITY_INSTANCING_BUFFER_END(Props)
@@ -86,7 +90,8 @@ Shader "Game/DamageText"
                     return o;
                 }
 
-                int nibble = count - 1 - slot;
+                // Labels are laid out left to right, numbers right to left.
+                int nibble = digits.z > 0.5 ? slot : (count - 1 - slot);
                 int glyph = ((int)digits.x >> (nibble * 4)) & 15;
                 float4 rect = _DigitUV[glyph];
 

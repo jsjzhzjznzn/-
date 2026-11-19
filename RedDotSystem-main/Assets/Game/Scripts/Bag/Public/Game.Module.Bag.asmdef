@@ -1,0 +1,19 @@
+{
+    "name": "Game.Module.Bag",
+    "rootNamespace": "Game.Bag",
+    "references": [
+        "Game.Protocol",
+        "Game.Core",
+        "Game.Network",
+        "MiMieEventBus"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

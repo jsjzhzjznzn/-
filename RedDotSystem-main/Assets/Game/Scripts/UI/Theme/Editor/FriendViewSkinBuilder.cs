@@ -23,13 +23,13 @@ using UnityEngine.UI;
 public static class FriendViewSkinBuilder
 {
     private const string PrefabPath = "Assets/Game/UI/Friends/FriendView.prefab";
-    private const string ArtFolder = "Assets/Game/Resources/ui/Friends";
-    private const string ThemeFolder = "Assets/Game/Resources/ui/Theme";
+    private const string ArtFolder = "Assets/Game/Art/UI/Friends";
+    private const string ThemeFolder = "Assets/Game/Art/UI/Theme";
     private const string OrnamentPath = "Assets/Game/UI/Friends/Art/orn_corner.png";
     private const string EmblemPath = "Assets/Game/UI/Friends/Art/emblem_chat.png";
     private const string FontPath = "Assets/Codely/Fonts/NotoSansSC-Regular SDF.asset";
 
-    // ── 配色（米白 + 香槟金 + 墨褐文字；与 Assets/Game/Resources/ui/Theme 底图同族）──
+    // ── 配色（米白 + 香槟金 + 墨褐文字；与 Assets/Game/Art/UI/Theme 底图同族）──
     private static readonly Color Ivory = Hex(0xFF, 0xFC, 0xF5);
     private static readonly Color IvorySoft = Hex(0xFD, 0xF8, 0xEE);
     private static readonly Color Cream = Hex(0xFB, 0xF3, 0xE2);

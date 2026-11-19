@@ -57,11 +57,13 @@ namespace Miemie.DialogSystem
                 StartDialog();
         }
 
+        #if UNITY_EDITOR
         private void Update()
         {
-            // 仅同步 Inspector 只读显示 输入已交给 View
+            // 仅同步 Inspector 只读显示，运行时没有任何读取方（对外访问器是 CurrentNode 属性）
             currentNode = viewModel?.CurrentNode;
         }
+#endif
 
         private void OnDestroy()
         {
@@ -72,6 +74,16 @@ namespace Miemie.DialogSystem
         #endregion
 
         #region 对话流程
+
+        /// <summary>
+        /// 创建后立即关闭自动播放（供运行时动态创建的 Runner 使用）
+        /// 必须在 Awake 之前调用，调用方负责"先停用物体→挂组件→调用本方法→再激活"的顺序。
+        /// 有了这个入口，调用方不必反射改私有字段（字段改名会让反射静默失效，对话会自己播一遍）。
+        /// </summary>
+        public void DisableAutoStart()
+        {
+            autoStart = false;
+        }
 
         /// <summary>
         /// 开始对话

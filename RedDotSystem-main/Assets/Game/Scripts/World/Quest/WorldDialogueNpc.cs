@@ -133,7 +133,7 @@ public class WorldDialogueNpc : MonoBehaviour
     {
         if (InDialogue || dialogueGraph == null)
         {
-            if (dialogueGraph == null) Debug.LogWarning($"[WorldDialogueNpc] {npcKey} 没有配置对话图");
+            if (dialogueGraph == null) GameLog.Warn($"[WorldDialogueNpc] {npcKey} 没有配置对话图");
             return;
         }
 
@@ -174,18 +174,11 @@ public class WorldDialogueNpc : MonoBehaviour
         runnerHolder.SetActive(false);
 
         runner = runnerHolder.AddComponent<DialogueRunner>();
-        dialogueGraphForAutoStartOff(runner);
+        // 必须在激活前关掉自动播放，否则 Start 会自己播第一遍，之后再也发不出 GraphFinished
+        runner.DisableAutoStart();
 
         runnerHolder.SetActive(true);
         return runner;
-    }
-
-    /// <summary>把 autoStart 关掉（框架字段私有，只能反射）</summary>
-    private static void dialogueGraphForAutoStartOff(DialogueRunner target)
-    {
-        var field = typeof(DialogueRunner).GetField("autoStart",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        field?.SetValue(target, false);
     }
 
     private void OnDialogEnded()

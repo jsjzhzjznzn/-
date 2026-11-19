@@ -29,8 +29,8 @@ namespace SkierFrameworkUIMigration
         private const string PrefabPath = "Assets/Game/UI/Dashijie/DashijieHudView.prefab";
         private const string IconFolder = "Assets/Game/UI/Dashijie/Icons";
         private const string CircleSpritePath = "Assets/Game/UI/Dashijie/Icons/dashijie_circle.png";
-        private const string PanelSpritePath = "Assets/Game/Resources/ui/Theme/panel_round.png";
-        private const string RoundSpritePath = "Assets/Game/Resources/ui/Theme/btn_round.png";
+        private const string PanelSpritePath = "Assets/Game/Art/UI/Theme/panel_round.png";
+        private const string RoundSpritePath = "Assets/Game/Art/UI/Theme/btn_round.png";
         private const string FontPath = "Assets/Codely/Fonts/NotoSansSC-Regular SDF.asset";
         private const string MinimapTexturePath = "Assets/Game/Resources/Minimap/dashijie_minimap.png";
         private const string MinimapArrowPath = "Assets/Game/UI/Dashijie/Icons/minimap_arrow.png";

@@ -30,7 +30,7 @@ public class OpenUIPanelButton : MonoBehaviour
     {
         if (uiType == UIType.Max)
         {
-            Debug.LogWarning($"[OpenUIPanelButton] {name} 未配置 uiType，点击被忽略");
+            GameLog.Warn($"[OpenUIPanelButton] {name} 未配置 uiType，点击被忽略");
             return;
         }
         UIManager.Instance.Open(uiType).Forget();

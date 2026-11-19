@@ -1,5 +1,7 @@
 using System.Collections;
 using Common.Network;
+
+using Game.Guide;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -24,7 +26,7 @@ using UnityEngine.UI;
 /// 画布：每轮引导现场构建、结束即销毁（sort=6000 在阿福悬浮球 5900 之上；
 /// ConstantPixelSize 照 FriendCanvas 惯例 1单位=1px；ScreenSpaceCamera 经 UICameraService.ConvertCanvas 接 UI 相机）。
 /// </summary>
-public class GuideManager : MonoBehaviour
+public class GuideManager : MonoBehaviour, IGuideService
 {
     // ──────────────────────────────
     // 单例自举（照 UiFx / VfxManager 先例：运行时自举 + DontDestroyOnLoad）
@@ -48,7 +50,7 @@ public class GuideManager : MonoBehaviour
         if (instance.running) return;
         if (SceneManager.GetActiveScene().name != GuideSteps.ZhuyeSceneName)
         {
-            Debug.LogWarning("[引导] ForceStart 仅在 zhuye 场景有效");
+            GameLog.Warn("[引导] ForceStart 仅在 zhuye 场景有效");
             return;
         }
         instance.SaveProgress(0, false);
@@ -62,7 +64,7 @@ public class GuideManager : MonoBehaviour
         if (instance.running) return;
         if (SceneManager.GetActiveScene().name != GuideSteps.ZhuyeSceneName)
         {
-            Debug.LogWarning("[引导] 重看引导仅在 zhuye 场景有效");
+            GameLog.Warn("[引导] 重看引导仅在 zhuye 场景有效");
             return;
         }
         instance.progressLoaded = true;
@@ -124,6 +126,9 @@ public class GuideManager : MonoBehaviour
     /// <summary>已订阅进度回执的网络管理器（重登后实例会变）</summary>
     private ClientNetworkManager subscribedNet;
 
+    /// <summary>引导进度拉取订阅令牌（网络实例变化时重绑）</summary>
+    private System.IDisposable subscribedPullToken;
+
     /// <summary>按钮步推进监听登记（跳过时从真按钮上摘除，防悬挂监听）</summary>
     private Button boundButton;
     private UnityAction boundAction;
@@ -171,20 +176,18 @@ public class GuideManager : MonoBehaviour
     private void OnDisable()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
-        if (subscribedNet != null)
-        {
-            subscribedNet.GuidePullResponseReceived -= OnGuidePullResponse;
-            subscribedNet = null;
-        }
+        subscribedPullToken?.Dispose();
+        subscribedPullToken = null;
+        subscribedNet = null;
     }
 
     /// <summary>订阅进度拉取回执（断线重登后 ClientNetworkManager 实例可能变化，取用时重新绑定）</summary>
     private void EnsurePullSubscribed()
     {
         var net = ClientNetworkManager.Instance;
-        if (net == null || net == subscribedNet) return;
-        if (subscribedNet != null) subscribedNet.GuidePullResponseReceived -= OnGuidePullResponse;
-        net.GuidePullResponseReceived += OnGuidePullResponse;
+        if (net == null || net.Network == null || net == subscribedNet) return;
+        subscribedPullToken?.Dispose();
+        subscribedPullToken = net.Network.Subscribe<GuidePullResponse>(OnGuidePullResponse);
         subscribedNet = net;
     }
 
@@ -299,19 +302,19 @@ public class GuideManager : MonoBehaviour
                 answered = true;
             }
 
-            net.GuidePullResponseReceived += OnAnswer;
+            System.IDisposable answerToken = net.Network.Subscribe<GuidePullResponse>(OnAnswer);
             try
             {
                 _ = net.SendGuidePullRequest(GuideSteps.GuideKey);
             }
             catch (System.Exception exception)
             {
-                Debug.LogWarning($"[引导] 进度拉取发送失败：{exception.Message}");
+                GameLog.Warn($"[引导] 进度拉取发送失败：{exception.Message}");
             }
 
             float deadline = Time.unscaledTime + ProgressTimeout;
             while (!answered && Time.unscaledTime < deadline) yield return null;
-            net.GuidePullResponseReceived -= OnAnswer;
+            answerToken.Dispose();
 
             if (answered && answer != null && answer.Success)
             {
@@ -351,7 +354,7 @@ public class GuideManager : MonoBehaviour
 
         if (needPushBack) SaveProgress(savedStep, savedCompleted);
 
-        Debug.Log($"[引导] 进度就绪：来源={(fromServer ? "服务端" : "本机缓存")} 有记录={hasRecord} step={savedStep} completed={savedCompleted}");
+        GameLog.Info($"[引导] 进度就绪：来源={(fromServer ? "服务端" : "本机缓存")} 有记录={hasRecord} step={savedStep} completed={savedCompleted}");
     }
 
     // ──────────────────────────────
@@ -383,7 +386,7 @@ public class GuideManager : MonoBehaviour
         }
         catch (System.Exception exception)
         {
-            Debug.LogWarning($"[引导] 进度上报失败（已写本机缓存）：{exception.Message}");
+            GameLog.Warn($"[引导] 进度上报失败（已写本机缓存）：{exception.Message}");
         }
     }
 
@@ -410,7 +413,7 @@ public class GuideManager : MonoBehaviour
         if (running) return;
         if (SceneManager.GetActiveScene().name != GuideSteps.ZhuyeSceneName)
         {
-            Debug.LogWarning("[引导] 仅在 zhuye 场景运行");
+            GameLog.Warn("[引导] 仅在 zhuye 场景运行");
             return;
         }
 
@@ -420,7 +423,7 @@ public class GuideManager : MonoBehaviour
         ActivateEntryCanvases();
         BuildCanvas();
         stepRoutine = StartCoroutine(RunGuide(fromStep));
-        Debug.Log($"[引导] 开始（玩家ID {PlayerIdSafe()}，从第 {fromStep} 步）");
+        GameLog.Info($"[引导] 开始（玩家ID {PlayerIdSafe()}，从第 {fromStep} 步）");
     }
 
     /// <summary>结束引导；跳过与完成同权（都记 done，不再打扰）</summary>
@@ -460,7 +463,7 @@ public class GuideManager : MonoBehaviour
         maskRect = null;
         currentTarget = null;
         arrowVisible = false;
-        Debug.Log($"[引导] 结束（{(skipped ? "已跳过" : "已完成")}）");
+        GameLog.Info($"[引导] 结束（{(skipped ? "已跳过" : "已完成")}）");
     }
 
     /// <summary>引导开始时激活默认 inactive 的入口画布（兼容旧版主页布局；新版 HomeView 常驻，调用无副作用）</summary>
@@ -544,7 +547,7 @@ public class GuideManager : MonoBehaviour
         if (!running) yield break;
         if (target == null)
         {
-            Debug.LogWarning($"[引导] 步骤{currentStepIndex} 目标不可用（HomeView.{step.homeField}），跳过");
+            GameLog.Warn($"[引导] 步骤{currentStepIndex} 目标不可用（HomeView.{step.homeField}），跳过");
             advance();
             yield break;
         }
@@ -575,7 +578,7 @@ public class GuideManager : MonoBehaviour
             if (target == null)   // 目标被外部销毁（HomeView 关闭等）
             {
                 continueButton.onClick.RemoveListener(OnContinue);
-                Debug.LogWarning($"[引导] 步骤{currentStepIndex} 目标中途消失，跳过");
+                GameLog.Warn($"[引导] 步骤{currentStepIndex} 目标中途消失，跳过");
                 advance();
                 yield break;
             }
@@ -921,4 +924,22 @@ public class GuideManager : MonoBehaviour
         float length = Mathf.Max(q.x, 0f) * Mathf.Max(q.x, 0f) + Mathf.Max(q.y, 0f) * Mathf.Max(q.y, 0f);
         return Mathf.Sqrt(length) + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - radius;
     }
+
+    // ──────────────────────────────
+    // IGuideService 实现（静态入口保留给内部调用）
+    // ──────────────────────────────
+
+    bool IGuideService.IsRunning => IsRunning;
+
+    int IGuideService.CurrentStepIndex => CurrentStepIndex;
+
+    GuideStep IGuideService.CurrentStep => CurrentStep;
+
+    int IGuideService.SavedStep => SavedStep;
+
+    bool IGuideService.SavedCompleted => SavedCompleted;
+
+    void IGuideService.ForceStart() => ForceStart();
+
+    void IGuideService.ReplayFromStart() => ReplayFromStart();
 }

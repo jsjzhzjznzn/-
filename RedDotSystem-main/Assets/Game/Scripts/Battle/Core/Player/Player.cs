@@ -1,3 +1,5 @@
+using MieMieFrameWork.Business;
+using Game.Equipment;
 using Animancer;
 using Cinemachine;
 using Cysharp.Threading.Tasks;
@@ -154,7 +156,7 @@ public partial class Player : CharacterMoveControllerBase
 
         // ===== 联机排障日志：确认每个角色归属到谁（定位"客户端无法操作角色"，定位后可删） =====
         ulong localId = NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0;
-        Debug.Log($"[Player] name={name} Owner={OwnerClientId} Local={localId} IsOwner={IsOwner} IsSpawned={IsSpawned}");
+        GameLog.Info($"[Player] name={name} Owner={OwnerClientId} Local={localId} IsOwner={IsOwner} IsSpawned={IsSpawned}");
 
         netMoveState.OnValueChanged += OnMoveStateChanged;
         netComboState.OnValueChanged += OnComboStateChanged;
@@ -261,7 +263,7 @@ public partial class Player : CharacterMoveControllerBase
 
         int charId = playerSO != null ? playerSO.CharacterId : -1;
         if (charId < 0 || EquipmentManager.Instance == null) return;
-        ApplyEquipmentSnapshot(EquipmentManager.Instance.BuildBattleSnapshot(charId));
+        ApplyEquipmentSnapshot(GameHub.Get<IEquipmentService>()?.BuildBattleSnapshot(charId));
     }
 
     /// <summary>应用装备快照（联机：房主生成英雄后按座位注入；单机：Awake 里按本地缓存应用）</summary>
@@ -320,26 +322,10 @@ public partial class Player : CharacterMoveControllerBase
         }
     }
 
-    // ============ 联机排障日志：拥有者端每秒采样一次输入（定位"客户端无法操作角色"，定位后可删） ============
-    private float _inputProbeNextLogTime;
-
-    /// <summary>
-    /// 只有 IsOwner 的 Update 会跑到这里：每秒打一次输入采样。
-    /// 判断方法：客户端若收不到这行 = 客户端不是 Owner(Update 提前 return)；收到了但输入恒为 0 = 输入系统没生效。
-    /// </summary>
-    private void LogInputProbeOncePerSecond()
-    {
-        if (Time.unscaledTime < _inputProbeNextLogTime) return;
-        _inputProbeNextLogTime = Time.unscaledTime + 1f;
-
-    }
-
     protected override void Update()
     {
         // 非拥有者端不做本地模拟：状态机/输入只驱动自己的角色
         if (IsSpawned && !IsOwner) return;
-
-        LogInputProbeOncePerSecond();         // 联机排障：客户端跑不到这里 = IsOwner=false
 
         base.Update();                        // 地面检测 + 重力 + 竖直速度
         stateMachine?.Update();               // 状态机Tick
@@ -456,7 +442,7 @@ public partial class Player : CharacterMoveControllerBase
                 // 排障：复用已查找的结果，不再额外调用 FindObjectsByType
                 string vcams = string.Join(", ", allVCams.Select(v => $"\"{v.gameObject.name}\"(active={v.gameObject.activeSelf})"));
                 string cams = string.Join(", ", allCams.Select(c => $"\"{c.gameObject.name}\"(active={c.gameObject.activeSelf})"));
-                Debug.LogWarning($"[{name}] 没找到座位{seat}的相机({camName}/{vcamName})，将每 {CameraRetryInterval} 秒重试。\n" +
+                GameLog.Warn($"[{name}] 没找到座位{seat}的相机({camName}/{vcamName})，将每 {CameraRetryInterval} 秒重试。\n" +
                                  $"运行时场景里的 vcam: [{vcams}]\n" +
                                  $"运行时场景里的 Camera: [{cams}]", this);
             }
@@ -493,7 +479,7 @@ public partial class Player : CharacterMoveControllerBase
         }
 
         _cameraAssigned = true;
-           Debug.Log($"[{name}] 座位{seat}: 主相机={camName} vcam={vcamName} 已关联本角色", this);
+           GameLog.Info($"[{name}] 座位{seat}: 主相机={camName} vcam={vcamName} 已关联本角色", this);
     }
 
     /// <summary>

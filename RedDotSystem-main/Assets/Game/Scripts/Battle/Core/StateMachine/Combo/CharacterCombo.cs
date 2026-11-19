@@ -171,9 +171,6 @@ public class CharacterCombo
 
     // ==================== 伤害触发（打击帧回调） ====================
 
-    /// <summary>本段已结算过的受击单位（同一段/同一次判定内防重复扣血，按受击单位 GameObject 去重）</summary>
-    private readonly HashSet<GameObject> _hitTargets = new();
-
     /// <summary>预分配的命中检测缓冲（OverlapSphereNonAlloc 用，避免每次打击帧 GC 分配；敌人多时调大）</summary>
     private readonly Collider[] _detectBuffer = new Collider[16];
 
@@ -183,6 +180,8 @@ public class CharacterCombo
     /// <summary>敌人层掩码缓存（懒加载 LayerMask.GetMask("enemy")，只取一次）</summary>
     private int enemyLayerMask;
     private bool enemyLayerMaskCached;
+    private int playerEnemyLayerMask;
+    private bool playerEnemyLayerMaskCached;
 
     /// <summary>打击帧动画事件入口：根据当前招式类型走不同伤害逻辑</summary>
     public void ATK()
@@ -218,78 +217,81 @@ public class CharacterCombo
         // 弹刀（P2）：BOSS 正处于判定窗口且这一刀能碰到 → 拼刀成功，本次不结算普通伤害
         if (TryDeflect(data)) return;
 
-        // 命中判定：收集本段打击范围内的目标（结果写入 _detectBuffer，返回有效数量）
-        int hitCount = AttackDetection(data);
+        // 打击帧结算走命中管线：来源上下文 → 全局规则与掩码 → 目标快照 → 筛选 → 结算
+        var context = BuildAttackContext(data);
+        var report = CombatPipeline.Resolve(context, _detectBuffer);
 
-        if (hitCount == 0) return;
-
-        // 本次打击帧独立结算（同一目标多 Collider / 多次命中只扣一次血）
-        _hitTargets.Clear();
-
-        bool anyHit = false;
-        // 打击感只取本次打击帧的第一个有效目标做一次（多目标叠加顿帧会让画面卡死）
-        HealthModel firstHitHealth = null;
-        Collider firstHitCollider = null;
-        bool anyCritical = false;
-        for (int i = 0; i < hitCount; i++)
+        // 被规则拦下（友军/遮挡/角度/目标已死亡）：没有伤害，但要知道"打到了但没打进去"
+        if (report.hitCount == 0)
         {
-            var target = _detectBuffer[i].GetComponentInParent<HealthModel>();
-            if (target == null) continue;                       // 没有受击组件（地形/装饰）跳过
-
-            // 检查目标是否已死亡
-            var targetPlayer = target.GetComponent<Player>();
-            if (targetPlayer != null && targetPlayer.IsDead) continue;  // 死亡目标不接受伤害
-
-            if (!_hitTargets.Add(target.gameObject)) continue;  // 同一受击单位只结算一次
-
-            // 出手伤害在攻方这一刻算定（攻击力 = 基础+Buff 账本的最终值 × 倍率 × 增伤 × 暴击），
-            // 之后攻方属性再变也不回溯影响本击（出手快照）。
-            // 逐个目标独立算：每次结算独立掷暴击骰，与拆分前一致。
-            var outgoing = DamageCalculator.CalculateOutgoing(
-                player.gameObject, data.damageMultiplier, data.critRate, data.critMultiplier);
-
-            // 受击方只做自己这一侧的防御/减伤结算
-            target.RequestDamage(new DamageRequest
+            if (report.blockedCount > 0 && report.firstBlocked != null)
             {
-                damage = outgoing.finalDamage,
-                isCritical = outgoing.isCritical,
-                sourceId = player.IsSpawned ? player.NetworkObjectId : 0UL,
-                isDoT = false,
-            }, player.gameObject);
-
-            // 命中附带 Buff：本次伤害先结算完再挂状态（挂的增伤/减伤从下一击生效，不影响本次）
-            // 走 RequestAddBuff：联网时转发到服务端挂（Buff 服务端权威），单机本地挂
-            if (data.hitBuff != null)
-            {
-                var targetBuff = target.GetComponent<BuffComponent>();
-                targetBuff?.RequestAddBuff(data.hitBuff, player.gameObject);
+                EventCenter.MainInstance.Dispatch(E_EventType.E_AttackBlocked, new HitData
+                {
+                    attacker = player.gameObject,
+                    target = report.firstBlocked,
+                    hitPoint = context.origin,
+                });
             }
+            return;
+        }
 
-            // 命中事件：吸血/叠层/击杀回怒类效果订阅（HitData 已定义，此前无人派发）
+        var hits = report.hits;
+        for (int i = 0; i < hits.Count; i++)
+        {
+            var hit = hits[i];
+
+            // 命中事件：吸血/叠层/击杀回怒类效果订阅
             EventCenter.MainInstance.Dispatch(E_EventType.E_Attack, new HitData
             {
                 attacker = player.gameObject,
-                target = target.gameObject,
-                hitPoint = _detectBuffer[i].transform.position,
+                target = hit.target,
+                hitPoint = hit.collider != null ? hit.collider.transform.position : hit.target.transform.position,
             });
-            anyHit = true;
-
-            if (firstHitHealth == null)
-            {
-                firstHitHealth = target;
-                firstHitCollider = _detectBuffer[i];
-            }
-            if (outgoing.isCritical) anyCritical = true;
         }
 
-        // 打击感：顿帧（局部/全局）+ 相机震屏 + 命中特效 + 命中音（统一入口）
-        if (anyHit && firstHitHealth != null)
+        // 打击感：顿帧（局部/全局）+ 相机震屏 + 命中特效 + 命中音（统一入口，整次只播一次）
+        var firstHealth = report.FirstTarget != null ? report.FirstTarget.GetComponent<HealthModel>() : null;
+        if (firstHealth != null)
         {
             bool isHeavy = data.pauseFrameTime >= 0.1f || data.shakeForce >= 0.5f;
 
-            HitFeelService.PlayerHitEnemy(player, firstHitHealth, firstHitCollider,
-                data.pauseFrameTime, data.shakeForce, isHeavy, anyCritical);
+            HitFeelService.PlayerHitEnemy(player, firstHealth, report.FirstCollider,
+                data.pauseFrameTime, data.shakeForce, isHeavy, report.anyCritical);
         }
+    }
+
+    /// <summary>
+    /// 按本段招式拼出打击帧的来源上下文（管线第 1 步）。
+    /// 判定几何与改造前一致：球心 = 角色位置 + 面朝方向 × comboOffset，半径 = attackDistance。
+    /// </summary>
+    private AttackContext BuildAttackContext(ComboData data)
+    {
+        var playerTransform = player.transform;
+        Vector3 origin = playerTransform.position + playerTransform.forward * data.comboOffset;
+
+        // 记录判定信息（供外部/调试读取）
+        reusableData.detectionOrigin = origin;
+        reusableData.detectionDir = playerTransform.forward;
+
+        return new AttackContext
+        {
+            attacker = player.gameObject,
+            faction = CombatFaction.Player,
+            origin = origin,
+            forward = playerTransform.forward,
+            radius = data.attackDistance,
+            arc = data.arc,
+            layerMask = data.enemyLayer.value != 0 ? data.enemyLayer : GetPlayerEnemyLayerMask(),
+            delivery = data.attackStyle == AttackStyle.Skill ? AttackDelivery.Skill : AttackDelivery.Melee,
+            requireLineOfSight = data.requireLineOfSight,
+            maxTargets = data.maxTargets,
+            hitBuff = data.hitBuff,
+            damageMultiplier = data.damageMultiplier,
+            critRate = data.critRate,
+            critMultiplier = data.critMultiplier,
+            sourceId = player.IsSpawned ? player.NetworkObjectId : 0UL,
+        };
     }
 
     /// <summary>
@@ -308,7 +310,7 @@ public class CharacterCombo
         if (controller == null || !controller.enabled) return;
 
         // 与判定同口径的层：优先本段配置，未配置则 player+enemy
-        int layerMask = data.enemyLayer.value != 0 ? data.enemyLayer : LayerMask.GetMask("player", "enemy");
+        int layerMask = data.enemyLayer.value != 0 ? data.enemyLayer : GetPlayerEnemyLayerMask();
         float reach = data.comboOffset + data.attackDistance;
         int count = Physics.OverlapSphereNonAlloc(
             player.transform.position, reach + maxPull, _enemyBuffer, layerMask);
@@ -368,7 +370,7 @@ public class CharacterCombo
         float cooldown = feel != null ? feel.deflectCooldown : 1.2f;
         if (Time.time < _nextDeflectTime) return false;
 
-        int layerMask = data.enemyLayer.value != 0 ? data.enemyLayer : LayerMask.GetMask("enemy");
+        int layerMask = data.enemyLayer.value != 0 ? data.enemyLayer : GetEnemyLayerMask();
         float reach = data.comboOffset + data.attackDistance + 0.8f;
         int count = Physics.OverlapSphereNonAlloc(player.transform.position, reach, _enemyBuffer, layerMask);
         if (count <= 0) return false;
@@ -419,38 +421,27 @@ public class CharacterCombo
     }
 
     /// <summary>
-    /// 攻击判定：以角色前方偏移为球心做 OverlapSphere 收集命中目标。
-    /// 命中点 = 角色位置 + 面朝方向 * 本段前移量(comboOffset)，半径 = 本段判定距离(attackDistance)，
-    /// 按本段敌人层(ComboData.enemyLayer)过滤（未配置回退全层），并排除玩家自身及子物体（武器碰撞等）。
+    /// 攻击判定（几何查询，不结算）：交由命中管线统一口径。
+    /// 球心 = 角色位置 + 面朝方向 × 本段前移量(comboOffset)，半径 = 本段判定距离(attackDistance)，
+    /// 按本段敌人层(ComboData.enemyLayer)过滤（未配置回退 player+enemy），排除玩家自身及子物体。
     /// 结果写入 _detectBuffer（原地压缩掉无效项），返回有效命中数量。
     /// </summary>
     protected virtual int AttackDetection(ComboData data)
     {
         if (player == null || player.IsDead) return 0;  // 死亡后不检测攻击
 
-        var playerTransform = player.transform;
-        Vector3 origin = playerTransform.position + playerTransform.forward * data.comboOffset;
-
-        // 记录判定信息（供外部/调试读取）
-        reusableData.detectionOrigin = origin;
-        reusableData.detectionDir = playerTransform.forward;
-
-        // 敌人层：本段 ComboData 里配置的 LayerMask；未配置(0)回退 player+enemy 两层
-        // (阵营统一走物理层:玩家角色在 player 层,敌方 AI 在 enemy 层,都纳入可被打的判定范围)
-        int layerMask = data.enemyLayer.value != 0 ? data.enemyLayer : LayerMask.GetMask("player", "enemy");
-
-        int count = Physics.OverlapSphereNonAlloc(origin, data.attackDistance, _detectBuffer, layerMask);
-
-        // 原地压缩：跳过玩家自身及子物体（全层过滤时可能把玩家自己打中）
-        int valid = 0;
-        for (int i = 0; i < count; i++)
+        var context = BuildAttackContext(data);
+        var filter = new CombatQuery.Filter
         {
-            if (_detectBuffer[i] == null) continue;
-            if (_detectBuffer[i].transform.IsChildOf(playerTransform)) continue;
-            if (valid != i) _detectBuffer[valid] = _detectBuffer[i];
-            valid++;
-        }
-        return valid;
+            arc = data.arc,
+            requireLineOfSight = data.requireLineOfSight,
+            filterFriendly = !CombatRunRulesSource.Current.friendlyFire,
+            attackerFaction = CombatFaction.Player,
+            maxTargets = data.maxTargets,
+        };
+
+        var outcome = new FilterOutcome();
+        return CombatPipeline.Query(context, filter, _detectBuffer, ref outcome);
     }
 
     // ==================== 辅助 ====================
@@ -507,7 +498,7 @@ public class CharacterCombo
         int count = Physics.OverlapSphereNonAlloc(
             playerTransform.position, comboData.autoAimRadius, _enemyBuffer, enemyMask);
         if (count == _enemyBuffer.Length)
-            Debug.LogWarning($"[Combo] {player.name} 自动索敌命中数达 buffer 上限({count}),可能漏检,建议调大 _enemyBuffer", player);
+            GameLog.Warn($"[Combo] {player.name} 自动索敌命中数达 buffer 上限({count}),可能漏检,建议调大 _enemyBuffer", player);
 
         Transform best = null;
         HealthModel bestHealth = null;
@@ -675,6 +666,17 @@ public class CharacterCombo
             enemyLayerMaskCached = true;
         }
         return enemyLayerMask;
+    }
+
+    /// <summary>玩家+敌人双层掩码；懒加载缓存（GetMask 要按名字解析层，不能在打击帧里反复调）</summary>
+    private int GetPlayerEnemyLayerMask()
+    {
+        if (!playerEnemyLayerMaskCached)
+        {
+            playerEnemyLayerMask = LayerMask.GetMask("player", "enemy");
+            playerEnemyLayerMaskCached = true;
+        }
+        return playerEnemyLayerMask;
     }
 
     /// <summary>可被打断且玩家在移动时，打断攻击（切回移动状态）</summary>

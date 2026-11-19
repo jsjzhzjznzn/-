@@ -31,6 +31,14 @@ namespace SkierFramework
         /// <summary>默认包名（未命中路由的资源都归它管）</summary>
         public const string DefaultPackageName = "ui";
 
+        /// <summary>
+        /// 基础资源标签：登录后立即下载的 UI / Lua / 图标内容。
+        /// 活动内容单独打 activity 标签，进入活动时才下载。
+        /// 按标签分层而不是拆包的原因：两包会各打一份同名共享依赖（unityshaders、TMP 字体），
+        /// Unity 不允许同时加载内容不同但内部同名的 AssetBundle。
+        /// </summary>
+        public const string BaseTag = "base";
+
         /// <summary>需要初始化的包列表（需与 BundleCollectorSetting 中的包名一致）</summary>
         public static readonly string[] PackageNames =
         {
@@ -45,7 +53,8 @@ namespace SkierFramework
         {
             ("Assets/Game/UI", "ui"),
             ("Assets/Content/LuaScripts", "ui"),
-            ("Assets/Game/Resources/ui", "ui"),
+            ("Assets/Game/Art/UI", "ui"),
+            ("Assets/Game/Art/UI", "ui"),
             ("Assets/Game/Art/Battle", "battle"),
         };
 
@@ -62,6 +71,13 @@ namespace SkierFramework
 
         /// <summary>所有包是否初始化完成</summary>
         public bool IsInitialized { get; private set; }
+
+        /// <summary>
+        /// 是否正在做版本检查或增量下载。
+        /// 登录后立即进主界面时热更尚未结束，此时按 location 加载会取到本地还没有的 bundle 而失败，
+        /// 因此界面资源加载前要先等它结束。
+        /// </summary>
+        public bool IsUpdating { get; private set; }
 
         /// <summary>最近一次失败原因（成功时为 null）</summary>
         public string LastError { get; private set; }
@@ -208,7 +224,7 @@ namespace SkierFramework
                 if (allOk)
                 {
                     IsInitialized = true;
-                    Debug.Log("[YooAssetService] 初始化成功，模式=" + RunMode + "，包数=" + _packages.Count);
+                    GameLog.Info("[YooAssetService] 初始化成功，模式=" + RunMode + "，包数=" + _packages.Count);
                 }
             }
 
@@ -221,6 +237,15 @@ namespace SkierFramework
         /// </summary>
         public async UniTask<bool> UpdatePackageAsync(string packageName, CancellationToken cancellationToken = default)
         {
+            return await UpdatePackageAsync(packageName, null, cancellationToken);
+        }
+
+        /// <summary>
+        /// 热更：版本 → 清单 → 增量下载，成功触发 OnPackageUpdated(packageName)。
+        /// onProgress 用于启动期下载界面，在上报前先调用一次（进度 0），调用方据此决定是否显示界面。
+        /// </summary>
+        public async UniTask<bool> UpdatePackageAsync(string packageName, Action<float> onProgress, CancellationToken cancellationToken = default)
+        {
             if (!IsInitialized)
             {
                 LastError = "YooAsset 尚未初始化";
@@ -232,27 +257,74 @@ namespace SkierFramework
                 return false;
             }
 
-            var versionOp = pkg.RequestPackageVersionAsync();
-            await versionOp.ToUniTask(cancellationToken: cancellationToken);
-            if (versionOp.Status != EOperationStatus.Succeeded)
+            IsUpdating = true;
+            try
             {
-                LastError = packageName + ": " + versionOp.Error;
-                Debug.LogError("[YooAssetService] 更新版本失败：" + LastError);
-                return false;
-            }
+                var versionOp = pkg.RequestPackageVersionAsync();
+                await versionOp.ToUniTask(cancellationToken: cancellationToken);
+                if (versionOp.Status != EOperationStatus.Succeeded)
+                {
+                    LastError = packageName + ": " + versionOp.Error;
+                    Debug.LogError("[YooAssetService] 更新版本失败：" + LastError);
+                    return false;
+                }
 
-            var manifestOp = pkg.LoadPackageManifestAsync(new LoadPackageManifestOptions(versionOp.PackageVersion, 30));
-            await manifestOp.ToUniTask(cancellationToken: cancellationToken);
-            if (manifestOp.Status != EOperationStatus.Succeeded)
+                var manifestOp = pkg.LoadPackageManifestAsync(new LoadPackageManifestOptions(versionOp.PackageVersion, 30));
+                await manifestOp.ToUniTask(cancellationToken: cancellationToken);
+                if (manifestOp.Status != EOperationStatus.Succeeded)
+                {
+                    LastError = packageName + ": " + manifestOp.Error;
+                    Debug.LogError("[YooAssetService] 更新清单失败：" + LastError);
+                    return false;
+                }
+
+                if (RunMode == YooAssetRunMode.HostPlay)
+                {
+                    // 只下载基础标签：活动内容（activity）由 LuaActivityHost 在进入活动时按标签下载
+                    ResourceDownloaderOperation downloader = pkg.CreateResourceDownloader(new ResourceDownloaderOptions(BaseTag, 10, 3));
+                    if (downloader.TotalDownloadCount > 0)
+                    {
+                        GameLog.Info($"[YooAssetService] {packageName} 发现 {downloader.TotalDownloadCount} 个待更新文件（{downloader.TotalDownloadBytes} 字节），开始增量下载");
+                        onProgress?.Invoke(0f);
+                        downloader.StartDownload();
+                        while (downloader.IsDone == false)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            onProgress?.Invoke(downloader.Progress);
+                            await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
+                        }
+                        onProgress?.Invoke(1f);
+                        if (downloader.Status != EOperationStatus.Succeeded)
+                        {
+                            LastError = packageName + ": 增量下载失败";
+                            Debug.LogError("[YooAssetService] 增量下载失败：" + LastError);
+                            return false;
+                        }
+                        GameLog.Info($"[YooAssetService] {packageName} 下载完成 {downloader.CurrentDownloadCount}/{downloader.TotalDownloadCount}");
+                    }
+                    else
+                    {
+                        GameLog.Info($"[YooAssetService] {packageName} 资源已是最新，无需下载");
+                    }
+                }
+
+                GameLog.Info("[YooAssetService] 包已更新：" + packageName + " → " + versionOp.PackageVersion);
+                OnPackageUpdated?.Invoke(packageName);
+                return true;
+            }
+            finally
             {
-                LastError = packageName + ": " + manifestOp.Error;
-                Debug.LogError("[YooAssetService] 更新清单失败：" + LastError);
-                return false;
+                IsUpdating = false;
             }
+        }
 
-            Debug.Log("[YooAssetService] 包已更新：" + packageName + " → " + versionOp.PackageVersion);
-            OnPackageUpdated?.Invoke(packageName);
-            return true;
+        /// <summary>等待增量下载结束（界面加载资源前调用，避免取到本地还没有的 bundle）。</summary>
+        public async UniTask WaitUpdateCompletedAsync(CancellationToken cancellationToken = default)
+        {
+            while (IsUpdating)
+            {
+                await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
+            }
         }
 
         private static InitializePackageOptions CreateOptions(YooAssetRunMode mode, string packageName)
@@ -283,7 +355,7 @@ namespace SkierFramework
                     var remote = RemoteServiceFactory?.Invoke(packageName);
                     if (remote == null)
                     {
-                        Debug.LogWarning("[YooAssetService] HostPlay 未提供 IRemoteService，回退 OfflinePlay：" + packageName);
+                        GameLog.Warn("[YooAssetService] HostPlay 未提供 IRemoteService，回退 OfflinePlay：" + packageName);
                         goto case YooAssetRunMode.OfflinePlay;
                     }
                     var cache = FileSystemParameters.CreateDefaultSandboxFileSystemParameters(remote);

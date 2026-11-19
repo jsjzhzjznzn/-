@@ -8,6 +8,8 @@ using SkierFramework;
 using TMPro;
 using Unity.Collections;
 using Unity.Netcode;
+using Game.Battle.Invite;
+using MieMieFrameWork.Business;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -483,15 +485,17 @@ public class BattleRoomView : UIView
     /// <summary>
     /// 房间内邀请：没有会话就地建房（单机调试路径），是房主就打开邀请面板
     /// </summary>
-    private async void OnClickInvite()
+    private void OnClickInvite() => OnClickInviteAsync().Forget();
+
+    private async UniTaskVoid OnClickInviteAsync()
     {
-        if (BattleInviteManager.Instance == null)
+        if (GameHub.Get<IBattleInviteService>() == null)
         {
             ShowToast("邀请服务未就绪");
             return;
         }
 
-        string error = await BattleInviteManager.Instance.EnsureHostRoomAsync();
+        string error = await GameHub.Get<IBattleInviteService>().EnsureHostRoomAsync();
         if (!string.IsNullOrEmpty(error))
         {
             ShowToast(error);
@@ -532,8 +536,8 @@ public class BattleRoomView : UIView
         }
 
         string name = null;
-        if (BattleInviteManager.Instance != null)
-            BattleInviteManager.Instance.KnownPlayerNames.TryGetValue(peerPlayerId, out name);
+        if (GameHub.Get<IBattleInviteService>() != null)
+            GameHub.Get<IBattleInviteService>().KnownPlayerNames.TryGetValue(peerPlayerId, out name);
 
         enemyPlayerText.SetText(string.IsNullOrEmpty(name) ? $"玩家{peerPlayerId}" : name);
     }
@@ -710,7 +714,7 @@ public class BattleRoomView : UIView
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[BattleRoom] 默认路由探测 IP 失败：{e.Message}");
+            GameLog.Warn($"[BattleRoom] 默认路由探测 IP 失败：{e.Message}");
         }
 
         string fallback = null;
@@ -736,7 +740,7 @@ public class BattleRoomView : UIView
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[BattleRoom] 遍历网卡取 IP 失败：{e.Message}");
+            GameLog.Warn($"[BattleRoom] 遍历网卡取 IP 失败：{e.Message}");
         }
         return fallback ?? "127.0.0.1";
     }

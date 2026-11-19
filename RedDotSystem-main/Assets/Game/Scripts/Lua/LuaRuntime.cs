@@ -33,7 +33,7 @@ public class LuaRuntime : MonoBehaviour
         }
 
         object result = LuaEnvManager.Instance.Require(entry);
-        Debug.Log("[LuaRuntime] require '" + entry + "' 完成");
+        GameLog.Info("[LuaRuntime] require '" + entry + "' 完成");
         return result;
     }
 }

@@ -267,7 +267,7 @@ namespace SkierFramework
                 case UIAnimPropType.AnchoredPos:
                     if (target is RectTransform rt)
                         return rt.DOAnchorPos(step.toPos, step.duration);
-                    Debug.LogWarning("[UIViewAnim] AnchoredPos 步骤的目标不是 RectTransform，已跳过: " + target.name, this);
+                    GameLog.Warn("[UIViewAnim] AnchoredPos 步骤的目标不是 RectTransform，已跳过: " + target.name, this);
                     return null;
                 case UIAnimPropType.LocalScale:
                     return target.DOScale(step.toScale, step.duration);
@@ -285,7 +285,7 @@ namespace SkierFramework
             var anim = target != null ? target.GetComponent<Animation>() : null;
             if (anim == null)
             {
-                Debug.LogWarning("[UIViewAnim] Clip 步骤的目标上没有 legacy Animation 组件，已跳过（Animator 支持待后续）", this);
+                GameLog.Warn("[UIViewAnim] Clip 步骤的目标上没有 legacy Animation 组件，已跳过（Animator 支持待后续）", this);
                 return false;
             }
 
@@ -293,7 +293,7 @@ namespace SkierFramework
             float length = clip != null ? clip.length : step.duration;
             if (length <= 0f)
             {
-                Debug.LogWarning("[UIViewAnim] Clip 步骤时长为 0，已跳过", this);
+                GameLog.Warn("[UIViewAnim] Clip 步骤时长为 0，已跳过", this);
                 return false;
             }
 
@@ -359,7 +359,7 @@ namespace SkierFramework
 
             if (targets == null || step.targetIndex >= targets.Count || targets[step.targetIndex] == null)
             {
-                Debug.LogWarning("[UIViewAnim] 步骤 targetIndex 无效，已跳过: " + step.targetIndex, this);
+                GameLog.Warn("[UIViewAnim] 步骤 targetIndex 无效，已跳过: " + step.targetIndex, this);
                 return null;
             }
             return targets[step.targetIndex];

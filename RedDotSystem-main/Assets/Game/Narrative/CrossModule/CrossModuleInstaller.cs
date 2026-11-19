@@ -62,7 +62,7 @@ namespace Miemie.CrossModule
                 }
             }
 
-            Debug.Log($"[CrossModuleInstaller] 装配完成 Dialogue={Services.Dialogue != null} Quest={Services.Quest != null} 登记消费者={(consumers != null ? consumers.Length : 0)}");
+            GameLog.Info($"[CrossModuleInstaller] 装配完成 Dialogue={Services.Dialogue != null} Quest={Services.Quest != null} 登记消费者={(consumers != null ? consumers.Length : 0)}");
         }
 
         /// <summary>

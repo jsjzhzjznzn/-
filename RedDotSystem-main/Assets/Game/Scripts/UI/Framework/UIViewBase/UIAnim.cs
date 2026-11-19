@@ -119,14 +119,14 @@ namespace SkierFramework
                 anim = go.GetComponentInChildren<Animation>();
             if (anim == null)
             {
-                Debug.LogWarning("[UIAnim] PlayClip: 目标上没有 legacy Animation 组件: " + go.name);
+                GameLog.Warn("[UIAnim] PlayClip: 目标上没有 legacy Animation 组件: " + go.name);
                 return 0;
             }
 
             AnimationClip clip = string.IsNullOrEmpty(clipName) ? anim.clip : anim.GetClip(clipName);
             if (clip == null)
             {
-                Debug.LogWarning("[UIAnim] PlayClip: clip 不存在: " + clipName + " on " + go.name);
+                GameLog.Warn("[UIAnim] PlayClip: clip 不存在: " + clipName + " on " + go.name);
                 return 0;
             }
 
@@ -238,7 +238,7 @@ namespace SkierFramework
             if (Enum.TryParse(easeName, true, out Ease ease))
                 return ease;
 
-            Debug.LogWarning("[UIAnim] 无法识别的 ease 名称，按默认曲线播放: " + easeName);
+            GameLog.Warn("[UIAnim] 无法识别的 ease 名称，按默认曲线播放: " + easeName);
             return Ease.Unset;
         }
 

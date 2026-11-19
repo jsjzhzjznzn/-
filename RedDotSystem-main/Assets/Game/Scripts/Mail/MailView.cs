@@ -5,6 +5,8 @@ using Common.Network;
 
 using Cysharp.Threading.Tasks;
 
+using Game.Mail;
+
 using SkierFramework;
 
 using TMPro;
@@ -22,6 +24,12 @@ using UnityEngine.UI;
 /// </summary>
 public class MailView : UIView
 {
+
+    /// <summary>邮件数据变化订阅令牌（关闭页面时释放）</summary>
+    private IDisposable mailUpdatedToken;
+
+    /// <summary>邮件状态文案订阅令牌</summary>
+    private IDisposable mailStatusToken;
     // ──────────────────────────────
     // 序列化引用（编辑器搭建脚本注入）
     // ──────────────────────────────
@@ -156,8 +164,8 @@ public class MailView : UIView
 
         if (MailManager.Instance != null)
         {
-            MailManager.Instance.MailsUpdated += RefreshAll;
-            MailManager.Instance.StatusChanged += SetStatus;
+            mailUpdatedToken = MailManager.Bus.Subscribe(MailEvents.Updated, RefreshAll);
+            mailStatusToken = MailManager.Bus.Subscribe(MailEvents.Status, SetStatus);
         }
 
         SetupMailList();
@@ -192,8 +200,8 @@ public class MailView : UIView
     private void OnDestroy()
     {
         if (MailManager.Instance == null) return;
-        MailManager.Instance.MailsUpdated -= RefreshAll;
-        MailManager.Instance.StatusChanged -= SetStatus;
+        mailUpdatedToken?.Dispose();
+        mailStatusToken?.Dispose();
     }
 
     // ──────────────────────────────

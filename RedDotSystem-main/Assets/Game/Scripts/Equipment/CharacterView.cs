@@ -1,4 +1,11 @@
+using System;
+
 using System.Collections.Generic;
+
+using MieMieFrameWork.Business;
+using Game.Bag;
+
+using Game.Equipment;
 
 using Common.Network;
 
@@ -23,6 +30,21 @@ using UnityEngine.UI;
 /// </summary>
 public class CharacterView : UIView
 {
+
+    /// <summary>背包事件订阅令牌</summary>
+    private IDisposable bagUpdatedToken;
+
+    /// <summary>装备模块公共服务（装配完成后取一次）</summary>
+    private IEquipmentService gameEquipment;
+
+    /// <summary>装备数据变化订阅令牌</summary>
+    private IDisposable equipmentChangedToken;
+
+    /// <summary>装备状态文案订阅令牌</summary>
+    private IDisposable equipmentStatusToken;
+
+    /// <summary>穿脱结果订阅令牌</summary>
+    private IDisposable equipmentResultToken;
     // ──────────────────────────────
     // 序列化引用（预制体构建器注入）
     // ──────────────────────────────
@@ -251,9 +273,6 @@ public class CharacterView : UIView
     [ControlBinding("ConfirmRoot/Panel/ConfirmCancelButton")]
     public Button confirmCancelButton;
 
-    [Header("角色基础属性（下标 = 角色ID，由构建器按 PlayerSO.characterId 注入）")]
-    public PlayerSO[] heroStats;
-
     // ──────────────────────────────
     // 私有字段
     // ──────────────────────────────
@@ -310,16 +329,17 @@ public class CharacterView : UIView
     {
         base.OnInit(uIControlData, controller);
 
+        gameEquipment = GameHub.Get<IEquipmentService>();
         if (EquipmentManager.Instance != null)
         {
-            EquipmentManager.Instance.Changed += HandleEquipmentChanged;
-            EquipmentManager.Instance.StatusChanged += SetStatus;
-            EquipmentManager.Instance.EquipResult += HandleEquipResult;
+            equipmentChangedToken = EquipmentManager.Bus.Subscribe(EquipmentEvents.Changed, HandleEquipmentChanged);
+            equipmentStatusToken = EquipmentManager.Bus.Subscribe(EquipmentEvents.Status, SetStatus);
+            equipmentResultToken = EquipmentManager.Bus.Subscribe(EquipmentEvents.Result, HandleEquipResult);
         }
         if (BagManager.Instance != null)
         {
             // 名称/图标/稀有度来自背包的物品配置表，配置到位后重渲染一次
-            BagManager.Instance.BagUpdated += RefreshAll;
+            bagUpdatedToken = BagManager.Bus.Subscribe(BagEvents.Updated, RefreshAll);
         }
 
         SetupCharacterList();
@@ -444,13 +464,14 @@ public class CharacterView : UIView
     private void OnDestroy()
     {
         SceneManager.activeSceneChanged -= OnActiveSceneChanged;
+        gameEquipment = GameHub.Get<IEquipmentService>();
         if (EquipmentManager.Instance != null)
         {
-            EquipmentManager.Instance.Changed -= HandleEquipmentChanged;
-            EquipmentManager.Instance.StatusChanged -= SetStatus;
-            EquipmentManager.Instance.EquipResult -= HandleEquipResult;
+            equipmentChangedToken?.Dispose();
+            equipmentStatusToken?.Dispose();
+            equipmentResultToken?.Dispose();
         }
-        if (BagManager.Instance != null) BagManager.Instance.BagUpdated -= RefreshAll;
+        if (BagManager.Instance != null) bagUpdatedToken?.Dispose();
     }
 
     private void HandleEquipmentChanged() => RefreshAll();
@@ -766,10 +787,11 @@ public class CharacterView : UIView
 
     private void RefreshAttributes()
     {
-        CharacterStatsData stats = CharacterStats();
-        float baseAttack = stats != null ? stats.baseAttack : 0f;
-        float baseDefense = stats != null ? stats.baseDefense : 0f;
-        float baseMaxHp = stats != null ? stats.baseMaxHP : 0f;
+        // 基础属性来自展示目录：本界面不引用 PlayerSO（该资产连带连招与动画 FBX）
+        BattleHeroCatalog.HeroInfo hero = BattleHeroCatalog.Get(selectedCharId);
+        float baseAttack = hero.BaseAttack;
+        float baseDefense = hero.BaseDefense;
+        float baseMaxHp = hero.BaseMaxHP;
 
         EquipAttrTotals bonus = EquipmentManager.Instance != null
             ? EquipmentManager.Instance.GetEquipAttrBonus(selectedCharId)
@@ -812,12 +834,6 @@ public class CharacterView : UIView
 
     private EquipInstanceInfo GetEquippedWeapon()
         => EquipmentManager.Instance?.GetEquipped(selectedCharId, EquipmentManager.SlotWeapon);
-
-    private CharacterStatsData CharacterStats()
-    {
-        if (heroStats == null || selectedCharId < 0 || selectedCharId >= heroStats.Length) return null;
-        return heroStats[selectedCharId] != null ? heroStats[selectedCharId].statsData : null;
-    }
 
     // ──────────────────────────────
     // 武器详情页

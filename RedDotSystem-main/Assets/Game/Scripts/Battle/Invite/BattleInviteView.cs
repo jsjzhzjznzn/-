@@ -1,3 +1,5 @@
+using System;
+
 using System.Collections.Generic;
 
 using Common.Network;
@@ -6,6 +8,8 @@ using Cysharp.Threading.Tasks;
 using SkierFramework;
 using TMPro;
 using Unity.Netcode;
+using Game.Battle.Invite;
+using MieMieFrameWork.Business;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -19,6 +23,12 @@ using UnityEngine.UI;
 /// </summary>
 public class BattleInviteView : UIView
 {
+
+    /// <summary>邀请提示订阅令牌</summary>
+    private IDisposable inviteNoticeToken;
+
+    /// <summary>邀请结果订阅令牌</summary>
+    private IDisposable inviteResultToken;
     [ControlBinding] public RectTransform panel;
     [ControlBinding] public TMP_Text titleText;
     [ControlBinding] public TMP_Text subtitleText;
@@ -58,11 +68,11 @@ public class BattleInviteView : UIView
         ClientNetworkManager net = ClientNetworkManager.Instance;
         if (net != null) net.FriendListResponseReceived += OnFriendList;
 
-        BattleInviteManager manager = BattleInviteManager.Instance;
+        IBattleInviteService manager = GameHub.Get<IBattleInviteService>();
         if (manager != null)
         {
-            manager.Notice += OnNotice;
-            manager.ResultReceived += OnResult;
+            inviteNoticeToken = BattleInviteManager.Bus.Subscribe(BattleInviteEvents.Notice, OnNotice);
+            inviteResultToken = BattleInviteManager.Bus.Subscribe(BattleInviteEvents.Result, OnResult);
         }
 
         if (Nm != null) Nm.OnClientConnectedCallback += OnNmClientConnected;
@@ -76,11 +86,13 @@ public class BattleInviteView : UIView
         ClientNetworkManager net = ClientNetworkManager.Instance;
         if (net != null) net.FriendListResponseReceived -= OnFriendList;
 
-        BattleInviteManager manager = BattleInviteManager.Instance;
+        IBattleInviteService manager = GameHub.Get<IBattleInviteService>();
         if (manager != null)
         {
-            manager.Notice -= OnNotice;
-            manager.ResultReceived -= OnResult;
+            inviteNoticeToken?.Dispose();
+            inviteNoticeToken = null;
+            inviteResultToken?.Dispose();
+            inviteResultToken = null;
         }
 
         if (Nm != null) Nm.OnClientConnectedCallback -= OnNmClientConnected;
@@ -115,7 +127,7 @@ public class BattleInviteView : UIView
 
     private void Update()
     {
-        BattleInviteManager manager = BattleInviteManager.Instance;
+        IBattleInviteService manager = GameHub.Get<IBattleInviteService>();
         if (manager == null) return;
 
         if (manager.AwaitingResponse && manager.PendingExpireAtMs > 0)
@@ -205,7 +217,7 @@ public class BattleInviteView : UIView
 
     private void RefreshRowInteractable()
     {
-        BattleInviteManager manager = BattleInviteManager.Instance;
+        IBattleInviteService manager = GameHub.Get<IBattleInviteService>();
         bool awaiting = manager != null && manager.AwaitingResponse;
         bool roomFull = IsRoomFull();
 
@@ -238,7 +250,7 @@ public class BattleInviteView : UIView
 
     private void OnClickInvite(int playerId)
     {
-        if (BattleInviteManager.Instance == null)
+        if (GameHub.Get<IBattleInviteService>() == null)
         {
             SetStatus("邀请服务未就绪");
             return;
@@ -252,7 +264,7 @@ public class BattleInviteView : UIView
         }
 
         string targetName = ResolveRowName(playerId);
-        if (!BattleInviteManager.Instance.SendInvite(playerId, targetName, out string error))
+        if (!GameHub.Get<IBattleInviteService>().SendInvite(playerId, targetName, out string error))
         {
             SetStatus(error);
             return;
@@ -265,7 +277,7 @@ public class BattleInviteView : UIView
 
     private void OnClickCancelInvite()
     {
-        BattleInviteManager.Instance?.CancelInvite();
+        GameHub.Get<IBattleInviteService>()?.CancelInvite();
         SetStatus("已取消邀请");
         RefreshPending();
         RefreshRowInteractable();
@@ -322,7 +334,7 @@ public class BattleInviteView : UIView
 
     private void RefreshPending()
     {
-        BattleInviteManager manager = BattleInviteManager.Instance;
+        IBattleInviteService manager = GameHub.Get<IBattleInviteService>();
         bool awaiting = manager != null && manager.AwaitingResponse;
 
         if (pendingText != null)

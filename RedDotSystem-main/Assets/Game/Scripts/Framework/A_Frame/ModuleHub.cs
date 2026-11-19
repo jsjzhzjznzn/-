@@ -139,14 +139,14 @@ namespace MieMieFrameWork
                 isReady = true;
                 readySource.TrySetResult();
                 AdvancePhase(BootPhase.Ready);
-                FrameLog.Info("框架启动完成", "Module");
+                GameLog.Info("[Module] 框架启动完成");
             }
             catch (Exception Exception)
             {
                 isReady = false;
                 readySource.TrySetException(Exception);
                 FailPhaseWaiters(Exception);
-                FrameLog.Error("框架启动失败：" + Exception, "Module");
+                GameLog.Error("[Module] 框架启动失败：" + Exception);
             }
         }
 
@@ -160,8 +160,7 @@ namespace MieMieFrameWork
             {
                 try
                 {
-                    FrameLog.SetContext("InitializingManager", Manager.GetType().FullName);
-                    FrameLog.Info($"初始化管理器 {Manager.GetType().FullName}", "Module");
+                    GameLog.Info($"[Module] 初始化管理器 {Manager.GetType().FullName}");
 
                     if (Manager is IAsyncManagerBase AsyncManager)
                         await AsyncManager.InitAsync(cancellationToken);

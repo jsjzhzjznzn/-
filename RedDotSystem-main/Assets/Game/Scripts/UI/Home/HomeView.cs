@@ -105,13 +105,16 @@ public class HomeView : UIView
 
     private async UniTaskVoid EnterChallengeAsync()
     {
-        // 先起加载遮罩（它一进入就是全屏最上层），再关主页：遮罩不会等关闭动画，点击即有反馈
-        UniTask loading = SceneLoader.LoadAsync("tiaozhan");
+        // 与进大世界同一套顺序：先出遮罩并等它画出来，再关主页，最后加载
+        LoadingScreen screen = LoadingScreen.Show("tiaozhan");
 
         if (UIManager.Instance.IsOpen(UIType.HomeView))
             UIManager.Instance.Close(UIType.HomeView).Forget();
 
-        await loading;
+        await UniTask.Yield();
+        await UniTask.Yield();
+
+        await SceneLoader.LoadWithScreenAsync("tiaozhan", screen);
     }
 
     private void OpenAgent() => UIManager.Instance.Open(UIType.AgentView).Forget();
@@ -127,14 +130,20 @@ public class HomeView : UIView
 
     private async UniTaskVoid EnterWorldAsync()
     {
-        // 点击「开始冒险」立刻出加载界面，再切场景（主页关闭动画在遮罩下面跑，不阻塞加载）
-        UniTask loading = SceneLoader.LoadAsync("dashijie");
+        // 顺序很关键：先让遮罩真正画出来，再关主页。
+        // 若先关主页再加载，主页销毁与场景加载撞在同一帧，那一帧可能卡上千毫秒，
+        // 玩家看到的就是"点了没反应，过一会才出加载界面"。
+        LoadingScreen screen = LoadingScreen.Show(SceneLoader.WorldSceneName);
 
         // HomeView 常驻，会跨场景保留；进场景前先关掉，避免主页入口盖在大世界 HUD 上
         if (UIManager.Instance.IsOpen(UIType.HomeView))
             UIManager.Instance.Close(UIType.HomeView).Forget();
 
-        await loading;
+        // 等遮罩至少渲染出一帧（此时它已是不透明黑底），之后关闭/加载的卡顿都在它下面
+        await UniTask.Yield();
+        await UniTask.Yield();
+
+        await SceneLoader.LoadWithScreenAsync(SceneLoader.WorldSceneName, screen);
     }
 
     private void OpenBag() => UIManager.Instance.Open(UIType.BagView).Forget();

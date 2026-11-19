@@ -1,0 +1,119 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!687078895 &4343727234628468602
+SpriteAtlas:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: UI_Dashijie
+  serializedVersion: 2
+  m_EditorData:
+    serializedVersion: 2
+    textureSettings:
+      serializedVersion: 3
+      anisoLevel: 1
+      compressionQuality: 50
+      maxTextureSize: 2048
+      textureCompression: 0
+      filterMode: 1
+      generateMipMaps: 0
+      readable: 0
+      crunchedCompression: 0
+      webStreaming: 0
+      sRGB: 1
+    platformSettings: []
+    packingSettings:
+      serializedVersion: 2
+      padding: 2
+      blockOffset: 1
+      allowAlphaSplitting: 0
+      enableRotation: 0
+      enableTightPacking: 0
+      enableAlphaDilation: 0
+    secondaryTextureSettings: {}
+    variantMultiplier: 1
+    packables:
+    - {fileID: 21300000, guid: b610ab14bee1a824ab7606f84520c624, type: 3}
+    - {fileID: 21300000, guid: 6ef7fe3f645e52b41a96b447adc4ae6b, type: 3}
+    - {fileID: 21300000, guid: 262f5328946f4b14e9194922d71ecff5, type: 3}
+    - {fileID: 21300000, guid: ac91d0b731380014ebb3d8efb5f5a68b, type: 3}
+    - {fileID: 21300000, guid: 85968fac07bc03243a1acf00a9918320, type: 3}
+    - {fileID: 21300000, guid: 26b63e6969f261d4ca2b0bd4ea138fb7, type: 3}
+    - {fileID: 21300000, guid: e58ee720118dbd6458199b2dcfd59504, type: 3}
+    - {fileID: 21300000, guid: 78e13339ecaa6c14c8018d4f894ecce2, type: 3}
+    - {fileID: 21300000, guid: 4a243b6877b735748b13292056b655d7, type: 3}
+    - {fileID: 21300000, guid: de9f84141bded434792c16955cc1ac02, type: 3}
+    - {fileID: 21300000, guid: 0dec421aa60a5264c89443d07a39e69e, type: 3}
+    - {fileID: 21300000, guid: 24f861599658e104aba0cd013a7a0053, type: 3}
+    - {fileID: 21300000, guid: 3b64b371e5d361b4fabbd59e6c1f3cf7, type: 3}
+    - {fileID: 21300000, guid: 123bb911f77a5544d9561004536f8a6e, type: 3}
+    - {fileID: 21300000, guid: ece892f85a56a7d42b21bc623e8a9b01, type: 3}
+    - {fileID: 21300000, guid: 6c1e13823867bc7489163f9b4fce0959, type: 3}
+    - {fileID: 21300000, guid: 026e9832dc4cdcf49b3a3a1abba4b2d7, type: 3}
+    - {fileID: 21300000, guid: 98b54710a3d7b4848bd02b31ffe736b0, type: 3}
+    bindAsDefault: 1
+    isAtlasV2: 0
+    cachedData: {fileID: 0}
+    packedSpriteRenderDataKeys:
+    - 98b54710a3d7b4848bd02b31ffe736b0: 21300000
+    - e58ee720118dbd6458199b2dcfd59504: 21300000
+    - 123bb911f77a5544d9561004536f8a6e: 21300000
+    - 3b64b371e5d361b4fabbd59e6c1f3cf7: 21300000
+    - 026e9832dc4cdcf49b3a3a1abba4b2d7: 21300000
+    - 6c1e13823867bc7489163f9b4fce0959: 21300000
+    - de9f84141bded434792c16955cc1ac02: 21300000
+    - b610ab14bee1a824ab7606f84520c624: 21300000
+    - ac91d0b731380014ebb3d8efb5f5a68b: 21300000
+    - 262f5328946f4b14e9194922d71ecff5: 21300000
+    - 4a243b6877b735748b13292056b655d7: 21300000
+    - ece892f85a56a7d42b21bc623e8a9b01: 21300000
+    - 78e13339ecaa6c14c8018d4f894ecce2: 21300000
+    - 24f861599658e104aba0cd013a7a0053: 21300000
+    - 26b63e6969f261d4ca2b0bd4ea138fb7: 21300000
+    - 0dec421aa60a5264c89443d07a39e69e: 21300000
+    - 85968fac07bc03243a1acf00a9918320: 21300000
+    - 6ef7fe3f645e52b41a96b447adc4ae6b: 21300000
+  m_MasterAtlas: {fileID: 0}
+  m_PackedSprites:
+  - {fileID: 21300000, guid: 98b54710a3d7b4848bd02b31ffe736b0, type: 3}
+  - {fileID: 21300000, guid: e58ee720118dbd6458199b2dcfd59504, type: 3}
+  - {fileID: 21300000, guid: 123bb911f77a5544d9561004536f8a6e, type: 3}
+  - {fileID: 21300000, guid: 3b64b371e5d361b4fabbd59e6c1f3cf7, type: 3}
+  - {fileID: 21300000, guid: 026e9832dc4cdcf49b3a3a1abba4b2d7, type: 3}
+  - {fileID: 21300000, guid: 6c1e13823867bc7489163f9b4fce0959, type: 3}
+  - {fileID: 21300000, guid: de9f84141bded434792c16955cc1ac02, type: 3}
+  - {fileID: 21300000, guid: b610ab14bee1a824ab7606f84520c624, type: 3}
+  - {fileID: 21300000, guid: ac91d0b731380014ebb3d8efb5f5a68b, type: 3}
+  - {fileID: 21300000, guid: 262f5328946f4b14e9194922d71ecff5, type: 3}
+  - {fileID: 21300000, guid: 4a243b6877b735748b13292056b655d7, type: 3}
+  - {fileID: 21300000, guid: ece892f85a56a7d42b21bc623e8a9b01, type: 3}
+  - {fileID: 21300000, guid: 78e13339ecaa6c14c8018d4f894ecce2, type: 3}
+  - {fileID: 21300000, guid: 24f861599658e104aba0cd013a7a0053, type: 3}
+  - {fileID: 21300000, guid: 26b63e6969f261d4ca2b0bd4ea138fb7, type: 3}
+  - {fileID: 21300000, guid: 0dec421aa60a5264c89443d07a39e69e, type: 3}
+  - {fileID: 21300000, guid: 85968fac07bc03243a1acf00a9918320, type: 3}
+  - {fileID: 21300000, guid: 6ef7fe3f645e52b41a96b447adc4ae6b, type: 3}
+  m_PackedSpriteNamesToIndex:
+  - minimap_ring
+  - dashijie_icon_leaderboard
+  - hp_emblem
+  - hp_bar
+  - minimap_arrow
+  - hp_shadow
+  - dashijie_icon_quest
+  - dashijie_circle
+  - dashijie_icon_character
+  - dashijie_icon_bag
+  - dashijie_icon_map
+  - hp_segment_line
+  - dashijie_icon_mail
+  - dashijie_quest_mark
+  - dashijie_icon_friend
+  - dashijie_icon_settings
+  - dashijie_icon_chat
+  - dashijie_icon_achievement
+  m_RenderDataMap: {}
+  m_Tag: UI_Dashijie
+  m_IsVariant: 0
+  m_IsPlaceholder: 0

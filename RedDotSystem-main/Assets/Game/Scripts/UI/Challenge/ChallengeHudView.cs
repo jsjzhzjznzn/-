@@ -30,6 +30,10 @@ public class ChallengeHudView : UIView
 
     private bool leaving;
 
+    /// <summary>上一次写进血条文本的整数血量（ChallengeManager 逐帧调用，相同则跳过重写）</summary>
+    private int lastHpCurrent = int.MinValue;
+    private int lastHpMax = int.MinValue;
+
     /// <summary>退出确认窗口（秒）：挑战是限时玩法，误触退出会作废进度，所以要点两次</summary>
     private const float ExitConfirmSeconds = 2f;
 
@@ -125,7 +129,17 @@ public class ChallengeHudView : UIView
         }
 
         if (monsterHpText != null)
-            monsterHpText.text = $"怪物 HP {Mathf.CeilToInt(safeCurrent)} / {Mathf.CeilToInt(safeMax)}";
+        {
+            // 逐帧调用：整数血量没变就不重写，省掉每帧一次字符串分配与 TMP 重排
+            int currentInt = Mathf.CeilToInt(safeCurrent);
+            int maxInt = Mathf.CeilToInt(safeMax);
+            if (currentInt != lastHpCurrent || maxInt != lastHpMax)
+            {
+                lastHpCurrent = currentInt;
+                lastHpMax = maxInt;
+                monsterHpText.text = $"怪物 HP {currentInt} / {maxInt}";
+            }
+        }
     }
 
     public void SetHint(string text)
@@ -212,7 +226,7 @@ public class ChallengeHudView : UIView
 
         Time.timeScale = 1f;
         string tip = sceneName == "zhuye" ? "正在返回主页…" : "正在进入挑战…";
-        Debug.Log("[挑战] " + tip);
+        GameLog.Info("[挑战] " + tip);
         await SceneLoader.LoadAsync(sceneName);
     }
 }

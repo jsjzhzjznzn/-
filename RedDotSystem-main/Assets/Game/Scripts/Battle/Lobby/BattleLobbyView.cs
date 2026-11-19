@@ -1,6 +1,8 @@
-﻿using Cysharp.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using SkierFramework;
 using TMPro;
+using Game.Battle.Invite;
+using MieMieFrameWork.Business;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -83,7 +85,9 @@ public class BattleLobbyView : UIView
         }
     }
 
-    private async void OnCreateRoomClicked()
+    private void OnCreateRoomClicked() => OnCreateRoomClickedAsync().Forget();
+
+    private async UniTaskVoid OnCreateRoomClickedAsync()
     {
         string error = await BattleNetworkLauncher.StartHostAsync();
         if (string.IsNullOrEmpty(error))
@@ -105,15 +109,17 @@ public class BattleLobbyView : UIView
     ///
     /// 顺序不能反：BattleRoomView.OnClose 会销毁联机会话，房主必须停在房间界面等好友。
     /// </summary>
-    private async void OnInviteClicked()
+    private void OnInviteClicked() => OnInviteClickedAsync().Forget();
+
+    private async UniTaskVoid OnInviteClickedAsync()
     {
-        if (BattleInviteManager.Instance == null)
+        if (GameHub.Get<IBattleInviteService>() == null)
         {
             SetStatus("邀请服务未就绪");
             return;
         }
 
-        string error = await BattleInviteManager.Instance.EnsureHostRoomAsync();
+        string error = await GameHub.Get<IBattleInviteService>().EnsureHostRoomAsync();
         if (!string.IsNullOrEmpty(error))
         {
             SetStatus(error);

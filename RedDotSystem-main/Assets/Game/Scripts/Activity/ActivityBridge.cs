@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+
+using Game.Bag;
+using MieMieFrameWork.Business;
 using Common.Network;
 using UnityEngine;
 using XLua;
@@ -23,7 +26,7 @@ public static class ActivityBridge
     /// <summary>写一行日志（与 Unity Console 贯通，E2E 断言也走这里）</summary>
     public static void Log(object message)
     {
-        Debug.Log($"[activity] {message}");
+        GameLog.Info($"[activity] {message}");
     }
 
     // ──────────────────────────────
@@ -118,7 +121,8 @@ public static class ActivityBridge
     /// <summary>按物品ID统计持有量（唤取媒介余量显示）</summary>
     public static int GetItemCount(int itemId)
     {
-        return BagManager.Instance != null ? BagManager.Instance.GetItemCount(itemId) : 0;
+        IBagService bag = GameHub.Get<IBagService>();
+        return bag != null ? bag.GetItemCount(itemId) : 0;
     }
 
     /// <summary>
@@ -135,7 +139,8 @@ public static class ActivityBridge
     /// </summary>
     public static string GetItemIconKey(int itemId)
     {
-        var config = BagManager.Instance != null ? BagManager.Instance.GetConfig(itemId) : null;
+        IBagService bag = GameHub.Get<IBagService>();
+        var config = bag != null ? bag.GetConfig(itemId) : null;
         return config != null ? config.IconKey : string.Empty;
     }
 

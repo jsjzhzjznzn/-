@@ -1,9 +1,13 @@
+using System;
+
 using System.Collections.Generic;
 using System.Text;
 
 using Common.Network;
 
 using Cysharp.Threading.Tasks;
+
+using Game.Achievement;
 
 using SkierFramework;
 
@@ -20,6 +24,12 @@ using UnityEngine.UI;
 /// </summary>
 public class AchievementView : UIView
 {
+
+    /// <summary>成就数据变化订阅令牌（关闭页面时释放）</summary>
+    private IDisposable achievementUpdatedToken;
+
+    /// <summary>成就状态文案订阅令牌</summary>
+    private IDisposable achievementStatusToken;
     // ──────────────────────────────
     // 序列化引用（预制体构建器注入）
     // ──────────────────────────────
@@ -131,8 +141,8 @@ public class AchievementView : UIView
 
         if (AchievementManager.Instance != null)
         {
-            AchievementManager.Instance.AchievementsUpdated += RefreshAll;
-            AchievementManager.Instance.StatusChanged += SetStatus;
+            achievementUpdatedToken = AchievementManager.Bus.Subscribe(AchievementEvents.Updated, RefreshAll);
+            achievementStatusToken = AchievementManager.Bus.Subscribe(AchievementEvents.Status, SetStatus);
         }
 
         SetupAchievementList();
@@ -164,8 +174,8 @@ public class AchievementView : UIView
     private void OnDestroy()
     {
         if (AchievementManager.Instance == null) return;
-        AchievementManager.Instance.AchievementsUpdated -= RefreshAll;
-        AchievementManager.Instance.StatusChanged -= SetStatus;
+        achievementUpdatedToken?.Dispose();
+        achievementStatusToken?.Dispose();
     }
 
     private void OnCloseClicked()

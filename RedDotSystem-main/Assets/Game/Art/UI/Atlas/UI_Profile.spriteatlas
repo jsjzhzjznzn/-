@@ -1,0 +1,107 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!687078895 &4343727234628468602
+SpriteAtlas:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: UI_Profile
+  serializedVersion: 2
+  m_EditorData:
+    serializedVersion: 2
+    textureSettings:
+      serializedVersion: 3
+      anisoLevel: 1
+      compressionQuality: 50
+      maxTextureSize: 2048
+      textureCompression: 0
+      filterMode: 1
+      generateMipMaps: 0
+      readable: 0
+      crunchedCompression: 0
+      webStreaming: 0
+      sRGB: 1
+    platformSettings: []
+    packingSettings:
+      serializedVersion: 2
+      padding: 2
+      blockOffset: 1
+      allowAlphaSplitting: 0
+      enableRotation: 0
+      enableTightPacking: 0
+      enableAlphaDilation: 0
+    secondaryTextureSettings: {}
+    variantMultiplier: 1
+    packables:
+    - {fileID: 21300000, guid: 15a851440ef47db48874931556ed5541, type: 3}
+    - {fileID: 21300000, guid: 168260a7141df9b4d9e82ed60b3e6366, type: 3}
+    - {fileID: 21300000, guid: 31942949f497f2243856c3411c8c7ea6, type: 3}
+    - {fileID: 21300000, guid: e12ed2a66a8f58640ab413ed2d9fa7c2, type: 3}
+    - {fileID: 21300000, guid: 39c4462bfba115c47818cdcf32bba28e, type: 3}
+    - {fileID: 21300000, guid: 453d0a0b1cba48c419879f12c82cdbbe, type: 3}
+    - {fileID: 21300000, guid: 8e068b82d72513a428eb41edbc30525a, type: 3}
+    - {fileID: 21300000, guid: c9263582758c9504f9e683d3c6cc4040, type: 3}
+    - {fileID: 21300000, guid: b77f465816c0977499a0d18f4ec5fb47, type: 3}
+    - {fileID: 21300000, guid: ed154d008329a514fa5e92c8bd7f7ebb, type: 3}
+    - {fileID: 21300000, guid: 1ebbeaefaf5e2874293b520a9dfa7703, type: 3}
+    - {fileID: 21300000, guid: 99b16cbbb01317b45a98cf28ccf7d7a9, type: 3}
+    - {fileID: 21300000, guid: 083660e511064a74ca9e9034c024d7ee, type: 3}
+    - {fileID: 21300000, guid: ae98c7df78768434ebfda8fed73882be, type: 3}
+    - {fileID: 21300000, guid: 5abe8783a36492f478048805be6bd541, type: 3}
+    bindAsDefault: 1
+    isAtlasV2: 0
+    cachedData: {fileID: 0}
+    packedSpriteRenderDataKeys:
+    - ed154d008329a514fa5e92c8bd7f7ebb: 21300000
+    - c9263582758c9504f9e683d3c6cc4040: 21300000
+    - 8e068b82d72513a428eb41edbc30525a: 21300000
+    - 5abe8783a36492f478048805be6bd541: 21300000
+    - 15a851440ef47db48874931556ed5541: 21300000
+    - 083660e511064a74ca9e9034c024d7ee: 21300000
+    - e12ed2a66a8f58640ab413ed2d9fa7c2: 21300000
+    - 168260a7141df9b4d9e82ed60b3e6366: 21300000
+    - b77f465816c0977499a0d18f4ec5fb47: 21300000
+    - 31942949f497f2243856c3411c8c7ea6: 21300000
+    - 453d0a0b1cba48c419879f12c82cdbbe: 21300000
+    - 39c4462bfba115c47818cdcf32bba28e: 21300000
+    - 99b16cbbb01317b45a98cf28ccf7d7a9: 21300000
+    - ae98c7df78768434ebfda8fed73882be: 21300000
+    - 1ebbeaefaf5e2874293b520a9dfa7703: 21300000
+  m_MasterAtlas: {fileID: 0}
+  m_PackedSprites:
+  - {fileID: 21300000, guid: ed154d008329a514fa5e92c8bd7f7ebb, type: 3}
+  - {fileID: 21300000, guid: c9263582758c9504f9e683d3c6cc4040, type: 3}
+  - {fileID: 21300000, guid: 8e068b82d72513a428eb41edbc30525a, type: 3}
+  - {fileID: 21300000, guid: 5abe8783a36492f478048805be6bd541, type: 3}
+  - {fileID: 21300000, guid: 15a851440ef47db48874931556ed5541, type: 3}
+  - {fileID: 21300000, guid: 083660e511064a74ca9e9034c024d7ee, type: 3}
+  - {fileID: 21300000, guid: e12ed2a66a8f58640ab413ed2d9fa7c2, type: 3}
+  - {fileID: 21300000, guid: 168260a7141df9b4d9e82ed60b3e6366, type: 3}
+  - {fileID: 21300000, guid: b77f465816c0977499a0d18f4ec5fb47, type: 3}
+  - {fileID: 21300000, guid: 31942949f497f2243856c3411c8c7ea6, type: 3}
+  - {fileID: 21300000, guid: 453d0a0b1cba48c419879f12c82cdbbe, type: 3}
+  - {fileID: 21300000, guid: 39c4462bfba115c47818cdcf32bba28e, type: 3}
+  - {fileID: 21300000, guid: 99b16cbbb01317b45a98cf28ccf7d7a9, type: 3}
+  - {fileID: 21300000, guid: ae98c7df78768434ebfda8fed73882be, type: 3}
+  - {fileID: 21300000, guid: 1ebbeaefaf5e2874293b520a9dfa7703, type: 3}
+  m_PackedSpriteNamesToIndex:
+  - icon_pen
+  - icon_eye
+  - icon_dots
+  - vignette
+  - card_frame
+  - soft_glow
+  - gold_ring
+  - crosshair
+  - icon_info
+  - gold_line
+  - icon_copy
+  - gold_ring_dots
+  - profile_panel
+  - title_mark
+  - icon_play
+  m_RenderDataMap: {}
+  m_Tag: UI_Profile
+  m_IsVariant: 0
+  m_IsPlaceholder: 0

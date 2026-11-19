@@ -174,7 +174,7 @@ namespace SkierFramework
                 if (!s_envWarned)
                 {
                     s_envWarned = true;
-                    Debug.LogWarning("[UILuaView] LuaEnv 未启动，Lua UI 以纯 C# 模式运行（请确认已调用 LuaLauncher.StartLuaVM()）");
+                    GameLog.Warn("[UILuaView] LuaEnv 未启动，Lua UI 以纯 C# 模式运行（请确认已调用 LuaLauncher.StartLuaVM()）");
                 }
                 return false;
             }
@@ -228,7 +228,7 @@ namespace SkierFramework
                 if (!s_envWarned)
                 {
                     s_envWarned = true;
-                    Debug.LogWarning("[UILuaView] LuaEnv 未启动，Lua UI 以纯 C# 模式运行（请确认已调用 LuaLauncher.StartLuaVM()）");
+                    GameLog.Warn("[UILuaView] LuaEnv 未启动，Lua UI 以纯 C# 模式运行（请确认已调用 LuaLauncher.StartLuaVM()）");
                 }
                 onComplete?.Invoke();
                 return;

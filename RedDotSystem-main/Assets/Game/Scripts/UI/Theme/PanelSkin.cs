@@ -11,7 +11,7 @@ using UnityEngine.UI;
 /// </summary>
 public class PanelSkin : MonoBehaviour
 {
-    /// <summary>面板底图键名（对应 Resources/ui/Theme/bg_&lt;key&gt;.png）；留空则用通用 panel_bg</summary>
+    /// <summary>面板底图键名（对应 Assets/Game/Art/UI/Theme/bg_&lt;key&gt;.png，经 YooAsset 加载）；留空则用通用 panel_bg</summary>
     [SerializeField] private string backgroundKey = string.Empty;
 
     /// <summary>顶部横幅的键名（对应 Resources/ui/Theme/banner_&lt;key&gt;.png）；留空则不画横幅</summary>
@@ -49,7 +49,7 @@ public class PanelSkin : MonoBehaviour
         RectTransform panel = FindPanel();
         if (panel == null)
         {
-            Debug.LogWarning("[PanelSkin] 找不到面板节点，跳过换肤：" + name);
+            GameLog.Warn("[PanelSkin] 找不到面板节点，跳过换肤：" + name);
             return;
         }
 

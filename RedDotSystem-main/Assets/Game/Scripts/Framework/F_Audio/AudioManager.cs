@@ -156,7 +156,7 @@ namespace MieMieFrameWork
         public void Init()
         {
             InitComponents();
-            FrameLog.Info("音频管理器就绪", "Audio");
+            GameLog.Info("[Audio] 音频管理器就绪");
         }
 
         /// <summary>校验组件配置，预热播放器池并绑定唯一帧回调</summary>

@@ -167,7 +167,8 @@ namespace CompeteServer.Database
         /// </summary>
         /// <param name="myId">参数名：myId，类型：int，用途：己方玩家ID（服务端会话身份）</param>
         /// <param name="targetId">参数名：targetId，类型：int，用途：对方玩家ID</param>
-        public void MarkConversationRead(int myId, int targetId)
+        /// <returns>返回值类型：bool，用途：true=已读标记已落库；false=Mongo 不可用或写入异常（未读仍计着）</returns>
+        public bool MarkConversationRead(int myId, int targetId)
         {
             FilterDefinition<ChatMessage> filter =
                 Builders<ChatMessage>.Filter.Eq(message => message.ConversationId, BuildConversationId(myId, targetId)) &
@@ -178,14 +179,16 @@ namespace CompeteServer.Database
                 Builders<ChatMessage>.Update.Set(message => message.Read, true);
 
             IMongoCollection<ChatMessage>? collection = CollectionIfAvailable;
-            if (collection == null) return;   // Mongo 不可用：已读标记缺失，等恢复后拉历史会补齐
+            if (collection == null) return false;   // Mongo 不可用：已读标记缺失，等恢复后拉历史会补齐
             try
             {
                 collection.UpdateMany(filter, update);
+                return true;
             }
             catch (Exception exception)
             {
                 MongoManager.Instance.MarkDown("UpdateMany", exception);
+                return false;
             }
         }
 
@@ -195,7 +198,7 @@ namespace CompeteServer.Database
         /// </summary>
         /// <param name="myId">参数名：myId，类型：int，用途：己方玩家ID（服务端会话身份）</param>
         /// <param name="friendId">参数名：friendId，类型：int，用途：对方玩家ID</param>
-        /// <returns>返回值类型：int，用途：对方发我且 read=false 的消息条数（Mongo 不可用时为 0）</returns>
+        /// <returns>返回值类型：int，用途：对方发我且 read=false 的消息条数；-1 表示计数失败（Mongo 不可用），与"真的 0 条"区分</returns>
         public int CountUnread(int myId, int friendId)
         {
             FilterDefinition<ChatMessage> filter =
@@ -204,7 +207,7 @@ namespace CompeteServer.Database
                 Builders<ChatMessage>.Filter.Eq(message => message.Read, false);
 
             IMongoCollection<ChatMessage>? collection = CollectionIfAvailable;
-            if (collection == null) return 0;
+            if (collection == null) return -1;
             try
             {
                 return (int)collection.CountDocuments(filter);
@@ -212,7 +215,7 @@ namespace CompeteServer.Database
             catch (Exception exception)
             {
                 MongoManager.Instance.MarkDown("CountDocuments", exception);
-                return 0;
+                return -1;
             }
         }
 
@@ -393,21 +396,30 @@ namespace CompeteServer.Database
 
         /// <summary>
         /// 建立查询索引的方法
-        /// 复合索引 { conversationId: 1, sentAt: -1 }：前缀等值定位会话，后缀与排序方向一致，
-        /// 使「按会话查 + 按时间倒序 + limit」走索引直接完成，避免全表扫描与内存排序
-        /// 已存在同名索引时为幂等操作，启动时重复调用无副作用
+        /// 两条复合索引，已存在同名索引时为幂等操作，启动时重复调用无副作用：
+        /// 1. { conversationId: 1, sentAt: -1 }：前缀等值定位会话，后缀与排序方向一致，
+        ///    使「按会话查 + 按时间倒序 + limit」走索引直接完成，避免全表扫描与内存排序；
+        /// 2. { conversationId: 1, receiverId: 1, read: 1 }：未读统计的三个条件全是等值，
+        ///    未读数查询（红点数据源）与置已读更新都能只扫索引、不扫会话正文，
+        ///    会话越长收益越大；缺这条时每次未读统计都要把整个会话的文档过一遍
         /// </summary>
         public void EnsureIndexes()
         {
-            IndexKeysDefinition<ChatMessage> keys = Builders<ChatMessage>.IndexKeys
+            IndexKeysDefinition<ChatMessage> historyKeys = Builders<ChatMessage>.IndexKeys
                 .Ascending(message => message.ConversationId)
                 .Descending(message => message.SentAtUtc);
+
+            IndexKeysDefinition<ChatMessage> unreadKeys = Builders<ChatMessage>.IndexKeys
+                .Ascending(message => message.ConversationId)
+                .Ascending(message => message.ReceiverId)
+                .Ascending(message => message.Read);
 
             IMongoCollection<ChatMessage>? collection = CollectionIfAvailable;
             if (collection == null) return;   // Mongo 不可用：跳过建索引，恢复后下次启动会补建（幂等）
             try
             {
-                collection.Indexes.CreateOne(new CreateIndexModel<ChatMessage>(keys));
+                collection.Indexes.CreateOne(new CreateIndexModel<ChatMessage>(historyKeys));
+                collection.Indexes.CreateOne(new CreateIndexModel<ChatMessage>(unreadKeys));
             }
             catch (Exception exception)
             {

@@ -1,6 +1,11 @@
 using Cysharp.Threading.Tasks;
+
+using Game.Guide;
+
+using MieMieFrameWork.Business;
 using SkierFramework;
 using TMPro;
+using Game.Save;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -177,19 +182,23 @@ public class SettingsView : UIView
     /// 重看新手引导：先关面板（引导要盖在主页上），再从第一步重新开始。
     /// 引导进度会覆盖服务端为 0，走得中途退出也仍然从断点继续。
     /// </summary>
-    private async void OnReplayGuideClicked()
+    private void OnReplayGuideClicked() => OnReplayGuideClickedAsync().Forget();
+
+    private async UniTaskVoid OnReplayGuideClickedAsync()
     {
         if (UIManager.Instance != null)
             await UIManager.Instance.Close(UIType.SettingsView);
 
-        GuideManager.ReplayFromStart();
+        GameHub.Get<IGuideService>()?.ReplayFromStart();
     }
 
     /// <summary>
     /// 返回主页：先关面板（OnClose 里恢复 Time.timeScale），再走统一场景加载（带进度条）。
     /// 顺序不能反——暂停中直接 LoadScene 会把 0 倍速带进主页。
     /// </summary>
-    private async void OnReturnHomeClicked()
+    private void OnReturnHomeClicked() => OnReturnHomeClickedAsync().Forget();
+
+    private async UniTaskVoid OnReturnHomeClickedAsync()
     {
         // 先落一次场景存档（对话进度/位置/相机），再关面板与切场景。
         // Flush 自带 1s 超时，服务端不可用时不会卡住返回主页。
@@ -231,7 +240,9 @@ public class SettingsView : UIView
         LogoutService.Logout();
     }
 
-    private async void OnQuitClicked()
+    private void OnQuitClicked() => OnQuitClickedAsync().Forget();
+
+    private async UniTaskVoid OnQuitClickedAsync()
     {
         // 退出前尽力落一次存档（best-effort：真正的保证来自事件点即时上报）
         await FlushSceneSave();
@@ -248,11 +259,12 @@ public class SettingsView : UIView
     /// </summary>
     private static async System.Threading.Tasks.Task FlushSceneSave()
     {
-        if (SceneSaveService.Instance == null) return;
+        ISceneSaveService saveService = GameHub.Get<ISceneSaveService>();
+        if (saveService == null) return;
 
         try
         {
-            await SceneSaveService.Instance.FlushAsync(1f);
+            await saveService.FlushAsync(1f);
         }
         catch (System.Exception exception)
         {

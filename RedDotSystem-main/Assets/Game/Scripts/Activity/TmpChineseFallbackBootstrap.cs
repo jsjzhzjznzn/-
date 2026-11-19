@@ -18,7 +18,7 @@ namespace Game.Activity
             TMP_FontAsset font = Resources.Load<TMP_FontAsset>(FontResourcePath);
             if (font == null)
             {
-                Debug.LogWarning("[TMP] 未找到中文回退字体：" + FontResourcePath);
+                GameLog.Warn("[TMP] 未找到中文回退字体：" + FontResourcePath);
                 return;
             }
 
@@ -27,7 +27,7 @@ namespace Game.Activity
             if (fallbacks.Contains(font)) return;
 
             fallbacks.Add(font);
-            Debug.Log("[TMP] 已注入中文回退字体：" + font.name);
+            GameLog.Info("[TMP] 已注入中文回退字体：" + font.name);
         }
     }
 }

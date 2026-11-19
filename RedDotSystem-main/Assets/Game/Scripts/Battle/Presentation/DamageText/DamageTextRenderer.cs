@@ -15,7 +15,20 @@ public struct DamageTextDrawData
     public float fontSize;      // 目标字号（像素高度基准）
     public int packed;          // 数字按 4bit/位打包，低位是最右边一位
     public int digitCount;      // 有效位数
+    public TextGlyph glyph;     // 文案（空表示显示数字）
     public Color color;
+}
+
+/// <summary>
+/// 固定文案（MISS/HEAL 等）：字形下标按字符串低位到高位逐 4bit 打包，
+/// 与数字走同一套等宽排版，CPU 不产生 string。
+/// </summary>
+public struct TextGlyph
+{
+    public int packed;      // 4bit/位，低位是最左边一位
+    public int count;       // 有效字数
+
+    public bool IsEmpty => count <= 0;
 }
 
 /// <summary>
@@ -36,8 +49,15 @@ public class DamageTextRenderer : MonoBehaviour
 {
     private const int MaxInstancesPerBatch = 1023;   // DrawMeshInstanced 单批上限
     private const int MaxDigits = 6;                 // 一条飘字最多 6 位
-    private const int GlyphSlots = 16;               // 着色器里的 _DigitUV 数组长度
+    private const int GlyphSlots = 37;               // 着色器里的 _DigitUV 数组长度：0-9 + '-' + A-Z
     private const int MinusGlyph = 10;               // '-' 的字形下标
+    private const int LetterGlyphBase = 11;          // 'A' 的字形下标，之后按字母顺序排列
+
+    private struct LabelCache
+    {
+        public int packed;
+        public int count;
+    }
 
     private TMP_FontAsset _font;
     private Mesh _mesh;
@@ -87,10 +107,47 @@ public class DamageTextRenderer : MonoBehaviour
         _mesh = BuildQuadMesh();
         _propertyBlock = new MaterialPropertyBlock();
 
-        _font.TryAddCharacters("0123456789-", out _);
+        _font.TryAddCharacters("0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ+", out _);
         RefreshGlyphTable();
 
         _ready = _material.HasProperty("_CellWidth");
+    }
+
+    /// <summary>把固定文案转成字形下标（4bit/位），结果按字符串缓存，运行期不再分配</summary>
+    public static TextGlyph DecodeLabel(string label)
+    {
+        return DecodeLabelCached(label);
+    }
+
+    private static readonly Dictionary<string, LabelCache> SharedLabelCache = new Dictionary<string, LabelCache>();
+
+    private static TextGlyph DecodeLabelCached(string label)
+    {
+        if (string.IsNullOrEmpty(label)) return default;
+        if (SharedLabelCache.TryGetValue(label, out LabelCache cached))
+            return new TextGlyph { packed = cached.packed, count = cached.count };
+
+        int packed = 0;
+        int count = 0;
+        for (int i = 0; i < label.Length && count < MaxDigits; i++)
+        {
+            int glyph = GlyphIndexOf(label[i]);
+            if (glyph < 0) continue;
+            packed |= glyph << (count * 4);
+            count++;
+        }
+
+        SharedLabelCache[label] = new LabelCache { packed = packed, count = count };
+        return new TextGlyph { packed = packed, count = count };
+    }
+
+    private static int GlyphIndexOf(char c)
+    {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c == '-') return MinusGlyph;
+        if (c >= 'A' && c <= 'Z') return LetterGlyphBase + (c - 'A');
+        if (c == '+') return LetterGlyphBase + 26;
+        return -1;
     }
 
     /// <summary>提交一帧的全部飘字（内部按 1023 实例分批）</summary>
@@ -110,7 +167,9 @@ public class DamageTextRenderer : MonoBehaviour
                     new Vector3(d.origin.x, d.origin.y, 0f),
                     Quaternion.Euler(0f, 0f, d.rotation),
                     new Vector3(scale, scale, 1f));
-                _digits[i] = new Vector4(d.packed, d.digitCount, 0f, 0f);
+                _digits[i] = d.glyph.IsEmpty
+                    ? new Vector4(d.packed, d.digitCount, 0f, 0f)
+                    : new Vector4(d.glyph.packed, d.glyph.count, 1f, 0f);
                 _tints[i] = d.color;
             }
 
@@ -145,9 +204,10 @@ public class DamageTextRenderer : MonoBehaviour
         float maxWidth = 1f;
         int refHeight = 1;
 
-        for (int i = 0; i <= MinusGlyph; i++)
+        for (int i = 0; i < GlyphSlots; i++)
         {
-            char c = i < 10 ? (char)('0' + i) : '-';
+            char c = GlyphCharOf(i);
+            if (c == '\0') continue;
             if (!TryGetGlyphRect(c, out GlyphRect rect)) continue;
 
             // glyphRect 的 Y 自图集底部量起，与纹理采样 V 轴一致，直接归一化即可；
@@ -171,6 +231,16 @@ public class DamageTextRenderer : MonoBehaviour
         _material.SetVectorArray("_DigitUV", uvs);
     }
 
+    private static char GlyphCharOf(int index)
+    {
+        if (index < 10) return (char)('0' + index);
+        if (index == MinusGlyph) return '-';
+        int letter = index - LetterGlyphBase;
+        if (letter >= 0 && letter < 26) return (char)('A' + letter);
+        if (letter == 26) return '+';
+        return '\0';
+    }
+
     private bool TryGetGlyphRect(char c, out GlyphRect rect)
     {
         rect = default;
@@ -187,7 +257,7 @@ public class DamageTextRenderer : MonoBehaviour
             if (!_loggedMissingGlyph)
             {
                 _loggedMissingGlyph = true;
-                Debug.LogWarning($"[DamageText] 字形 '{c}' 没有有效 glyphRect，飘字会缺位");
+                GameLog.Warn($"[DamageText] 字形 '{c}' 没有有效 glyphRect，飘字会缺位");
             }
             return false;
         }

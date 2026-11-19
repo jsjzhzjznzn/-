@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba9d2d2f3c4e21c4892bca04749246bc, type: 3}
+  m_Name: 07_T_IconWup80_Mo_017_UI
+  m_EditorClassIdentifier: 
+  itemId: 07_T_IconWup80_Mo_017_UI
+  displayName: "\u6807\u51C6\u5F39\u5323"
+  iconKey: T_IconWup80_Mo_017_UI
+  weight: 320
+  shapeWidth: 2
+  shapeHeight: 1
+  shape: 0100000001000000

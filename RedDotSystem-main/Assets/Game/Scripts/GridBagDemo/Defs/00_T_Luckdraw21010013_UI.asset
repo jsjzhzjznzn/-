@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:yousandi.cn,2023:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba9d2d2f3c4e21c4892bca04749246bc, type: 3}
+  m_Name: 00_T_Luckdraw21010013_UI
+  m_EditorClassIdentifier: 
+  itemId: 00_T_Luckdraw21010013_UI
+  displayName: "\u7070\u70EC\u6B65\u67AA"
+  iconKey: T_Luckdraw21010013_UI
+  weight: 4500
+  shapeWidth: 1
+  shapeHeight: 4
+  shape: 01000000010000000100000001000000

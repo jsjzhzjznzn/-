@@ -38,7 +38,7 @@ public class PlayerDeadState : PlayerMovementState
         else
         {
             // 没有死亡动画，直接销毁
-            Debug.LogWarning($"[{player.name}] 未配置死亡动画（PlayerSO.movementData.deadData），直接销毁");
+            GameLog.Warn($"[{player.name}] 未配置死亡动画（PlayerSO.movementData.deadData），直接销毁");
             DestroyPlayer();
         }
     }

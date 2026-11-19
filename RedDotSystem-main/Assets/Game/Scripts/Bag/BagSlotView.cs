@@ -10,10 +10,10 @@ using UnityEngine.UI;
 /// 拖拽换位：从有物品的槽位按下 → 控制器生成跟随光标的拖影并把后续拖拽事件接走（pointerDrag 改成控制器物体）、
 ///           松手时按光标射线找落点槽位 → 请求服务端换位；
 ///           空槽不吞拖拽——事件重定向给滚动区，拖空白处也能滚动长列表
-/// 注意：格子随行复用，SlotIndex 会变，所以本组件只在 OnBeginDrag 读一次下标，不实现 OnDrag/OnEndDrag
+/// 注意：格子随行复用，SlotIndex 会变，所以本组件只在 OnBeginDrag 读一次下标，OnDrag/OnEndDrag 都留给控制器
 /// 说明：格子尺寸由 BagView.cellSize 驱动（行模板内摆位与边框贴图同尺寸），本组件不改布局，只改颜色与内容
 /// </summary>
-public class BagSlotView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler
+public class BagSlotView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, IDragHandler
 {
     [Header("子物体引用（模板上注入）")]
     public Image frameImage;
@@ -101,5 +101,14 @@ public class BagSlotView : MonoBehaviour, IPointerClickHandler, IBeginDragHandle
             return;
         }
         owner.OnSlotBeginDrag(this, eventData);
+    }
+
+    /// <summary>
+    /// 拖拽中：本格不做任何事（起手时已把 pointerDrag 改交给控制器物体）。
+    /// 这个空实现是必需的：EventSystem 用 GetEventHandler&lt;IDragHandler&gt; 决定 pointerDrag，
+    /// 本格不实现它时最近的实现者是外层 ScrollRect，槽位永远收不到 BeginDrag（表现为物品拖不动）。
+    /// </summary>
+    public void OnDrag(PointerEventData eventData)
+    {
     }
 }

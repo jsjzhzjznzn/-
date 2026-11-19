@@ -290,18 +290,41 @@ namespace CompeteServer.Database
         /// <summary>
         /// 读取玩家非空槽位快照（按 slot_index 升序）。
         /// 只返回非空槽，空槽由客户端按「武器区 + 道具区」长度补齐占位（道具区容量按最高槽位推导）。
+        /// 读到错位数据（武器区里的非装备、道具区里的装备）时先自动归位并落库：
+        /// 历史数据（分区改造前道具都在武器区）因此不需要玩家手动点「整理」。
         /// </summary>
         /// <param name="playerId">参数名：playerId，类型：int，用途：玩家ID（服务端会话绑定，不可伪造）</param>
         /// <returns>返回值类型：List，用途：(槽位下标, 物品ID, 数量, 装备实例ID)</returns>
         public List<(int SlotIndex, int ItemId, int Count, long InstanceId)> GetSlots(int playerId)
         {
-            var rows = new List<(int SlotIndex, int ItemId, int Count, long InstanceId)>();
             BagSlot[] slots = LoadSlots(playerId);
+            if (HasMisplacedSlots(slots))
+            {
+                Tidy(playerId);              // 复用唯一的分区实现，归位并落库
+                slots = LoadSlots(playerId); // 重新读归位结果后再返回
+            }
+
+            var rows = new List<(int SlotIndex, int ItemId, int Count, long InstanceId)>();
             for (int i = 0; i < slots.Length; i++)
             {
                 if (slots[i].Count > 0) rows.Add((i, slots[i].ItemId, slots[i].Count, slots[i].InstanceId));
             }
             return rows;
+        }
+
+        /// <summary>
+        /// 快照里是否存在错区的物品：装备只允许在武器区 [0, ItemRegionStart)，非装备只允许在道具区。
+        /// </summary>
+        private static bool HasMisplacedSlots(BagSlot[] slots)
+        {
+            for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].Count <= 0) continue;
+                bool equipment = IsEquipmentItem(slots[i].ItemId);
+                bool inWeaponRegion = i < ItemRegionStart;
+                if (equipment != inWeaponRegion) return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -854,8 +877,8 @@ namespace CompeteServer.Database
 
             int remaining = count;
 
-            // 先补同类未满堆叠（全空间，兼容历史数据把道具放在武器区的情况）
-            for (int i = 0; i < slots.Length && remaining > 0; i++)
+            // 先补同类未满堆叠（只在道具区内；道具不落武器区，历史残留在武器区的由读取快照时归位）
+            for (int i = ItemRegionStart; i < slots.Length && remaining > 0; i++)
             {
                 if (slots[i].Count <= 0 || slots[i].ItemId != itemId || slots[i].Count >= maxStack) continue;
                 int put = Math.Min(maxStack - slots[i].Count, remaining);

@@ -27,6 +27,16 @@ public abstract class SceneSaveController : MonoBehaviour
     [Tooltip("恢复时打印详细日志（排障用）")]
     [SerializeField] protected bool verboseLog = true;
 
+    [Header("位置心跳")]
+    [Tooltip("移动中每隔多少秒后台存一次位置（0 = 关闭心跳）")]
+    [SerializeField] protected float heartbeatInterval = 30f;
+
+    [Tooltip("位移超过该距离才视为「走动了」，避免微抖动/物理贴合触发写库")]
+    [SerializeField] protected float heartbeatMoveThreshold = 0.5f;
+
+    [Tooltip("朝向变化超过该角度（度）才视为「转向了」")]
+    [SerializeField] protected float heartbeatTurnThreshold = 15f;
+
     /// <summary>存档是否已应用完成（完成前不允许上报，避免把默认位姿写回服务端）</summary>
     protected bool Restored { get; private set; }
 
@@ -60,6 +70,57 @@ public abstract class SceneSaveController : MonoBehaviour
 
         _ = RestoreAsync();
     }
+
+    /// <summary>
+    /// 位置心跳：移动中定期把位置写回服务端。
+    /// 为什么不只靠退出时保存——OnApplicationQuit 里的上报是异步网络写入，
+    /// 进程退出瞬间大概率来不及完成，玩家直接关窗口就会丢掉整段位移。
+    /// 原神式体验靠的是「一直在存」，而不是「退出那一刻存」：丢掉的最多只有最后一个心跳间隔。
+    /// 静止不写（省库、也省带宽），只有真的走动/转向才累计脏标记。
+    /// </summary>
+    protected virtual void Update()
+    {
+        if (!IsReady) return;
+        if (heartbeatInterval <= 0f) return;
+        if (PauseManager.IsPaused) return;   // 暂停时不累计，避免读档/设置界面里误判走动
+
+        if (playerRoot == null)
+        {
+            playerRoot = ResolvePlayerRoot();
+            if (playerRoot == null) return;
+            lastHeartbeatPosition = playerRoot.position;
+            lastHeartbeatYaw = playerRoot.eulerAngles.y;
+            return;
+        }
+
+        Vector3 position = playerRoot.position;
+        float yaw = playerRoot.eulerAngles.y;
+
+        bool moved = (position - lastHeartbeatPosition).sqrMagnitude
+                     >= heartbeatMoveThreshold * heartbeatMoveThreshold;
+        bool turned = Mathf.Abs(Mathf.DeltaAngle(yaw, lastHeartbeatYaw)) >= heartbeatTurnThreshold;
+
+        if (moved || turned)
+        {
+            heartbeatDirty = true;
+            lastHeartbeatPosition = position;
+            lastHeartbeatYaw = yaw;
+        }
+
+        if (!heartbeatDirty) return;
+        if (Time.unscaledTime - lastHeartbeatAt < heartbeatInterval) return;
+
+        heartbeatDirty = false;
+        lastHeartbeatAt = Time.unscaledTime;
+        if (verboseLog) GameLog.Verbose($"[SceneSave] 位置心跳上报（{heartbeatInterval:0.#}s 节流）");
+        SaveNow();
+    }
+
+    /// <summary>位置心跳的基准状态：上次记录的坐标与朝向、上次上报时刻、是否有未上报的位移</summary>
+    private Vector3 lastHeartbeatPosition;
+    private float lastHeartbeatYaw;
+    private float lastHeartbeatAt;
+    private bool heartbeatDirty;
 
     protected virtual void OnDisable()
     {
@@ -110,17 +171,26 @@ public abstract class SceneSaveController : MonoBehaviour
             AppliedSnapshot = snapshot;
             if (verboseLog)
             {
-                Debug.Log($"[SceneSave] 已恢复场景存档：{sceneName} appliedPos={playerRoot.position} " +
+                GameLog.Info($"[SceneSave] 已恢复场景存档：{sceneName} appliedPos={playerRoot.position} " +
                           $"dialogue={snapshot.DialogueActive}/{snapshot.DialogueGraph}#{snapshot.DialogueNodeId}");
             }
         }
         else if (verboseLog)
         {
-            Debug.Log($"[SceneSave] 无可用存档，按场景默认开局：{sceneName}");
+            GameLog.Info($"[SceneSave] 无可用存档，按场景默认开局：{sceneName}");
         }
 
         Restoring = false;
         Restored = true;
+
+        // 以恢复后的真实位置作为心跳基准：否则第一次 Update 会把"读档落位"误判成走动并立刻上报
+        if (playerRoot != null)
+        {
+            lastHeartbeatPosition = playerRoot.position;
+            lastHeartbeatYaw = playerRoot.eulerAngles.y;
+        }
+        lastHeartbeatAt = Time.unscaledTime;
+        heartbeatDirty = false;
     }
 
     /// <summary>

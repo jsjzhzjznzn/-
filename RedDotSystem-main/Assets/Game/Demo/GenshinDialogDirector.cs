@@ -152,7 +152,7 @@ public class GenshinDialogDirector : MonoBehaviour
     {
         if (UIManager.Instance == null)
         {
-            Debug.LogWarning("[Dialogue] UIManager 不存在，对话面板不会显示");
+            GameLog.Warn("[Dialogue] UIManager 不存在，对话面板不会显示");
             return;
         }
 

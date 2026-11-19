@@ -28,6 +28,12 @@ namespace Miemie.DialogSystem
         /// <summary> 对话结束事件 给 View 收起 UI </summary>
         public event Action DialogEnded;
 
+        /// <summary>
+        /// 出口条件不满足、无法推进的事件（参数=当前节点）
+        /// 用途：让 UI 给玩家一个可感知的反馈，而不是"点了没反应"
+        /// </summary>
+        public event Action<DialogueNodeData> TransitionBlocked;
+
         public DialogueRuntimeModel RuntimeModel => runtimeModel;
         public DialogueGraph Graph => runtimeModel.Graph;
         public DialogueNodeData CurrentNode => runtimeModel.CurrentNode;
@@ -53,6 +59,7 @@ namespace Miemie.DialogSystem
             NodeChanged = null;
             OptionsChanged = null;
             DialogEnded = null;
+            TransitionBlocked = null;
         }
 
         #endregion
@@ -141,7 +148,13 @@ namespace Miemie.DialogSystem
             }
 
             if (!transition.CanPass(runtimeModel.Variables))
+            {
+                // 条件不满足时不能静默返回：玩家会看到"按空格没反应"却得不到任何解释，
+                // 线上也查不到原因。这里留告警日志，交由调用方决定是否提示
+                GameLog.Warn($"[Dialogue] 节点 {currentNode.ConfigId} 的出口条件不满足，无法继续（toNodeId={transition.toNodeId}）");
+                TransitionBlocked?.Invoke(currentNode);
                 return;
+            }
 
             // 真正切换到下一个节点
             GoTo(nextNode);
@@ -160,7 +173,9 @@ namespace Miemie.DialogSystem
 
             // 设置当前节点
             runtimeModel.SetCurrentNode(node);
-            UnityEngine.Debug.Log($"[{node.ConfigId}] {node.SpeakerName}: {node.DialogText}");
+            // 台词全文属于剧情内容，只在明细日志打开时输出，避免正式包把整段剧情写进日志
+            GameLog.Info($"[Dialogue] 进入节点 {node.ConfigId}（{node.SpeakerName}）");
+            if (GameLog.VerboseEnabled) GameLog.Verbose($"[Dialogue] {node.DialogText}");
             // 通知节点变更
             NodeChanged?.Invoke(node);
 

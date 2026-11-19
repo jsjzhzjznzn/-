@@ -18,8 +18,19 @@ public class LuaActivityHost : MonoBehaviour
 {
     public static LuaActivityHost Instance { get; private set; }
 
-    /// <summary>活动包名（与 ActivityPackagePublisher.PackageName 一致）</summary>
-    public const string PackageName = "activity";
+    /// <summary>
+    /// 活动包名：与 ui 包共用同一个 YooAsset 包。
+    /// 两个独立包会各自打一份同名的共享依赖（unityshaders、TMP 字体等），
+    /// Unity 不允许同时加载两个内容不同但内部同名的 AssetBundle，因此活动内容并入 ui 包，
+    /// 再按资源标签分层：登录只下 base，进入活动才下 activity。
+    /// </summary>
+    public const string PackageName = "ui";
+
+    /// <summary>
+    /// 活动内容资源标签：与 ui 同包但不在 base 标签里，
+    /// 登录后的首次下载不包含活动内容，由本宿主在进入活动时按标签补齐。
+    /// </summary>
+    public const string ActivityTag = "activity";
 
     /// <summary>热更层入口模块（Assets/Content/HotContent/lua/activity_main.lua.txt → 地址 activity_main.lua）</summary>
     public const string EntryModule = "activity_main";
@@ -40,6 +51,11 @@ public class LuaActivityHost : MonoBehaviour
     private static string HotContentUrl => string.IsNullOrEmpty(HotContentUrlOverride)
         ? "http://127.0.0.1:8899"
         : HotContentUrlOverride;
+
+    /// <summary>
+    /// 活动包当前下载进度（0~1）；-1 表示没有正在进行的下载。供加载提示显示百分比。
+    /// </summary>
+    public static float DownloadProgress { get; private set; } = -1f;
 
     private ResourcePackage package;
     private readonly HashSet<string> requireMissCache = new HashSet<string>();
@@ -98,41 +114,13 @@ public class LuaActivityHost : MonoBehaviour
     /// </summary>
     private bool packageReady;
 
-    /// <summary>预热协程句柄（重复调用无副作用）</summary>
-    private Coroutine prewarmRoutine;
-
-    /// <summary>
-    /// 登录后后台预热资源包：只做 YooAsset 侧（初始化 → 版本 → manifest → 增量下载），**不建 LuaEnv、不建 UI**。
-    /// 目的：首次点活动入口几乎零等待——此前首次点击要现场跑完整条下载链路，界面上又没反馈，
-    /// 用户会以为按钮失灵而反复点。
-    /// </summary>
-    public void PrewarmPackage()
-    {
-        if (packageReady)
-        {
-            Debug.Log("[活动] 资源包已就绪，无需预热");
-            return;
-        }
-        if (prewarmRoutine != null) return;
-        prewarmRoutine = StartCoroutine(PrewarmRoutine());
-    }
-
-    private IEnumerator PrewarmRoutine()
-    {
-        float started = Time.realtimeSinceStartup;
-        bool ready = false;
-        yield return EnsurePackageReadyRoutine(value => ready = value);
-        Debug.Log($"[活动] 资源包预热{(ready ? "成功" : "失败")}，耗时 {Time.realtimeSinceStartup - started:F2}s");
-        prewarmRoutine = null;
-    }
-
     // ──────────────────────────────
     // 资源包就绪（协程，Shell 的开面板流程里 yield）
     // ──────────────────────────────
 
     /// <summary>
     /// 确保资源包就绪（**可重入安全**）：并发调用时后到者等前一次结束再读状态。
-    /// 为什么必须做：登录会自动预热，用户紧接着点入口就会并发进来，
+    /// 为什么必须做：用户连点入口会让多个面板流程同时进来，
     /// 而 YooAsset 不允许对同一个包并发初始化（会报错/流程半死）。
     /// </summary>
     public IEnumerator EnsurePackageReadyRoutine(Action<bool> onDone)
@@ -176,6 +164,11 @@ public class LuaActivityHost : MonoBehaviour
             yield break;
         }
 
+        // 活动内容与 ui 包同包：初始化已由 YooAssetService 完成时只跳过"初始化"这一步，
+        // 版本→清单→按标签下载仍要走——activity 内容不在 base 标签里，登录时并没有下载
+        if (package.InitializeStatus == EOperationStatus.Succeeded)
+            initDone = true;
+
         InitializePackageOperation initOp = null;
         if (!initDone && UseHostPlayMode)
         {
@@ -209,7 +202,7 @@ public class LuaActivityHost : MonoBehaviour
             yield return initOp;
             if (initOp.Status != EOperationStatus.Succeeded)
             {
-                Debug.LogWarning($"[活动] 资源包初始化失败：{initOp.Error}（YooAsset 的包实例此时已不可用，编辑器里请重启 Play 再试）");
+                GameLog.Warn($"[活动] 资源包初始化失败：{initOp.Error}（YooAsset 的包实例此时已不可用，编辑器里请重启 Play 再试）");
                 onDone?.Invoke(false);
                 yield break;
             }
@@ -221,32 +214,21 @@ public class LuaActivityHost : MonoBehaviour
         yield return verOp;
         if (verOp.Status != EOperationStatus.Succeeded)
         {
-            Debug.LogWarning($"[活动] 版本请求失败：{verOp.Error}");
+            GameLog.Warn($"[活动] 版本请求失败：{verOp.Error}");
             onDone?.Invoke(false);
             yield break;
         }
-        Debug.Log($"[活动] 资源版本 = {verOp.PackageVersion}" + (UseHostPlayMode ? "（远端）" : "（编辑器模拟）"));
+        GameLog.Info($"[活动] 资源版本 = {verOp.PackageVersion}" + (UseHostPlayMode ? "（远端）" : "（编辑器模拟）"));
 
-        // 远端版本变化时清空本地缓存再下载：沙箱缓存的校验逻辑会漏掉同名 bundle 的内容变化，
-        // 不清理会出现「提示资源已是最新，但跑的还是旧内容」。
-        if (UseHostPlayMode)
-        {
-            string lastVersion = PlayerPrefs.GetString(LastContentVersionKey, string.Empty);
-            if (lastVersion != verOp.PackageVersion)
-            {
-                Debug.Log($"[活动热更] 版本变化 {lastVersion} -> {verOp.PackageVersion}，清空本地缓存后重新下载");
-                yield return package.ClearCacheAsync(new ClearCacheOptions(ClearCacheMethods.ClearAllBundleFiles));
-                yield return package.ClearCacheAsync(new ClearCacheOptions(ClearCacheMethods.ClearAllManifestFiles));
-                PlayerPrefs.SetString(LastContentVersionKey, verOp.PackageVersion);
-                PlayerPrefs.Save();
-            }
-        }
+        // bundle 名是内容哈希（FileNameStyle = HashName），内容变化必然换名，旧 bundle 留在沙箱不影响加载。
+        // 不能整包清缓存：ui 包与活动同包，清空会把登录时已下好的 base 内容一并删掉。
+        string contentVersion = UseHostPlayMode ? verOp.PackageVersion : null;
 
         LoadPackageManifestOperation manifestOp = package.LoadPackageManifestAsync(new LoadPackageManifestOptions(verOp.PackageVersion, 60));
         yield return manifestOp;
         if (manifestOp.Status != EOperationStatus.Succeeded)
         {
-            Debug.LogWarning($"[活动] manifest 加载失败：{manifestOp.Error}");
+            GameLog.Warn($"[活动] manifest 加载失败：{manifestOp.Error}");
             onDone?.Invoke(false);
             yield break;
         }
@@ -254,27 +236,38 @@ public class LuaActivityHost : MonoBehaviour
         if (UseHostPlayMode)
         {
             // 增量下载（鸣潮式"发现新版本→下载→生效"的完整闭环）
-            ResourceDownloaderOperation downloader = package.CreateResourceDownloader(new ResourceDownloaderOptions(10, 3));
+            // 只下载活动标签：base 内容已在登录时由 YooAssetService 下完
+            ResourceDownloaderOperation downloader = package.CreateResourceDownloader(new ResourceDownloaderOptions(ActivityTag, 10, 3));
             if (downloader.TotalDownloadCount > 0)
             {
-                Debug.Log($"[活动热更] 发现 {downloader.TotalDownloadCount} 个待更新文件（{downloader.TotalDownloadBytes} 字节），开始增量下载");
+                GameLog.Info($"[活动热更] 发现 {downloader.TotalDownloadCount} 个待更新文件（{downloader.TotalDownloadBytes} 字节），开始增量下载");
                 downloader.StartDownload();
-                yield return downloader;
+                while (downloader.IsDone == false)
+                {
+                    DownloadProgress = downloader.Progress;
+                    yield return null;
+                }
+                DownloadProgress = -1f;
                 if (downloader.Status != EOperationStatus.Succeeded)
                 {
-                    Debug.LogWarning("[活动] 增量下载失败");
+                    GameLog.Warn("[活动] 增量下载失败");
                     onDone?.Invoke(false);
                     yield break;
                 }
-                Debug.Log($"[活动热更] 下载完成 {downloader.CurrentDownloadCount}/{downloader.TotalDownloadCount}");
+                GameLog.Info($"[活动热更] 下载完成 {downloader.CurrentDownloadCount}/{downloader.TotalDownloadCount}");
             }
             else
             {
-                Debug.Log("[活动] 资源已是最新，无需下载");
+                GameLog.Info("[活动] 资源已是最新，无需下载");
             }
         }
 
         // ③ 全部通过才记账"就绪"：失败只算没就绪，下次点击会重跑"版本→manifest→下载"这一段
+        if (contentVersion != null)
+        {
+            PlayerPrefs.SetString(LastContentVersionKey, contentVersion);
+            PlayerPrefs.Save();
+        }
         packageReady = true;
         onDone?.Invoke(true);
     }
@@ -311,7 +304,7 @@ public class LuaActivityHost : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("[活动] 上一台 LuaEnv 释放失败（Lua 侧仍有 C# 回调），复用旧虚拟机——本面板可能运行旧内容");
+            GameLog.Warn("[活动] 上一台 LuaEnv 释放失败（Lua 侧仍有 C# 回调），复用旧虚拟机——本面板可能运行旧内容");
         }
     }
 
@@ -349,7 +342,7 @@ public class LuaActivityHost : MonoBehaviour
             entryUpdate = entry.Get<LuaFunction>("on_update");   // 可选：定义了才每帧泵
             contextTable = BuildContextTable();
             launch.Call(contextTable);
-            Debug.Log($"[活动] 热更层已启动（{EntryModule}，内容版本 {ActivityShell.Instance?.CurrentContentVersion}）");
+            GameLog.Info($"[活动] 热更层已启动（{EntryModule}，内容版本 {ActivityShell.Instance?.CurrentContentVersion}）");
             return true;
         }
         catch (Exception exception)
@@ -436,14 +429,14 @@ public class LuaActivityHost : MonoBehaviour
             {
                 target.Dispose();
                 activityEnv = null;
-                Debug.Log("[活动] 活动 LuaEnv 已释放");
+                GameLog.Info("[活动] 活动 LuaEnv 已释放");
                 return;
             }
             catch (Exception e)
             {
                 if (attempt == 1)
                 {
-                    Debug.LogWarning("[活动] 活动 LuaEnv 释放被拒（" + e.Message + "），补一轮 GC 后重试");
+                    GameLog.Warn("[活动] 活动 LuaEnv 释放被拒（" + e.Message + "），补一轮 GC 后重试");
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
                 }
@@ -533,7 +526,7 @@ public class LuaActivityHost : MonoBehaviour
         AssetHandle handle = package.LoadAssetSync<GameObject>(location);
         if (handle == null || handle.Status != EOperationStatus.Succeeded)
         {
-            Debug.LogWarning($"[活动] 热更资源不存在：{location}");
+            GameLog.Warn($"[活动] 热更资源不存在：{location}");
             handle?.Release();
             return null;
         }
@@ -604,7 +597,7 @@ public class LuaActivityHost : MonoBehaviour
         AssetHandle handle = package.LoadAssetSync<GameObject>(location);
         if (handle == null || handle.Status != EOperationStatus.Succeeded)
         {
-            Debug.LogWarning($"[活动] 热更预制体不存在：{location}");
+            GameLog.Warn($"[活动] 热更预制体不存在：{location}");
             handle?.Release();
             return null;
         }
@@ -630,7 +623,7 @@ public class LuaActivityHost : MonoBehaviour
         AssetHandle handle = package.LoadAssetSync<Sprite>(location);
         if (handle == null || handle.Status != EOperationStatus.Succeeded)
         {
-            Debug.LogWarning($"[活动] 热更图片不存在：{location}");
+            GameLog.Warn($"[活动] 热更图片不存在：{location}");
             handle?.Release();
             return null;
         }
@@ -667,7 +660,7 @@ public class LuaActivityHost : MonoBehaviour
         AssetHandle handle = package.LoadAssetSync<AudioClip>(location);
         if (handle == null || handle.Status != EOperationStatus.Succeeded)
         {
-            Debug.LogWarning($"[活动] 热更音频不存在：{location}");
+            GameLog.Warn($"[活动] 热更音频不存在：{location}");
             handle?.Release();
             return null;
         }

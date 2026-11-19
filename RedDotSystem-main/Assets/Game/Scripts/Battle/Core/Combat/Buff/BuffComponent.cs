@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -167,7 +167,7 @@ public class BuffComponent : NetworkBehaviour
             // 同一 buffId 视为同一 Buff：以【已挂实例的配置】为准（时长/层数上限/效果）。
             // 若换了一份"同 buffId 的不同资产"，提醒配置冲突（否则新配置会被静默忽略）
             if (existing.data != data)
-                Debug.LogWarning($"[Buff] 叠加同 buffId 的 Buff 时传入了不同资产（现有 {existing.data.name} / 传入 {data.name}），将沿用已挂实例的配置", this);
+                GameLog.Warn($"[Buff] 叠加同 buffId 的 Buff 时传入了不同资产（现有 {existing.data.name} / 传入 {data.name}），将沿用已挂实例的配置", this);
 
             switch (existing.data.stackRule)
             {
@@ -352,7 +352,7 @@ public class BuffComponent : NetworkBehaviour
             var data = BuffDatabase.Resolve(state.buffIdHash);
             if (data == null)
             {
-                Debug.LogWarning($"[Buff] 客户端无法解析 buffIdHash={state.buffIdHash}，跳过（BuffDatabase 两端不一致？）", this);
+                GameLog.Warn($"[Buff] 客户端无法解析 buffIdHash={state.buffIdHash}，跳过（BuffDatabase 两端不一致？）", this);
                 continue;
             }
 

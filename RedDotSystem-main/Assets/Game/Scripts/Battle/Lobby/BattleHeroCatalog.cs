@@ -39,6 +39,16 @@ public static class BattleHeroCatalog
         public int ExpMax;
         /// <summary>角色页简介</summary>
         public string Description;
+
+        // ── 角色页展示的基础属性：与 PlayerSO.statsData 保持一致（战斗仍以 PlayerSO 为准）。
+        //    不直接引用 PlayerSO 的原因：该资产连带角色连招与动画 FBX，UI 预制体持有它会把
+        //    整批角色动画一起打进热更包。
+        /// <summary>基础攻击力</summary>
+        public float BaseAttack;
+        /// <summary>基础防御力</summary>
+        public float BaseDefense;
+        /// <summary>基础最大血量</summary>
+        public float BaseMaxHP;
     }
 
     private static readonly HeroInfo[] Heroes =
@@ -58,6 +68,9 @@ public static class BattleHeroCatalog
             Exp = 135219,
             ExpMax = 252950,
             Description = "沉默寡言的少女，握紧手中的剑。\n无论何时，她都会站在你身前。",
+            BaseAttack = 100f,
+            BaseDefense = 0f,
+            BaseMaxHP = 100f,
         },
         new HeroInfo
         {
@@ -74,6 +87,9 @@ public static class BattleHeroCatalog
             Exp = 84210,
             ExpMax = 198500,
             Description = "来自深海的女仆，寡言而克制。\n对每一件小事的认真，都是她的温柔。",
+            BaseAttack = 100f,
+            BaseDefense = 0f,
+            BaseMaxHP = 100f,
         },
     };
 

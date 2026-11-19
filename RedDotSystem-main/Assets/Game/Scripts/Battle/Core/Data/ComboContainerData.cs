@@ -91,7 +91,7 @@ public class ComboContainerData : ScriptableObject
 
         // 空名称弹出警告提示配置缺失
         if (data.comboName == null)
-            Debug.LogWarning($"下标{index}连招未配置连招名称");
+            GameLog.Warn($"下标{index}连招未配置连招名称");
         
         return data.comboName;
     }
@@ -106,7 +106,7 @@ public class ComboContainerData : ScriptableObject
             return 0;
 
         if (data.comboColdTime == 0)
-            Debug.LogWarning($"下标{index}连招未配置冷却时间");
+            GameLog.Warn($"下标{index}连招未配置冷却时间");
         
         return data.comboColdTime;
     }
@@ -123,7 +123,7 @@ public class ComboContainerData : ScriptableObject
             return 0f;
 
         if (data.damageMultiplier == 0)
-            Debug.LogWarning($"下标{index}连招未配置伤害倍率");
+            GameLog.Warn($"下标{index}连招未配置伤害倍率");
 
         return data.damageMultiplier;
     }
@@ -138,7 +138,7 @@ public class ComboContainerData : ScriptableObject
             return 0f;
 
         if (data.attackDistance == 0)
-            Debug.LogWarning($"下标{index}连招未配置攻击判定距离");
+            GameLog.Warn($"下标{index}连招未配置攻击判定距离");
 
         return data.attackDistance;
     }
@@ -286,7 +286,7 @@ public class ComboContainerData : ScriptableObject
     {
         if (comboDates == null || comboDates.Count == 0)
         {
-            Debug.Log("连招列表为空");
+            GameLog.Info("连招列表为空");
             return;
         }
 

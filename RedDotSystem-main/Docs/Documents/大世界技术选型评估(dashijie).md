@@ -175,3 +175,27 @@ URP 14 没有 GPU Resident Drawer（Unity 6 才提供），自建 GPU Driven 管
 | 距离剔除 pop-in | 远带切换依赖远景遮挡与雾，空旷地形上最容易露馅 |
 | 去蒙皮迁移丢碰撞 | 240 个 MeshCollider 是场景实例上的 override，替换 prefab 实例会全部丢失，须脚本重建并逐个校验 |
 | 编辑器数据误读 | 编辑器 Play 的面数含 Scene View 与阴影 pass 重复提交，帧率含 EditorLoop，不能直接当验收依据 |
+
+---
+
+## 8. 实施记录
+
+### P1 远景距离剔除（已完成，客户端 a5e2a419）
+
+- 实现：`Assets/Game/Scripts/World/DashijieFarCull.cs` 用 `CullingGroup` 对城市渲染器分带；`dashijie.scene` 的 `DashijieRoot` 上挂载该组件（cullRoot = 未命名 (1)、参考点 = Camera、远带 350m）
+- 关键取舍：**按包围盒中心距离分带**。城市只有 240 个巨型网格、平均包围半径 113m，而 `CullingGroup` 用的是「参考点到包围球的最近点」——带真实半径时出生点 240 个全部落在 350m 内，一个都剔不掉（实测被剔 0 个），因此把包围球半径置 0（等价中心点距离）
+- 第二个必踩点：`CullingGroup` 必须设置 `targetCamera` 才会进入每帧求值。只喂包围球与参考点不会触发回调，表现为「组件挂上了、跟踪数正确、但永远剔除 0 个」
+- 距离参考点取相机而不是 Player：切换世界角色会销毁重建 Player 实例，参考点指向被销毁的 Transform 后分带会卡死；相机由 Cinemachine 跟随玩家，距离等价
+- 实测（Play 模式）：出生点 6/240 被剔除（即中心距 >350m 的那 6 块）；把参考点移到城外 (600,60,600) 与 (-700,80,-700) 均为 240/240 全剔，分带随参考点正确迁移
+- 收益口径：出生点只有 6/240（2.5%）可剔——城市是 240 个巨型网格，距离剔除粒度粗；上限更高的仍是 P0 遮挡剔除
+
+### P0 烘焙遮挡剔除（工具与静态标记已落地，烘焙进行中）
+
+- 实现：`Assets/Game/Scripts/World/Editor/DashijieOcclusionBaker.cs`，菜单 `Tools/大世界/烘焙遮挡剔除（P0）` 与 `Tools/大世界/检查遮挡剔除产物`
+- 已落地：城市实例 247 个 GameObject 标记 `OccluderStatic | OccludeeStatic | BatchingStatic`（在场景里落在 prefab override 的 `propertyPath: m_StaticEditorFlags`）、主相机 `useOcclusionCulling=true`、按 `SetDefaultOcclusionBakeSettings()` 的参数后台烘焙
+- 为什么做成菜单而不是自动执行：烘焙是分钟级任务，且**切场景、进 Play 都会把烘焙取消**（Unity 会弹「Computing Occlusion / Entering play mode will cancel the computation」），需要一个编辑器空闲的时间窗口
+- 验收口径：烘焙完成后 `StaticOcclusionCulling.umbraDataSize > 0`，再在 Play 里数出生点 `Renderer.isVisible` 数量与烘焙前对比（见 §6 第 2 条）
+
+### P2 静态建筑去蒙皮
+
+未实施，维持 §3 的判定：收益依赖目标平台，迁移成本最高，待 P0/P1 实测后再决定。

@@ -13,6 +13,76 @@ public static class SceneLoader
     /// <summary>是否有一次加载正在进行</summary>
     public static bool IsLoading { get; private set; }
 
+    /// <summary>大世界场景名（入口按钮与加载逻辑共用，避免字符串散落）</summary>
+    public const string WorldSceneName = "dashijie";
+
+    /// <summary>
+    /// 用「已经显示的遮罩」执行加载。
+    /// 适用场景：调用方为了让点击立刻有反馈，已经先 Show 了遮罩并等它绘制了一帧，
+    /// 这里接管进度显示与收尾，避免再建第二个遮罩。
+    /// </summary>
+    /// <param name="sceneName">场景名</param>
+    /// <param name="screen">已经显示的遮罩（为 null 时等同 LoadAsync）</param>
+    /// <param name="mode">加载模式</param>
+    public static async UniTask LoadWithScreenAsync(string sceneName, LoadingScreen screen,
+                                                   LoadSceneMode mode = LoadSceneMode.Single)
+    {
+        if (screen == null)
+        {
+            await LoadAsync(sceneName, null, mode);
+            return;
+        }
+
+        if (IsLoading)
+        {
+            GameLog.Warn("[SceneLoader] 已有加载在进行中，忽略这次请求：" + sceneName);
+            await screen.HideAsync();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sceneName))
+        {
+            Debug.LogError("[SceneLoader] 场景名为空");
+            await screen.HideAsync();
+            return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName, mode);
+            if (operation == null)
+            {
+                Debug.LogError("[SceneLoader] 无法加载场景（不在 Build Settings 里？）：" + sceneName);
+            }
+            else
+            {
+                operation.allowSceneActivation = false;
+
+                // progress 上限是 0.9（激活前），映射成 0~1 才能当进度条用
+                while (operation.progress < 0.9f)
+                {
+                    screen.SetProgress(operation.progress / 0.9f);
+                    await UniTask.Yield();
+                }
+
+                screen.SetProgress(1f);
+                await screen.WaitMinimumStayAsync();
+
+                operation.allowSceneActivation = true;
+                while (!operation.isDone)
+                    await UniTask.Yield();
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("[SceneLoader] 加载异常：" + exception);
+        }
+
+        await screen.HideAsync();
+        IsLoading = false;
+    }
+
     /// <summary>
     /// 异步切换场景。加载中重复调用会被忽略（只打警告），不会叠加两次加载。
     /// </summary>
@@ -24,7 +94,7 @@ public static class SceneLoader
     {
         if (IsLoading)
         {
-            Debug.LogWarning("[SceneLoader] 已有加载在进行中，忽略这次请求：" + sceneName);
+            GameLog.Warn("[SceneLoader] 已有加载在进行中，忽略这次请求：" + sceneName);
             return;
         }
 

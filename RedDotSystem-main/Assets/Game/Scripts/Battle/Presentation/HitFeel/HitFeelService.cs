@@ -88,7 +88,7 @@ public class HitFeelService : MonoBehaviour
         // 自举建出来的对象没有序列化引用，用 Resources 兜底（与 VfxManager 同款做法）
         if (profile == null) profile = Resources.Load<HitFeelProfile>("Battle/HitFeelProfile");
         if (profile == null)
-            Debug.LogWarning("[打击感] 找不到 Assets/Game/Resources/Battle/HitFeelProfile.asset，将使用内置默认值");
+            GameLog.Warn("[打击感] 找不到 Assets/Game/Resources/Battle/HitFeelProfile.asset，将使用内置默认值");
 
         // 极限闪避 / 击杀特写都靠事件驱动（挑战场景里没有别的系统订阅它们）
         EventCenter.MainInstance.AddListener<DamageData>(E_EventType.E_DamageBlocked, this, OnDamageBlocked);

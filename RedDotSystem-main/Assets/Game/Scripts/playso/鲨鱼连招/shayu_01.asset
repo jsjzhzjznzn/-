@@ -1,5 +1,5 @@
 %YAML 1.1
-%TAG !u! tag:unity3d.com,2011:
+%TAG !u! tag:yousandi.cn,2023:
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -34,12 +34,18 @@ MonoBehaviour:
     _Speed: 1
     _NormalizedStartTime: NaN
   _comboColdTime: 0
-  _damageMultiplier: 0
-  _attackDistance: 0
-  _comboOffset: 0
+  _damageMultiplier: 0.09
+  _critRate: 0.2
+  _critMultiplier: 2
+  _hitBuff: {fileID: 0}
+  _attackDistance: 1.6
+  _comboOffset: 0.9
   _enemyLayer:
     serializedVersion: 2
-    m_Bits: 8
+    m_Bits: 0
+  _arc: 200
+  _maxTargets: 0
+  _requireLineOfSight: 0
   _hitFrameTime: 0.35
   _pauseFrameTime: 0
   _shakeForce: 0

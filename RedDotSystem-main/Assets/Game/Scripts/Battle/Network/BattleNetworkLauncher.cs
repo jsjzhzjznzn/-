@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -98,7 +98,7 @@ public static class BattleNetworkLauncher
             return "StartHost 失败：端口可能被占用";
         }
 
-        Debug.Log($"[BattleNetwork] 房间已创建（Host），端口 {DefaultPort}");
+        GameLog.Info($"[BattleNetwork] 房间已创建（Host），端口 {DefaultPort}");
         return null;
     }
 
@@ -132,7 +132,7 @@ public static class BattleNetworkLauncher
             return $"StartClient 失败：{address}:{DefaultPort}";
         }
 
-        Debug.Log($"[BattleNetwork] 正在加入房间 {address}:{DefaultPort}");
+        GameLog.Info($"[BattleNetwork] 正在加入房间 {address}:{DefaultPort}");
         return null;
     }
 
@@ -165,7 +165,7 @@ public static class BattleNetworkLauncher
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[BattleNetwork] 默认路由探测 IP 失败：{e.Message}");
+            GameLog.Warn($"[BattleNetwork] 默认路由探测 IP 失败：{e.Message}");
         }
 
         string fallback = null;
@@ -191,7 +191,7 @@ public static class BattleNetworkLauncher
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[BattleNetwork] 遍历网卡取 IP 失败：{e.Message}");
+            GameLog.Warn($"[BattleNetwork] 遍历网卡取 IP 失败：{e.Message}");
         }
         return fallback ?? DefaultAddress;
     }
@@ -203,7 +203,7 @@ public static class BattleNetworkLauncher
         if (nm != null)
         {
             try { nm.Shutdown(); }
-            catch (System.Exception e) { Debug.LogWarning($"[BattleNetwork] Shutdown 异常：{e.Message}"); }
+            catch (System.Exception e) { GameLog.Warn($"[BattleNetwork] Shutdown 异常：{e.Message}"); }
         }
 
         if (_root != null)

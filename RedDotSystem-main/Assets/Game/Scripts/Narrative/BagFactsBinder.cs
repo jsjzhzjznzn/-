@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+
+using Game.Bag;
 using System.Text;
 using Miemie.DialogSystem;
 using UnityEngine;
@@ -18,10 +20,10 @@ public static class BagFactsBinder
         // BagManager 自举在 BeforeSceneLoad，AfterSceneLoad 时实例必已存在
         if (BagManager.Instance == null)
         {
-            Debug.LogWarning("[BagFactsBinder] BagManager 不存在，跳过绑定");
+            GameLog.Warn("[BagFactsBinder] BagManager 不存在，跳过绑定");
             return;
         }
-        BagManager.Instance.BagUpdated += Recompute;
+        BagManager.Bus.Subscribe(BagEvents.Updated, Recompute);
         Recompute(); // 初始同步：背包未拉取时全 0
     }
 
@@ -33,8 +35,9 @@ public static class BagFactsBinder
         if (bag == null) return;
 
         // 聚合每个 itemId 的持有总量
+        // 必须扫到 SlotCount：Capacity 只是武器区，道具在 [Capacity, SlotCount) 里
         var counts = new Dictionary<int, int>();
-        for (int i = 0; i < bag.Capacity; i++)
+        for (int i = 0; i < bag.SlotCount; i++)
         {
             var slot = bag.GetSlot(i);
             if (slot == null || slot.Count <= 0 || slot.ItemId <= 0) continue;
@@ -62,7 +65,7 @@ public static class BagFactsBinder
         }
 
         if (sb.Length > 0)
-            Debug.Log($"[BagFactsBinder] 事实表变化: {sb} | 当前表: {DialogueFacts.Describe()}");
+            GameLog.Info($"[BagFactsBinder] 事实表变化: {sb} | 当前表: {DialogueFacts.Describe()}");
 
         lastCounts.Clear();
         foreach (var pair in counts) lastCounts[pair.Key] = pair.Value;

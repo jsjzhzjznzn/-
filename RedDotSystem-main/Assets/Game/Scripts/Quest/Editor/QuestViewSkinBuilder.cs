@@ -29,8 +29,8 @@ namespace SkierFrameworkUIMigration
         private const string PrefabPath = "Assets/Game/UI/Quest/QuestView.prefab";
         private const string ArtFolder = "Assets/Game/UI/Quest/Art";
         private const string DashijieIconFolder = "Assets/Game/UI/Dashijie/Icons";
-        private const string CharacterFolder = "Assets/Game/Resources/ui/Character";
-        private const string ThemeFolder = "Assets/Game/Resources/ui/Theme";
+        private const string CharacterFolder = "Assets/Game/Art/UI/Character";
+        private const string ThemeFolder = "Assets/Game/Art/UI/Theme";
         private const string FontPath = "Assets/Codely/Fonts/NotoSansSC-Regular SDF.asset";
 
         private static readonly Color Gold = new(0.851f, 0.737f, 0.486f, 1f);

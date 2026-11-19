@@ -36,6 +36,51 @@ namespace CompeteServer.Database
         /// <remarks>ZSET 的 score 是 double，long 隐式升上去；超过 2^53 会静默丢精度，调高此值前先想清楚。</remarks>
         public const long MaxScore = 1_000_000;
 
+        /// <summary>
+        /// 用时型榜：分数本身就是耗时，服务端可直接用自己测得的耗时作为成绩，不采用客户端数值
+        /// 挑战 2 = 击杀竞速（分数为击杀用时毫秒）
+        /// </summary>
+        private static bool IsDurationBoard(int challengeId) => challengeId == KillRaceChallengeId;
+
+        /// <summary>
+        /// 积分型榜每局的理论分数上限：挑战 1 是历史积分型玩法（客户端当前无入口，仅榜单位与
+        /// Agent 查询沿用），挑战 3 迷雾信标的公式为「评级1000×100 + 剩余回合 + 探索百分比」。
+        /// 各玩法每秒得分差异极大，因此积分型榜只用玩法上限约束，不再叠加按耗时的速率上限
+        /// </summary>
+        private const long MaxPointScore = 1000 * 100 + 45 + 100;
+
+        /// <summary>
+        /// 由服务端耗时推导可信分数的方法
+        /// 用时型榜取服务端耗时毫秒；积分型榜校验分数不超过该玩法的理论上限
+        /// </summary>
+        /// <param name="challengeId">参数名：challengeId，类型：int，用途：挑战ID</param>
+        /// <param name="elapsedMs">参数名：elapsedMs，类型：long，用途：服务端测得的本局耗时（毫秒）</param>
+        /// <param name="clientScore">参数名：clientScore，类型：long，用途：客户端上报的分数</param>
+        /// <param name="trustedScore">参数名：trustedScore，类型：long，用途：最终入账分数</param>
+        /// <param name="message">参数名：message，类型：string，用途：拒绝原因</param>
+        /// <returns>返回值类型：bool，用途：分数可信返回 true</returns>
+        public static bool TryResolveTrustedScore(
+            int challengeId, long elapsedMs, long clientScore, out long trustedScore, out string message)
+        {
+            message = string.Empty;
+
+            if (IsDurationBoard(challengeId))
+            {
+                trustedScore = Math.Min(elapsedMs, MaxScore);
+                return true;
+            }
+
+            if (clientScore > MaxPointScore)
+            {
+                trustedScore = 0;
+                message = "成绩超出玩法上限，不予记录";
+                return false;
+            }
+
+            trustedScore = clientScore;
+            return true;
+        }
+
         /// <summary>ZSET 键名：每个挑战一个有序集合，member=玩家ID，score=最高分。</summary>
         private static string Key(int challengeId) => $"compete:lb:{challengeId}";
 

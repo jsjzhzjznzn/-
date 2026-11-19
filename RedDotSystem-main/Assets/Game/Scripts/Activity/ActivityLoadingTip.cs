@@ -25,6 +25,9 @@ public class ActivityLoadingTip : MonoBehaviour
     private TextMeshProUGUI label;
     private float hideAt = -1f;
 
+    /// <summary>当前显示的整数百分比；-1 表示未显示进度。用于避免每帧重写文本</summary>
+    private int shownPercent = -1;
+
     /// <summary>由 ActivityShell 自举时同挂一个物体（保证与壳同生命周期）</summary>
     public static ActivityLoadingTip Instance => instance;
 
@@ -43,7 +46,7 @@ public class ActivityLoadingTip : MonoBehaviour
     {
         if (instance == null)
         {
-            Debug.LogWarning($"[活动] 加载提示未自举：{message}");
+            GameLog.Warn($"[活动] 加载提示未自举：{message}");
             return;
         }
         instance.ShowInternal(message, autoHideSeconds);
@@ -57,7 +60,8 @@ public class ActivityLoadingTip : MonoBehaviour
 
     /// <summary>当前是否正在显示"加载中"（用于防重复建提示）</summary>
     public static bool IsShowingLoading => instance != null && instance.label != null
-        && instance.label.text == LoadingMessage && instance.group != null && instance.group.alpha > 0f;
+        && instance.label.text.StartsWith(LoadingMessage, System.StringComparison.Ordinal)
+        && instance.group != null && instance.group.alpha > 0f;
 
     // ──────────────────────────────
     // 内部
@@ -67,6 +71,7 @@ public class ActivityLoadingTip : MonoBehaviour
     {
         EnsureBuilt();
         label.text = message;
+        shownPercent = -1;
         group.alpha = 1f;
         gameObject.SetActive(true);
         hideAt = autoHideSeconds > 0f ? Time.unscaledTime + autoHideSeconds : -1f;
@@ -80,9 +85,18 @@ public class ActivityLoadingTip : MonoBehaviour
 
     private void Update()
     {
-        // 淡出（不删物体，复用即可）
         if (group != null && group.alpha > 0f)
         {
+            // 活动包下载中显示百分比；只在整数变化时写文本，避免每帧重建 TMP 网格
+            float progress = LuaActivityHost.DownloadProgress;
+            int percent = progress >= 0f ? Mathf.RoundToInt(progress * 100f) : -1;
+            if (percent != shownPercent)
+            {
+                shownPercent = percent;
+                label.text = percent >= 0 ? LoadingMessage + " " + percent + "%" : LoadingMessage;
+            }
+
+            // 淡出（不删物体，复用即可）
             if (hideAt > 0f && Time.unscaledTime >= hideAt)
             {
                 group.alpha = Mathf.MoveTowards(group.alpha, 0f, Time.unscaledDeltaTime * 3f);

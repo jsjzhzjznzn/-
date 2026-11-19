@@ -33,7 +33,7 @@ public class DialogueCameraZoom : MonoBehaviour
         framing = vcam != null ? vcam.GetCinemachineComponent<CinemachineFramingTransposer>() : null;
         if (framing == null)
         {
-            Debug.LogWarning("[DialogueCameraZoom] 缺少 CinemachineFramingTransposer，滚轮缩放已停用：" + name, this);
+            GameLog.Warn("[DialogueCameraZoom] 缺少 CinemachineFramingTransposer，滚轮缩放已停用：" + name, this);
             enabled = false;
             return;
         }

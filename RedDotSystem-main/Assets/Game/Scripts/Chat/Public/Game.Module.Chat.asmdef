@@ -1,0 +1,19 @@
+{
+    "name": "Game.Module.Chat",
+    "rootNamespace": "Game.Chat",
+    "references": [
+        "Game.Protocol",
+        "Game.Core",
+        "Game.Network",
+        "MiMieEventBus"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

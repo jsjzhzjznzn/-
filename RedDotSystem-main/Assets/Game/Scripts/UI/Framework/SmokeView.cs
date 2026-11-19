@@ -33,7 +33,7 @@ namespace SkierFramework
             base.OnOpen(userData);
             if (label != null)
                 label.text = "SkierFramework 冒烟测试\nUIManager / UIView / UIConfig 正常";
-            Debug.Log("[SmokeView] OnOpen");
+            GameLog.Info("[SmokeView] OnOpen");
         }
 
         private void OnCloseClicked()

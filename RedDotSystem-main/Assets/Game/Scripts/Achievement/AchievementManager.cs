@@ -4,7 +4,13 @@ using System.Threading.Tasks;
 
 using Common.Network;
 
+using Game.Achievement;
+
+using MiMieEventBus;
+
 using MH;
+
+using MieMieFrameWork;
 
 using UnityEngine;
 
@@ -13,34 +19,29 @@ using UnityEngine;
 /// 服务端权威：配置、进度、解锁/领取状态全部来自服务端，客户端只缓存与分发。
 /// 红点：可领取数写入 Key17；登录成功即拉列表，面板未开也亮。
 /// </summary>
-public class AchievementManager : MonoBehaviour
+public class AchievementManager : SingletonBehaviour<AchievementManager>, IAchievementService
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（UI 层访问成就数据的入口）</summary>
-    public static AchievementManager Instance { get; private set; }
 
-    /// <summary>运行时自举：进入 Play 自动创建，无需手动挂载。</summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("AchievementManager");
-        holder.AddComponent<AchievementManager>();
-        DontDestroyOnLoad(holder);
-    }
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+        base.Awake();
     }
 
     // ──────────────────────────────
@@ -48,13 +49,12 @@ public class AchievementManager : MonoBehaviour
     // ──────────────────────────────
 
     /// <summary>成就数据变化（列表到达 / 领取成功 / 服务端推送，UI 重渲染）</summary>
-    public event System.Action AchievementsUpdated;
+    /// <summary>全局业务事件总线（成就对外通知：Updated / Status / Unlocked）</summary>
+    public static readonly EventBusCore Bus = new();
 
     /// <summary>提示文案（领取结果/失败原因，UI 状态栏显示）</summary>
-    public event System.Action<string> StatusChanged;
 
     /// <summary>解锁推送（UI 弹横幅用）</summary>
-    public event System.Action<AchievementUnlockedNotify> Unlocked;
 
     // ──────────────────────────────
     // 缓存
@@ -88,12 +88,12 @@ public class AchievementManager : MonoBehaviour
     private void Start()
     {
         ClientNetworkManager net = ClientNetworkManager.Instance;
-        if (net == null) return;
+        if (net == null || net.Network == null) return;
 
-        net.AchievementListResponseReceived += OnAchievementListResponse;
-        net.AchievementClaimResponseReceived += OnAchievementClaimResponse;
-        net.AchievementUnlockedNotifyReceived += OnAchievementUnlockedNotify;
-        net.AchievementProgressNotifyReceived += OnAchievementProgressNotify;
+        net.Network.Subscribe<AchievementListResponse>(OnAchievementListResponse);
+        net.Network.Subscribe<AchievementClaimResponse>(OnAchievementClaimResponse);
+        net.Network.Subscribe<AchievementUnlockedNotify>(OnAchievementUnlockedNotify);
+        net.Network.Subscribe<AchievementProgressNotify>(OnAchievementProgressNotify);
         net.LoginResponseReceived += OnLoginResponse;
         net.ConnectionBroken += OnConnectionBroken;
 
@@ -101,15 +101,14 @@ public class AchievementManager : MonoBehaviour
         if (net.MyPlayerId > 0) RequestAchievements();
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         ClientNetworkManager net = ClientNetworkManager.Instance;
         if (net == null) return;
 
-        net.AchievementListResponseReceived -= OnAchievementListResponse;
-        net.AchievementClaimResponseReceived -= OnAchievementClaimResponse;
-        net.AchievementUnlockedNotifyReceived -= OnAchievementUnlockedNotify;
-        net.AchievementProgressNotifyReceived -= OnAchievementProgressNotify;
+
+
         net.LoginResponseReceived -= OnLoginResponse;
         net.ConnectionBroken -= OnConnectionBroken;
     }
@@ -126,7 +125,7 @@ public class AchievementManager : MonoBehaviour
         if (IsLoading) return;
 
         IsLoading = true;
-        AchievementsUpdated?.Invoke();
+        Bus.Publish(AchievementEvents.Updated);
         _ = SendListAsync(net);
     }
 
@@ -139,8 +138,8 @@ public class AchievementManager : MonoBehaviour
         catch (System.Exception exception)
         {
             IsLoading = false;
-            StatusChanged?.Invoke($"成就读取失败：{exception.Message}");
-            AchievementsUpdated?.Invoke();
+            Bus.Publish(AchievementEvents.Status, $"成就读取失败：{exception.Message}");
+            Bus.Publish(AchievementEvents.Updated);
         }
     }
 
@@ -183,8 +182,8 @@ public class AchievementManager : MonoBehaviour
         catch (System.Exception exception)
         {
             claiming.Clear();
-            StatusChanged?.Invoke($"领取失败：{exception.Message}");
-            AchievementsUpdated?.Invoke();
+            Bus.Publish(AchievementEvents.Status, $"领取失败：{exception.Message}");
+            Bus.Publish(AchievementEvents.Updated);
         }
     }
 
@@ -203,7 +202,7 @@ public class AchievementManager : MonoBehaviour
     {
         IsLoading = false;
         claiming.Clear();
-        AchievementsUpdated?.Invoke();
+        Bus.Publish(AchievementEvents.Updated);
     }
 
     private void OnAchievementListResponse(AchievementListResponse response)
@@ -211,8 +210,8 @@ public class AchievementManager : MonoBehaviour
         IsLoading = false;
         if (response == null || !response.Success)
         {
-            StatusChanged?.Invoke(response?.Message ?? "成就读取失败");
-            AchievementsUpdated?.Invoke();
+            Bus.Publish(AchievementEvents.Status, response?.Message ?? "成就读取失败");
+            Bus.Publish(AchievementEvents.Updated);
             return;
         }
 
@@ -229,7 +228,7 @@ public class AchievementManager : MonoBehaviour
         claiming.Clear();
         if (response == null)
         {
-            AchievementsUpdated?.Invoke();
+            Bus.Publish(AchievementEvents.Updated);
             return;
         }
 
@@ -242,17 +241,17 @@ public class AchievementManager : MonoBehaviour
             {
                 string rewardText = string.Join("、",
                     response.Granted.Select(item => $"{item.Name} x{item.Count}"));
-                StatusChanged?.Invoke($"{response.Message}　获得：{rewardText}");
+                Bus.Publish(AchievementEvents.Status, $"{response.Message}　获得：{rewardText}");
             }
             else
             {
-                StatusChanged?.Invoke(response.Message);
+                Bus.Publish(AchievementEvents.Status, response.Message);
             }
             BagManager.Instance?.RequestBag();
         }
         else
         {
-            StatusChanged?.Invoke(response.Message);
+            Bus.Publish(AchievementEvents.Status, response.Message);
         }
 
         NotifyChanged();
@@ -285,7 +284,7 @@ public class AchievementManager : MonoBehaviour
         }
 
         if (notify.Summary != null) summary = notify.Summary;
-        Unlocked?.Invoke(notify);
+        Bus.Publish(AchievementEvents.Unlocked, notify);
         NotifyChanged();
     }
 
@@ -379,13 +378,11 @@ public class AchievementManager : MonoBehaviour
     private void NotifyChanged()
     {
         RefreshRedDot();
-        AchievementsUpdated?.Invoke();
+        Bus.Publish(AchievementEvents.Updated);
     }
 
     private void RefreshRedDot()
     {
-        RedDotSingleton redDot = RedDotSingleton.Instance;
-        if (redDot == null) return;
-        redDot.Set(RedDotKeys.AchievementEntry, ClaimableCount, RedDotFlags.Number);
+        RedDotSingleton.TrySet(RedDotKeys.AchievementEntry, ClaimableCount, RedDotFlags.Number);
     }
 }

@@ -3,6 +3,7 @@
 using CompeteServer.Database;
 using CompeteServer.Manager;
 using CompeteServer.Network;
+using CompeteServer.Security;
 
 namespace CompeteServer
 {
@@ -31,6 +32,9 @@ namespace CompeteServer
                 Console.Error.WriteLine("Socket 服务未启动。请先执行 Migrations\\001_InitAccounts.sql 建好 compete 库与 accounts 表，并检查 CS_DB_* 环境变量与 MySQL 状态。");
                 return;
             }
+
+            // 调试能力闸门（背包测试发放等联调入口只对白名单账号开放）
+            DebugAccountGate.EnsureParsed();
 
             // ──────────────────────────────
             // MongoDB 健康检查（聊天记录等文档型数据用）

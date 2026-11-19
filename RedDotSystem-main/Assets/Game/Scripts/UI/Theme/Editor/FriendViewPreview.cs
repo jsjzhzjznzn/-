@@ -56,7 +56,7 @@ public static class FriendViewPreview
         SetLayer(view, 5);
 
         Transform panel = view.transform.Find("FriendPanel");
-        Sprite background = Resources.Load<Sprite>("ui/Theme/bg_friend");
+        Sprite background = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Game/Art/UI/Theme/bg_friend.png");
         if (panel != null && background != null)
         {
             var panelImage = panel.GetComponent<Image>();
@@ -96,8 +96,8 @@ public static class FriendViewPreview
 
         string[] names = { "player8229", "yyy", "y", "ttt", "chate2ea" };
         int[] ids = { 4, 5, 6, 7, 8 };
-        Sprite normal = Resources.Load<Sprite>("ui/Friends/row");
-        Sprite selected = Resources.Load<Sprite>("ui/Friends/row_sel");
+        Sprite normal = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Game/Art/UI/Friends/row.png");
+        Sprite selected = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Game/Art/UI/Friends/row_sel.png");
 
         for (int i = 0; i < names.Length; i++)
         {

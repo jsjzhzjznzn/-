@@ -169,7 +169,7 @@ public static class ActivityUi
         Button button = FindButton(root, path);
         if (button == null)
         {
-            Debug.LogWarning($"[活动] 预制体里找不到按钮：{path}");
+            GameLog.Warn($"[活动] 预制体里找不到按钮：{path}");
             return null;
         }
         return OnClick(button, callback);
@@ -238,7 +238,7 @@ public static class ActivityUi
     {
         if (root == null || string.IsNullOrEmpty(path)) return null;
         Transform found = root.Find(path);
-        if (found == null) Debug.LogWarning($"[活动] 预制体节点不存在：{path}");
+        if (found == null) GameLog.Warn($"[活动] 预制体节点不存在：{path}");
         return found;
     }
 
@@ -434,7 +434,7 @@ public static class ActivityUi
             }
             catch (System.Exception exception)
             {
-                Debug.LogWarning($"[活动] 释放按钮回调异常（已忽略）：{exception.Message}");
+                GameLog.Warn($"[活动] 释放按钮回调异常（已忽略）：{exception.Message}");
             }
         }
         clickCallbacks.Clear();

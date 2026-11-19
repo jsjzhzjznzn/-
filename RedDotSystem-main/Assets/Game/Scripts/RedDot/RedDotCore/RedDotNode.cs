@@ -78,6 +78,21 @@ namespace MH
         /// </summary>
         private void CheckRedDotCount()
         {
+            if (!RecomputeFromChildren()) return;
+
+            // 只有当本节点有变化时才传播给父节点
+            foreach (var parent in parents)
+            {
+                parent.CheckRedDotCount();
+            }
+        }
+
+        /// <summary>
+        /// 按子节点重新汇总自身数据。有变化时写入并通知 UI（不向上传播），返回 true。
+        /// 汇总与剪枝逻辑只此一份，传播策略由调用方决定。
+        /// </summary>
+        private bool RecomputeFromChildren()
+        {
             // 复用临时字典而不是每次创建新的
             _tempCounts.Clear();
             int combinedFlags = 0;  // 使用位运算合并所有标志
@@ -102,23 +117,17 @@ namespace MH
 
             // 变更检测剪枝：新旧数据完全一致（字典内容、总数、优先级都相同）时，不更新、不回调、不传播
             bool needUpdate = !DictionaryEquals(rdCounts, _tempCounts) || rdCount != totalCount || rdPriority != maxPriority;
-            if (needUpdate)
-            {
-                // 交换字典引用，避免重新分配
-                var temp = rdCounts;
-                rdCounts = _tempCounts;
-                _tempCounts = temp;
+            if (!needUpdate) return false;
 
-                rdCount = totalCount;
-                rdPriority = maxPriority;
-                NotifyRedDotCountChange();
+            // 交换字典引用，避免重新分配
+            var temp = rdCounts;
+            rdCounts = _tempCounts;
+            _tempCounts = temp;
 
-                // 只有当本节点有变化时才传播给父节点
-                foreach (var parent in parents)
-                {
-                    parent.CheckRedDotCount();
-                }
-            }
+            rdCount = totalCount;
+            rdPriority = maxPriority;
+            NotifyRedDotCountChange();
+            return true;
         }
 
         /// <summary>广播：把最新数据（本节点自身）通知给所有订阅者（UI 等）</summary>
@@ -148,7 +157,7 @@ namespace MH
             // 有子节点的父节点，数值只能来自子节点汇总，禁止业务直接写入
             if (rdChildrenDic.Count > 0)
             {
-                Debug.LogWarning("不可直接设定根节点的红点数");
+                GameLog.Warn("不可直接设定根节点的红点数");
                 return;
             }
 
@@ -211,40 +220,7 @@ namespace MH
         /// </summary>
         public void CheckRedDotCountNoPropagation()
         {
-            // 复用临时字典
-            _tempCounts.Clear();
-            int combinedFlags = 0;
-            int totalCount = 0;
-
-            // 汇总逻辑与 CheckRedDotCount 相同
-            foreach (RedDotNode node in rdChildrenDic.Values)
-            {
-                foreach (var pair in node.rdCounts)
-                {
-                    if (pair.Value > 0)
-                    {
-                        _tempCounts.TryGetValue(pair.Key, out int existing);
-                        _tempCounts[pair.Key] = existing + pair.Value;
-                        totalCount += pair.Value;
-                        combinedFlags |= (int)pair.Key;
-                    }
-                }
-            }
-
-            int maxPriority = GetHighestBit(combinedFlags);
-
-            bool needUpdate = !DictionaryEquals(rdCounts, _tempCounts) || rdCount != totalCount || rdPriority != maxPriority;
-            if (needUpdate)
-            {
-                var temp = rdCounts;
-                rdCounts = _tempCounts;
-                _tempCounts = temp;
-
-                rdCount = totalCount;
-                rdPriority = maxPriority;
-                NotifyRedDotCountChange();
-                // 不向上传播
-            }
+            RecomputeFromChildren();   // 只重算自己，不向上传播
         }
     }
 }

@@ -64,7 +64,7 @@ public static class PanelSkinInstaller
     /// <summary>关闭键统一成"浅米圆形 + 深褐 ×"（原来各面板是红方/灰圆混用）</summary>
     private static void RestyleCloseButtons(GameObject root)
     {
-        Sprite circle = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Game/Resources/ui/Theme/circle.png");
+        Sprite circle = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Game/Art/UI/Theme/circle.png");
         int styled = 0;
 
         foreach (var t in root.GetComponentsInChildren<Transform>(true))

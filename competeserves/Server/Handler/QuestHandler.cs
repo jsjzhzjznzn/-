@@ -285,8 +285,8 @@ namespace CompeteServer.Handler
         public static void RaiseCareerDelta(int playerId, int scoreId, int delta)
         {
             if (playerId <= 0 || delta == 0) return;
-            new CareerRepository().Add(playerId, scoreId, delta);
-            PushQuestNotify(playerId, new QuestRepository().OnCareerChanged(playerId, scoreId));
+            int liveValue = new CareerRepository().Add(playerId, scoreId, delta);
+            PushQuestNotify(playerId, new QuestRepository().OnCareerChanged(playerId, scoreId, liveValue));
             AchievementService.OnCareerStatChanged(playerId, scoreId);
         }
 
@@ -297,8 +297,8 @@ namespace CompeteServer.Handler
         public static void RaiseCareerMax(int playerId, int scoreId, int value)
         {
             if (playerId <= 0) return;
-            new CareerRepository().SetMax(playerId, scoreId, value);
-            PushQuestNotify(playerId, new QuestRepository().OnCareerChanged(playerId, scoreId));
+            int liveValue = new CareerRepository().SetMax(playerId, scoreId, value);
+            PushQuestNotify(playerId, new QuestRepository().OnCareerChanged(playerId, scoreId, liveValue));
             AchievementService.OnCareerStatChanged(playerId, scoreId);
         }
 

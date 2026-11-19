@@ -1,5 +1,7 @@
 using MySqlConnector;
 
+using CompeteServer.Security;
+
 namespace CompeteServer.Database
 {
     /// <summary>
@@ -14,30 +16,83 @@ namespace CompeteServer.Database
 
         /// <summary>
         /// 登录验证方法
-        /// 按账号密码精确匹配查询账号ID
-        /// 注意：学习项目采用明文对比，生产环境应改为加盐哈希后再比对
+        /// 先按账号取行（不把密码比较下推给数据库），再在内存中校验：
+        /// 行上有哈希则走 PBKDF2 定长校验，否则退化为与历史明文列做定长比较并当场回填哈希。
+        /// 账号不存在与密码错误走同一失败路径，避免通过响应探测账号是否存在
         /// </summary>
         /// <param name="account">参数名：account，类型：string，用途：玩家输入的账号</param>
         /// <param name="password">参数名：password，类型：string，用途：玩家输入的密码</param>
         /// <returns>返回值类型：int?，用途：验证通过返回账号ID，失败返回null</returns>
         public int? Login(string account, string password)
         {
+            if (string.IsNullOrEmpty(account) || string.IsNullOrEmpty(password)) return null;
+
             try
             {
                 using MySqlConnection connection = MySqlManager.Instance.CreateOpenConnection();
-                using MySqlCommand command = new(
-                    "SELECT Id FROM accounts WHERE Account = @Account AND Password = @Password",
-                    connection);
-                command.Parameters.AddWithValue("@Account", account);
-                command.Parameters.AddWithValue("@Password", password);
 
-                object? result = command.ExecuteScalar();
-                return result == null ? null : Convert.ToInt32(result);
+                int playerId;
+                string? salt;
+                string? hash;
+                string? legacyPlain;
+
+                using (MySqlCommand selectCommand = new(
+                    "SELECT Id, Salt, PasswordHash, Password FROM accounts WHERE Account = @Account",
+                    connection))
+                {
+                    selectCommand.Parameters.AddWithValue("@Account", account);
+                    using MySqlDataReader reader = selectCommand.ExecuteReader();
+                    if (!reader.Read()) return null;
+
+                    playerId = reader.GetInt32(0);
+                    salt = reader.IsDBNull(1) ? null : reader.GetString(1);
+                    hash = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    legacyPlain = reader.IsDBNull(3) ? null : reader.GetString(3);
+                }
+
+                // 已回填的账号：一律走哈希路径，库里的明文列不再参与校验
+                if (!string.IsNullOrEmpty(salt) && !string.IsNullOrEmpty(hash))
+                {
+                    return PasswordHasher.Verify(password, salt, hash) ? playerId : null;
+                }
+
+                // 老账号：明文比较（定长），成功后立即回填哈希，之后不再使用明文列
+                if (legacyPlain == null || !PasswordHasher.VerifyPlain(password, legacyPlain)) return null;
+
+                BackfillPasswordHash(connection, playerId, password);
+                return playerId;
             }
             catch (Exception exception)
             {
                 Console.WriteLine($"登录查询失败 [{exception.GetType().Name}]: {exception.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// 老账号回填哈希的方法
+        /// 复用登录已打开的连接与事务上下文；回填失败不影响本次登录结果，下次登录会再次尝试
+        /// </summary>
+        /// <param name="connection">参数名：connection，类型：MySqlConnection，用途：已打开的连接</param>
+        /// <param name="playerId">参数名：playerId，类型：int，用途：账号ID</param>
+        /// <param name="password">参数名：password，类型：string，用途：已验证通过的明文密码</param>
+        private static void BackfillPasswordHash(MySqlConnection connection, int playerId, string password)
+        {
+            try
+            {
+                (string salt, string hash) = PasswordHasher.Create(password);
+                using MySqlCommand updateCommand = new(
+                    "UPDATE accounts SET Salt = @Salt, PasswordHash = @PasswordHash, Password = '' WHERE Id = @Id",
+                    connection);
+                updateCommand.Parameters.AddWithValue("@Salt", salt);
+                updateCommand.Parameters.AddWithValue("@PasswordHash", hash);
+                updateCommand.Parameters.AddWithValue("@Id", playerId);
+                updateCommand.ExecuteNonQuery();
+                Console.WriteLine($"账号密码已升级为哈希存储:玩家{playerId}");
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine($"密码哈希回填失败(下次登录重试) [{exception.GetType().Name}]: {exception.Message}");
             }
         }
 
@@ -48,13 +103,16 @@ namespace CompeteServer.Database
         /// <summary>
         /// 注册账号方法
         /// 先查重再插入：账号已存在则失败，成功后新账号即可用于登录
-        /// 注意：学习项目采用明文存储，生产环境应改为加盐哈希后再入库
+        /// 密码只存盐与 PBKDF2 哈希，历史明文列 Password 写空串占位（列定义保持不变）
         /// </summary>
         /// <param name="account">参数名：account，类型：string，用途：玩家输入的账号</param>
         /// <param name="password">参数名：password，类型：string，用途：玩家输入的密码</param>
         /// <returns>返回值类型：(bool Success, string Message)，用途：成功返回true与提示信息，失败返回false与原因</returns>
         public (bool Success, string Message) Register(string account, string password)
         {
+            if (string.IsNullOrEmpty(account) || string.IsNullOrEmpty(password))
+                return (false, "账号或密码不能为空");
+
             try
             {
                 using MySqlConnection connection = MySqlManager.Instance.CreateOpenConnection();
@@ -70,12 +128,14 @@ namespace CompeteServer.Database
                 }
 
                 // 第二步：插入新账号（UNIQUE KEY UQ_Account 也会兜底并发重名）
+                (string salt, string hash) = PasswordHasher.Create(password);
                 using (MySqlCommand insertCommand = new(
-                    "INSERT INTO accounts (Account, Password) VALUES (@Account, @Password)",
+                    "INSERT INTO accounts (Account, Password, Salt, PasswordHash) VALUES (@Account, '', @Salt, @PasswordHash)",
                     connection))
                 {
                     insertCommand.Parameters.AddWithValue("@Account", account);
-                    insertCommand.Parameters.AddWithValue("@Password", password);
+                    insertCommand.Parameters.AddWithValue("@Salt", salt);
+                    insertCommand.Parameters.AddWithValue("@PasswordHash", hash);
                     insertCommand.ExecuteNonQuery();
                 }
 

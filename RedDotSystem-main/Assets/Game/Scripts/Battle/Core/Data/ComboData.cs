@@ -64,6 +64,15 @@ public class ComboData : ScriptableObject
     [SerializeField, Header("本段攻击敌人层（OverlapSphere 过滤用；不配=全层，仍排除玩家自身）")]
     private LayerMask _enemyLayer;
 
+    [SerializeField, Range(20f, 360f), Header("本段命中扇形角（度，360=整球不做角度筛选；100=左右各 50°）\n保持 360 即改造前手感")]
+    private float _arc = 360f;
+
+    [SerializeField, Header("本段最多命中目标数（0=不限）")]
+    private int _maxTargets;
+
+    [SerializeField, Header("本段是否做遮挡判定（墙体挡住时打不中）")]
+    private bool _requireLineOfSight;
+
     [SerializeField, Header("本段打击帧时间（0~1 动画归一化时间，到点触发伤害判定）\n建议早于接段窗口 linkCancelTime，否则窗口内提前接段会跳过本段打击帧")]
     private float _hitFrameTime = 0.35f;
 
@@ -135,6 +144,15 @@ public class ComboData : ScriptableObject
 
     /// <summary>本段攻击敌人层掩码（未配置=全层，靠 IsChildOf 排除玩家自身）</summary>
     public LayerMask enemyLayer => _enemyLayer;
+
+    /// <summary>本段命中扇形角（度，360=整球不做角度筛选）</summary>
+    public float arc => _arc;
+
+    /// <summary>本段最多命中目标数（0=不限）</summary>
+    public int maxTargets => _maxTargets;
+
+    /// <summary>本段是否做遮挡判定</summary>
+    public bool requireLineOfSight => _requireLineOfSight;
 
     /// <summary>本段打击帧时间（动画归一化时间，0=本段无伤害判定）</summary>
     public float hitFrameTime => _hitFrameTime;

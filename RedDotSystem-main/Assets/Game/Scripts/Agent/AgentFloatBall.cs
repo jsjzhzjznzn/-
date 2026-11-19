@@ -867,7 +867,8 @@ public class AgentFloatBall : MonoBehaviour, IPointerDownHandler, IDragHandler, 
 
     private static Sprite SpriteOrNull(string resourcesPath)
     {
-        return Resources.Load<Sprite>(resourcesPath);
+        // 悬浮球美术已迁到 Assets/Game/Art/UI（YooAsset ui 包，可热更）
+        return GameAssets.GetSprite("Assets/Game/Art/UI/" + resourcesPath + ".png");
     }
 
     /// <summary>尖括号转全角：防内容里的标签被 TMP 富文本执行（与 AgentView 同款）。</summary>

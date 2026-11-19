@@ -54,7 +54,7 @@ namespace Miemie.DialogSystem.Quest
             var net = ClientNetworkManager.Instance;
             if (net == null)
             {
-                Debug.LogWarning("[MmQuestServerSync] ClientNetworkManager 未就绪, 叙事任务服务器同步本次不生效");
+                GameLog.Warn("[MmQuestServerSync] ClientNetworkManager 未就绪, 叙事任务服务器同步本次不生效");
                 yield break;
             }
 
@@ -164,7 +164,7 @@ namespace Miemie.DialogSystem.Quest
         {
             if (response == null || !response.Success)
             {
-                Debug.LogWarning($"[MmQuestSync] 拉取失败: {response?.Message ?? "空响应"}");
+                GameLog.Warn($"[MmQuestSync] 拉取失败: {response?.Message ?? "空响应"}");
                 return;
             }
 
@@ -188,7 +188,7 @@ namespace Miemie.DialogSystem.Quest
         private void OnAcceptResponse(NarrativeQuestAcceptResponse response)
         {
             if (response != null && !response.Success)
-                Debug.LogWarning($"[MmQuestSync] 接取被服务端拒绝: {response.Message}");
+                GameLog.Warn($"[MmQuestSync] 接取被服务端拒绝: {response.Message}");
             ApplySnapshot(response?.Quests, "接取回执");
         }
 
@@ -196,7 +196,7 @@ namespace Miemie.DialogSystem.Quest
         private void OnSubmitResponse(NarrativeQuestSubmitResponse response)
         {
             if (response != null && !response.Success)
-                Debug.LogWarning($"[MmQuestSync] 提交被服务端拒绝: {response.Message}");
+                GameLog.Warn($"[MmQuestSync] 提交被服务端拒绝: {response.Message}");
             ApplySnapshot(response?.Quests, "提交回执");
         }
 
@@ -210,7 +210,7 @@ namespace Miemie.DialogSystem.Quest
         private void OnAbandonResponse(NarrativeQuestAbandonResponse response)
         {
             if (response != null && !response.Success)
-                Debug.LogWarning($"[MmQuestSync] 放弃被服务端拒绝: {response.Message}");
+                GameLog.Warn($"[MmQuestSync] 放弃被服务端拒绝: {response.Message}");
             ApplySnapshot(response?.Quests, "放弃回执");
         }
 
@@ -272,7 +272,7 @@ namespace Miemie.DialogSystem.Quest
             }
 
             QuestManager.Instance.ApplyServerSave(saveFile);
-            Debug.Log($"[MmQuestSync] 已镜像服务端任务快照({source}): {saveFile.questDataList.Count} 条");
+            GameLog.Info($"[MmQuestSync] 已镜像服务端任务快照({source}): {saveFile.questDataList.Count} 条");
 
             SnapshotApplied?.Invoke();
         }

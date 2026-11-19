@@ -216,6 +216,80 @@ namespace CompeteServer.Database
         }
 
         /// <summary>
+        /// 批量读取多个玩家的邮件角标（未读封数 / 待领附件封数）
+        /// 用途：后台巡检一次拿齐全部候选玩家的计数，替代「每个玩家各查一次邮件列表」——
+        /// 后者要为两个整数开一条连接、跑一次撤回清理、并把该玩家全部邮件正文读回来反序列化。
+        /// 口径与 GetMails 逐条一致（同一份撤回清理 + 同一套过滤与计数规则），所以两者结果永远对得上。
+        /// </summary>
+        /// <param name="playerIds">参数名：playerIds，类型：IReadOnlyList&lt;int&gt;，用途：要统计的玩家ID</param>
+        /// <returns>返回值类型：Dictionary，用途：玩家ID → (未读封数, 待领附件封数)；没有有效邮件的玩家不出现</returns>
+        public Dictionary<int, (int Unread, int Claimable)> GetMailBadgeCounts(IReadOnlyList<int> playerIds)
+        {
+            var counts = new Dictionary<int, (int Unread, int Claimable)>();
+            if (playerIds == null || playerIds.Count == 0) return counts;
+
+            // IN 列表分段上限：避免单条语句参数过多
+            const int BatchSize = 500;
+
+            try
+            {
+                using MySqlConnection connection = MySqlManager.Instance.CreateOpenConnection();
+                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+                for (int offset = 0; offset < playerIds.Count; offset += BatchSize)
+                {
+                    int take = Math.Min(BatchSize, playerIds.Count - offset);
+                    string[] names = new string[take];
+                    for (int i = 0; i < take; i++) names[i] = "@Player" + i;
+                    string idList = string.Join(", ", names);
+
+                    // 撤回清理：与 GetMails 同一条规则，只是把「一个玩家」放大成「这一批玩家」。
+                    // 少这一步，本方法的待领计数会比玩家真正看到的列表多出「公共邮件已撤回但附件未领」的邮件
+                    using (MySqlCommand cleanup = new(
+                        $"""
+                        UPDATE `mails` m
+                        JOIN `public_mails` p ON p.`id` = m.`public_id`
+                        SET m.`state` = m.`state` | 2
+                        WHERE m.`player_id` IN ({idList}) AND (m.`state` & 2) = 0 AND m.`item_mask` = 0
+                          AND p.`state` = 2
+                        """,
+                        connection))
+                    {
+                        for (int i = 0; i < take; i++) cleanup.Parameters.AddWithValue(names[i], playerIds[offset + i]);
+                        cleanup.ExecuteNonQuery();
+                    }
+
+                    // 计数口径：未读 = (state&1)=0；待领 = 附件未领（item_mask=0）且确实带附件（items 非空数组）
+                    using (MySqlCommand command = new(
+                        $"""
+                        SELECT `player_id`,
+                               CAST(SUM(CASE WHEN (`state` & 1) = 0 THEN 1 ELSE 0 END) AS SIGNED) AS unread,
+                               CAST(SUM(CASE WHEN `item_mask` = 0 AND `items` <> '[]' THEN 1 ELSE 0 END) AS SIGNED) AS claimable
+                        FROM `mails`
+                        WHERE `player_id` IN ({idList}) AND (`state` & 2) = 0
+                          AND (`expire_time_ms` = 0 OR `expire_time_ms` > @NowMs)
+                        GROUP BY `player_id`
+                        """,
+                        connection))
+                    {
+                        for (int i = 0; i < take; i++) command.Parameters.AddWithValue(names[i], playerIds[offset + i]);
+                        command.Parameters.AddWithValue("@NowMs", nowMs);
+                        using MySqlDataReader reader = command.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            counts[reader.GetInt32(0)] = (reader.GetInt32(1), reader.GetInt32(2));
+                        }
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine($"邮件角标批量读取失败 [{exception.GetType().Name}]: {exception.Message}");
+            }
+            return counts;
+        }
+
+        /// <summary>
         /// 按邮件ID读取单封（不过滤删除/过期——推送刚插入的邮件时用，调用方保证场景）
         /// </summary>
         /// <param name="mailId">参数名：mailId，类型：int，用途：邮件ID</param>

@@ -36,18 +36,22 @@ namespace Common.Network {
             "ZXN0EhEKCXRhcmdldF9pZBgBIAEoBRIRCgliZWZvcmVfbXMYAiABKAMSDQoF",
             "bGltaXQYAyABKAUSDAoEcGVlaxgEIAEoCCJqChNDaGF0SGlzdG9yeVJlc3Bv",
             "bnNlEg0KBWNvdW50GAEgASgFEjEKCG1lc3NhZ2VzGAIgAygLMh8uY29tbW9u",
-            "Lm5ldHdvcmsuQ2hhdE1lc3NhZ2VJdGVtEhEKCXRhcmdldF9pZBgDIAEoBSJF",
+            "Lm5ldHdvcmsuQ2hhdE1lc3NhZ2VJdGVtEhEKCXRhcmdldF9pZBgDIAEoBSJb",
             "ChFDaGF0UmVjZWl2ZU5vdGlmeRIwCgdtZXNzYWdlGAEgASgLMh8uY29tbW9u",
-            "Lm5ldHdvcmsuQ2hhdE1lc3NhZ2VJdGVtIj0KFFdvcmxkQ2hhdFNlbmRSZXF1",
-            "ZXN0Eg8KB2NvbnRlbnQYASABKAkSFAoMY29udGVudF90eXBlGAIgASgFImgK",
-            "FVdvcmxkQ2hhdFNlbmRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEg8KB21l",
-            "c3NhZ2UYAiABKAkSLQoEZWNobxgDIAEoCzIfLmNvbW1vbi5uZXR3b3JrLkNo",
-            "YXRNZXNzYWdlSXRlbSI7ChdXb3JsZENoYXRIaXN0b3J5UmVxdWVzdBIRCgli",
-            "ZWZvcmVfbXMYASABKAMSDQoFbGltaXQYAiABKAUiXAoYV29ybGRDaGF0SGlz",
-            "dG9yeVJlc3BvbnNlEg0KBWNvdW50GAEgASgFEjEKCG1lc3NhZ2VzGAIgAygL",
-            "Mh8uY29tbW9uLm5ldHdvcmsuQ2hhdE1lc3NhZ2VJdGVtIkMKD1dvcmxkQ2hh",
-            "dE5vdGlmeRIwCgdtZXNzYWdlGAEgASgLMh8uY29tbW9uLm5ldHdvcmsuQ2hh",
-            "dE1lc3NhZ2VJdGVtQhGqAg5Db21tb24uTmV0d29ya2IGcHJvdG8z"));
+            "Lm5ldHdvcmsuQ2hhdE1lc3NhZ2VJdGVtEhQKDHVucmVhZF9jb3VudBgCIAEo",
+            "BSI9ChRXb3JsZENoYXRTZW5kUmVxdWVzdBIPCgdjb250ZW50GAEgASgJEhQK",
+            "DGNvbnRlbnRfdHlwZRgCIAEoBSJoChVXb3JsZENoYXRTZW5kUmVzcG9uc2US",
+            "DwoHc3VjY2VzcxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJEi0KBGVjaG8YAyAB",
+            "KAsyHy5jb21tb24ubmV0d29yay5DaGF0TWVzc2FnZUl0ZW0iOwoXV29ybGRD",
+            "aGF0SGlzdG9yeVJlcXVlc3QSEQoJYmVmb3JlX21zGAEgASgDEg0KBWxpbWl0",
+            "GAIgASgFIlwKGFdvcmxkQ2hhdEhpc3RvcnlSZXNwb25zZRINCgVjb3VudBgB",
+            "IAEoBRIxCghtZXNzYWdlcxgCIAMoCzIfLmNvbW1vbi5uZXR3b3JrLkNoYXRN",
+            "ZXNzYWdlSXRlbSJDCg9Xb3JsZENoYXROb3RpZnkSMAoHbWVzc2FnZRgBIAEo",
+            "CzIfLmNvbW1vbi5uZXR3b3JrLkNoYXRNZXNzYWdlSXRlbSI6Cg9DaGF0VW5y",
+            "ZWFkRW50cnkSEQoJZnJpZW5kX2lkGAEgASgFEhQKDHVucmVhZF9jb3VudBgC",
+            "IAEoBSJMChhDaGF0VW5yZWFkU25hcHNob3ROb3RpZnkSMAoHZW50cmllcxgB",
+            "IAMoCzIfLmNvbW1vbi5uZXR3b3JrLkNoYXRVbnJlYWRFbnRyeUIRqgIOQ29t",
+            "bW9uLk5ldHdvcmtiBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
@@ -56,12 +60,14 @@ namespace Common.Network {
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatSendResponse), global::Common.Network.ChatSendResponse.Parser, new[]{ "Success", "Message", "Echo" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatHistoryRequest), global::Common.Network.ChatHistoryRequest.Parser, new[]{ "TargetId", "BeforeMs", "Limit", "Peek" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatHistoryResponse), global::Common.Network.ChatHistoryResponse.Parser, new[]{ "Count", "Messages", "TargetId" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatReceiveNotify), global::Common.Network.ChatReceiveNotify.Parser, new[]{ "Message" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatReceiveNotify), global::Common.Network.ChatReceiveNotify.Parser, new[]{ "Message", "UnreadCount" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.WorldChatSendRequest), global::Common.Network.WorldChatSendRequest.Parser, new[]{ "Content", "ContentType" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.WorldChatSendResponse), global::Common.Network.WorldChatSendResponse.Parser, new[]{ "Success", "Message", "Echo" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.WorldChatHistoryRequest), global::Common.Network.WorldChatHistoryRequest.Parser, new[]{ "BeforeMs", "Limit" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.WorldChatHistoryResponse), global::Common.Network.WorldChatHistoryResponse.Parser, new[]{ "Count", "Messages" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.WorldChatNotify), global::Common.Network.WorldChatNotify.Parser, new[]{ "Message" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.WorldChatNotify), global::Common.Network.WorldChatNotify.Parser, new[]{ "Message" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatUnreadEntry), global::Common.Network.ChatUnreadEntry.Parser, new[]{ "FriendId", "UnreadCount" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Common.Network.ChatUnreadSnapshotNotify), global::Common.Network.ChatUnreadSnapshotNotify.Parser, new[]{ "Entries" }, null, null, null, null)
           }));
     }
     #endregion
@@ -1871,6 +1877,7 @@ namespace Common.Network {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public ChatReceiveNotify(ChatReceiveNotify other) : this() {
       message_ = other.message_ != null ? other.message_.Clone() : null;
+      unreadCount_ = other.unreadCount_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1899,6 +1906,27 @@ namespace Common.Network {
       }
     }
 
+    /// <summary>Field number for the "unread_count" field.</summary>
+    public const int UnreadCountFieldNumber = 2;
+    private int unreadCount_;
+    /// <summary>
+    ///&#x2F; &lt;summary>
+    ///&#x2F; 推送后该好友的权威未读数
+    ///&#x2F; 类型：int32
+    ///&#x2F; 用途：客户端用自己的 +1 累加容易与真相漂移，这里下发服务端算出的绝对数，
+    ///&#x2F;       客户端直接覆盖写入红点叶子，保证角标与服务端一致
+    ///&#x2F; 说明：服务端计数失败（Mongo 不可用）时为 -1，表示"本次没有权威值"，客户端回退为 +1
+    ///&#x2F; &lt;/summary>
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int UnreadCount {
+      get { return unreadCount_; }
+      set {
+        unreadCount_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1915,6 +1943,7 @@ namespace Common.Network {
         return true;
       }
       if (!object.Equals(Message, other.Message)) return false;
+      if (UnreadCount != other.UnreadCount) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1923,6 +1952,7 @@ namespace Common.Network {
     public override int GetHashCode() {
       int hash = 1;
       if (message_ != null) hash ^= Message.GetHashCode();
+      if (UnreadCount != 0) hash ^= UnreadCount.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1945,6 +1975,10 @@ namespace Common.Network {
         output.WriteRawTag(10);
         output.WriteMessage(Message);
       }
+      if (UnreadCount != 0) {
+        output.WriteRawTag(16);
+        output.WriteInt32(UnreadCount);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1959,6 +1993,10 @@ namespace Common.Network {
         output.WriteRawTag(10);
         output.WriteMessage(Message);
       }
+      if (UnreadCount != 0) {
+        output.WriteRawTag(16);
+        output.WriteInt32(UnreadCount);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1971,6 +2009,9 @@ namespace Common.Network {
       int size = 0;
       if (message_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(Message);
+      }
+      if (UnreadCount != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeInt32Size(UnreadCount);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -1989,6 +2030,9 @@ namespace Common.Network {
           Message = new global::Common.Network.ChatMessageItem();
         }
         Message.MergeFrom(other.Message);
+      }
+      if (other.UnreadCount != 0) {
+        UnreadCount = other.UnreadCount;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -2016,6 +2060,10 @@ namespace Common.Network {
             input.ReadMessage(Message);
             break;
           }
+          case 16: {
+            UnreadCount = input.ReadInt32();
+            break;
+          }
         }
       }
     #endif
@@ -2040,6 +2088,10 @@ namespace Common.Network {
               Message = new global::Common.Network.ChatMessageItem();
             }
             input.ReadMessage(Message);
+            break;
+          }
+          case 16: {
+            UnreadCount = input.ReadInt32();
             break;
           }
         }
@@ -3321,6 +3373,462 @@ namespace Common.Network {
               Message = new global::Common.Network.ChatMessageItem();
             }
             input.ReadMessage(Message);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  /// <summary>
+  ///&#x2F; &lt;summary>
+  ///&#x2F; 单个好友的未读条目
+  ///&#x2F; &lt;/summary>
+  /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class ChatUnreadEntry : pb::IMessage<ChatUnreadEntry>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<ChatUnreadEntry> _parser = new pb::MessageParser<ChatUnreadEntry>(() => new ChatUnreadEntry());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<ChatUnreadEntry> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::Common.Network.ChatPacketReflection.Descriptor.MessageTypes[11]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ChatUnreadEntry() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ChatUnreadEntry(ChatUnreadEntry other) : this() {
+      friendId_ = other.friendId_;
+      unreadCount_ = other.unreadCount_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ChatUnreadEntry Clone() {
+      return new ChatUnreadEntry(this);
+    }
+
+    /// <summary>Field number for the "friend_id" field.</summary>
+    public const int FriendIdFieldNumber = 1;
+    private int friendId_;
+    /// <summary>
+    ///&#x2F; &lt;summary>
+    ///&#x2F; 好友玩家ID
+    ///&#x2F; 类型：int32
+    ///&#x2F; 用途：对应客户端的动态红点叶子 100000+好友ID
+    ///&#x2F; &lt;/summary>
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int FriendId {
+      get { return friendId_; }
+      set {
+        friendId_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "unread_count" field.</summary>
+    public const int UnreadCountFieldNumber = 2;
+    private int unreadCount_;
+    /// <summary>
+    ///&#x2F; &lt;summary>
+    ///&#x2F; 该好友发给我的未读条数
+    ///&#x2F; 类型：int32
+    ///&#x2F; 用途：客户端用它覆盖写红点，不是增量
+    ///&#x2F; &lt;/summary>
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int UnreadCount {
+      get { return unreadCount_; }
+      set {
+        unreadCount_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as ChatUnreadEntry);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(ChatUnreadEntry other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (FriendId != other.FriendId) return false;
+      if (UnreadCount != other.UnreadCount) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (FriendId != 0) hash ^= FriendId.GetHashCode();
+      if (UnreadCount != 0) hash ^= UnreadCount.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (FriendId != 0) {
+        output.WriteRawTag(8);
+        output.WriteInt32(FriendId);
+      }
+      if (UnreadCount != 0) {
+        output.WriteRawTag(16);
+        output.WriteInt32(UnreadCount);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (FriendId != 0) {
+        output.WriteRawTag(8);
+        output.WriteInt32(FriendId);
+      }
+      if (UnreadCount != 0) {
+        output.WriteRawTag(16);
+        output.WriteInt32(UnreadCount);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (FriendId != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeInt32Size(FriendId);
+      }
+      if (UnreadCount != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeInt32Size(UnreadCount);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(ChatUnreadEntry other) {
+      if (other == null) {
+        return;
+      }
+      if (other.FriendId != 0) {
+        FriendId = other.FriendId;
+      }
+      if (other.UnreadCount != 0) {
+        UnreadCount = other.UnreadCount;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 8: {
+            FriendId = input.ReadInt32();
+            break;
+          }
+          case 16: {
+            UnreadCount = input.ReadInt32();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 8: {
+            FriendId = input.ReadInt32();
+            break;
+          }
+          case 16: {
+            UnreadCount = input.ReadInt32();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  /// <summary>
+  ///&#x2F; &lt;summary>
+  ///&#x2F; 全量未读快照推送（服务端 → 登录成功后的本会话）
+  ///&#x2F; 用途：闭环离线期间收到的消息与客户端本地累加产生的漂移——
+  ///&#x2F;       离线时聊天推送只落库不推送，客户端只有登录这一刻能拿到权威数字
+  ///&#x2F; 语义：本快照即全部好友的权威未读表，客户端应整体覆盖（表里没有的好友视为 0）
+  ///&#x2F; &lt;/summary>
+  /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class ChatUnreadSnapshotNotify : pb::IMessage<ChatUnreadSnapshotNotify>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<ChatUnreadSnapshotNotify> _parser = new pb::MessageParser<ChatUnreadSnapshotNotify>(() => new ChatUnreadSnapshotNotify());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<ChatUnreadSnapshotNotify> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::Common.Network.ChatPacketReflection.Descriptor.MessageTypes[12]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ChatUnreadSnapshotNotify() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ChatUnreadSnapshotNotify(ChatUnreadSnapshotNotify other) : this() {
+      entries_ = other.entries_.Clone();
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ChatUnreadSnapshotNotify Clone() {
+      return new ChatUnreadSnapshotNotify(this);
+    }
+
+    /// <summary>Field number for the "entries" field.</summary>
+    public const int EntriesFieldNumber = 1;
+    private static readonly pb::FieldCodec<global::Common.Network.ChatUnreadEntry> _repeated_entries_codec
+        = pb::FieldCodec.ForMessage(10, global::Common.Network.ChatUnreadEntry.Parser);
+    private readonly pbc::RepeatedField<global::Common.Network.ChatUnreadEntry> entries_ = new pbc::RepeatedField<global::Common.Network.ChatUnreadEntry>();
+    /// <summary>
+    ///&#x2F; &lt;summary>
+    ///&#x2F; 各好友的未读条目
+    ///&#x2F; 类型：repeated ChatUnreadEntry
+    ///&#x2F; 用途：只包含未读大于 0 的好友，客户端据此点亮角标
+    ///&#x2F; &lt;/summary>
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::Common.Network.ChatUnreadEntry> Entries {
+      get { return entries_; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as ChatUnreadSnapshotNotify);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(ChatUnreadSnapshotNotify other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if(!entries_.Equals(other.entries_)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      hash ^= entries_.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      entries_.WriteTo(output, _repeated_entries_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      entries_.WriteTo(ref output, _repeated_entries_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      size += entries_.CalculateSize(_repeated_entries_codec);
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(ChatUnreadSnapshotNotify other) {
+      if (other == null) {
+        return;
+      }
+      entries_.Add(other.entries_);
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            entries_.AddEntriesFrom(input, _repeated_entries_codec);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            entries_.AddEntriesFrom(ref input, _repeated_entries_codec);
             break;
           }
         }

@@ -6,6 +6,10 @@ using Common.Network;
 
 using Miemie.DialogSystem.Quest;
 
+using Game.Narrative.Quest;
+
+using MiMieEventBus;
+
 using MH;
 
 using UnityEngine;
@@ -21,7 +25,7 @@ using UnityEngine;
 ///
 /// 权威在服务端：本类不做任何规则判断，任何本地改动都会被下一份 2710 快照覆盖。
 /// </summary>
-public sealed class MmQuestRuntime : MonoBehaviour
+public sealed class MmQuestRuntime : MonoBehaviour, IQuestService
 {
     /// <summary>任务配置在 Resources 下的目录（QuestData 资产）</summary>
     public const string QuestResourceFolder = "Quest";
@@ -30,10 +34,10 @@ public sealed class MmQuestRuntime : MonoBehaviour
     public static MmQuestRuntime Instance { get; private set; }
 
     /// <summary>任务数据变化（快照镜像 / 接取 / 提交 / 放弃 / 推送）</summary>
-    public event Action QuestsUpdated;
+    /// <summary>全局业务事件总线（任务对外通知：Updated / Toast）</summary>
+    public static readonly EventBusCore Bus = new();
 
     /// <summary>服务端提示推送（提交成功后的提示文案）</summary>
-    public event Action<NarrativeQuestToastNotify> ToastReceived;
 
     /// <summary>Mm 框架的任务管理器（镜像本体）</summary>
     public QuestManager Mirror { get; private set; }
@@ -96,7 +100,7 @@ public sealed class MmQuestRuntime : MonoBehaviour
         QuestData[] configs = Resources.LoadAll<QuestData>(QuestResourceFolder);
         if (configs == null || configs.Length == 0)
         {
-            Debug.LogWarning($"[MmQuestRuntime] Resources/{QuestResourceFolder} 下没有 QuestData 配置，任务面板将是空的");
+            GameLog.Warn($"[MmQuestRuntime] Resources/{QuestResourceFolder} 下没有 QuestData 配置，任务面板将是空的");
         }
         SetQuestList(Mirror, configs ?? Array.Empty<QuestData>());
 
@@ -126,14 +130,14 @@ public sealed class MmQuestRuntime : MonoBehaviour
             TrackedQuestId = 0;
 
         RefreshRedDot();
-        QuestsUpdated?.Invoke();
+        Bus.Publish(QuestEvents.Updated);
     }
 
     private void OnToastReceived(NarrativeQuestToastNotify notify)
     {
         // 提交会发放奖励 → 背包数据过期，静默重拉一次（面板未开时无感）
         BagManager.Instance?.RequestBag();
-        ToastReceived?.Invoke(notify);
+        Bus.Publish(QuestEvents.Toast, notify);
     }
 
     // ──────────────────────────────
@@ -256,7 +260,7 @@ public sealed class MmQuestRuntime : MonoBehaviour
         }
 
         RefreshRedDot();
-        QuestsUpdated?.Invoke();
+        Bus.Publish(QuestEvents.Updated);
     }
 
     /// <summary>取当前追踪任务：显式追踪优先，否则自动取第一个执行中/可提交的任务</summary>
@@ -299,9 +303,18 @@ public sealed class MmQuestRuntime : MonoBehaviour
     /// <summary>待办数（可接取 + 可提交）写入任务入口红点；0 时框架自动熄灭</summary>
     private void RefreshRedDot()
     {
-        RedDotSingleton redDot = RedDotSingleton.Instance;
-        if (redDot == null) return;
-
-        redDot.Set(RedDotKeys.QuestEntry, AcceptableCount + SubmittableCount, RedDotFlags.Number);
+        RedDotSingleton.TrySet(RedDotKeys.QuestEntry, AcceptableCount + SubmittableCount, RedDotFlags.Number);
     }
+
+    // ──────────────────────────────
+    // IQuestService 显式实现（公开成员已满足语义，这里显式映射保证接口稳定）
+    // ──────────────────────────────
+
+    IReadOnlyList<QuestData> IQuestService.AllQuests => AllQuests;
+
+    int IQuestService.TrackedQuestId => TrackedQuestId;
+
+    int IQuestService.AcceptableCount => AcceptableCount;
+
+    int IQuestService.SubmittableCount => SubmittableCount;
 }

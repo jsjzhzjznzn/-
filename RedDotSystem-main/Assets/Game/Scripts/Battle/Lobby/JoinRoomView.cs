@@ -59,7 +59,9 @@ public class JoinRoomView : UIView
         TryJoin();
     }
 
-    private async void TryJoin()
+    private void TryJoin() => TryJoinAsync().Forget();
+
+    private async UniTaskVoid TryJoinAsync()
     {
         if (_connecting) return;
 

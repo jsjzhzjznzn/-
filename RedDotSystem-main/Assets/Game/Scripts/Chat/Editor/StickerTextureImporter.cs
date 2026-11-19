@@ -15,7 +15,7 @@ using UnityEngine;
 public class StickerTextureImporter : AssetPostprocessor
 {
     /// <summary>表情包资源目录（Project 根视角，必须以 / 结尾才好做前缀匹配）</summary>
-    private const string StickerFolder = "Assets/Game/Resources/biaoq/";
+    private const string StickerFolder = "Assets/Game/Art/UI/biaoq/";
 
     /// <summary>
     /// 导入前处理：命中表情目录就按 Sprite 配置导入器

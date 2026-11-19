@@ -5,6 +5,10 @@ using Common.Network;
 
 using Cysharp.Threading.Tasks;
 using SkierFramework;
+using Game.Battle.Invite;
+
+using MiMieEventBus;
+
 using UnityEngine;
 
 /// <summary>
@@ -17,7 +21,7 @@ using UnityEngine;
 ///
 /// 与 ChatManager 同模式：运行时不挂场景，Bootstrap 自动创建。
 /// </summary>
-public class BattleInviteManager : MonoBehaviour
+public class BattleInviteManager : MonoBehaviour, IBattleInviteService
 {
     /// <summary>全局唯一实例</summary>
     public static BattleInviteManager Instance { get; private set; }
@@ -44,10 +48,10 @@ public class BattleInviteManager : MonoBehaviour
     public string CurrentRoomId { get; private set; } = string.Empty;
 
     /// <summary>房主侧：邀请结果到达（同意/拒绝/过期/取消），邀请面板据此刷新状态行</summary>
-    public event Action<BattleInviteResultNotify> ResultReceived;
+    /// <summary>全局业务事件总线（邀请对外通知：Result / Notice）</summary>
+    public static readonly EventBusCore Bus = new();
 
     /// <summary>通用轻提示（面板没开时由调用方决定是否忽略）</summary>
-    public event Action<string> Notice;
 
     /// <summary>
     /// 已知玩家昵称（playerId → name）
@@ -108,15 +112,14 @@ public class BattleInviteManager : MonoBehaviour
     {
         if (sessionHooked) return;
         ClientNetworkManager net = ClientNetworkManager.Instance;
-        if (net == null) return;
-
+        if (net == null || net.Network == null) return;
         sessionHooked = true;
-        net.BattleInviteResponseReceived += OnInviteResponse;
-        net.BattleInviteNotifyReceived += OnInviteNotify;
-        net.BattleInviteRespondResponseReceived += OnRespondResponse;
-        net.BattleInviteResultNotifyReceived += OnResultNotify;
-        net.BattleInviteCancelResponseReceived += OnCancelResponse;
-        net.BattleInviteCancelledNotifyReceived += OnCancelledNotify;
+        net.Network.Subscribe<BattleInviteResponse>(OnInviteResponse);
+        net.Network.Subscribe<BattleInviteNotify>(OnInviteNotify);
+        net.Network.Subscribe<BattleInviteRespondResponse>(OnRespondResponse);
+        net.Network.Subscribe<BattleInviteResultNotify>(OnResultNotify);
+        net.Network.Subscribe<BattleInviteCancelResponse>(OnCancelResponse);
+        net.Network.Subscribe<BattleInviteCancelledNotify>(OnCancelledNotify);
         net.LoginResponseReceived += OnLoginResponse;
         net.ConnectionBroken += OnConnectionBroken;
     }
@@ -129,12 +132,6 @@ public class BattleInviteManager : MonoBehaviour
         ClientNetworkManager net = ClientNetworkManager.Instance;
         if (net == null) return;
 
-        net.BattleInviteResponseReceived -= OnInviteResponse;
-        net.BattleInviteNotifyReceived -= OnInviteNotify;
-        net.BattleInviteRespondResponseReceived -= OnRespondResponse;
-        net.BattleInviteResultNotifyReceived -= OnResultNotify;
-        net.BattleInviteCancelResponseReceived -= OnCancelResponse;
-        net.BattleInviteCancelledNotifyReceived -= OnCancelledNotify;
         net.LoginResponseReceived -= OnLoginResponse;
         net.ConnectionBroken -= OnConnectionBroken;
     }
@@ -362,7 +359,9 @@ public class BattleInviteManager : MonoBehaviour
         RaiseNotice(response.Message);
     }
 
-    private async void OnRespondResponse(BattleInviteRespondResponse response)
+    private void OnRespondResponse(BattleInviteRespondResponse response) => OnRespondResponseAsync(response).Forget();
+
+    private async UniTaskVoid OnRespondResponseAsync(BattleInviteRespondResponse response)
     {
         if (response == null) return;
 
@@ -414,7 +413,7 @@ public class BattleInviteManager : MonoBehaviour
 
         ResetHostSideState();
         RaiseNotice(notify.Message);
-        ResultReceived?.Invoke(notify);
+        Bus.Publish(BattleInviteEvents.Result, notify);
     }
 
     private void OnCancelResponse(BattleInviteCancelResponse response)
@@ -474,7 +473,10 @@ public class BattleInviteManager : MonoBehaviour
     private void RaiseNotice(string message)
     {
         if (string.IsNullOrEmpty(message)) return;
-        Debug.Log("[BattleInvite] " + message);
-        Notice?.Invoke(message);
+        GameLog.Info("[BattleInvite] " + message);
+        Bus.Publish(BattleInviteEvents.Notice, message);
     }
+
+    /// <summary>接口要求只读字典，内部仍用可写字典维护</summary>
+    IReadOnlyDictionary<int, string> IBattleInviteService.KnownPlayerNames => KnownPlayerNames;
 }

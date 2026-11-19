@@ -1,5 +1,6 @@
 using Common.Network;
 
+using Cysharp.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -71,7 +72,9 @@ public class SignupController : MonoBehaviour
     /// 注册按钮点击处理
     /// 校验输入（两次密码不一致则提醒）→ 建立连接 → 发送注册请求
     /// </summary>
-    private async void OnRegisterClicked()
+    private void OnRegisterClicked() => OnRegisterClickedAsync().Forget();
+
+    private async UniTaskVoid OnRegisterClickedAsync()
     {
         string username = usernameInput != null ? usernameInput.text.Trim() : string.Empty;
         string password = passwordInput != null ? passwordInput.text : string.Empty;
@@ -140,6 +143,6 @@ public class SignupController : MonoBehaviour
     private void SetStatus(string message)
     {
         if (statusText != null) statusText.text = message;
-        Debug.Log($"[注册]{message}");
+        GameLog.Info($"[注册]{message}");
     }
 }

@@ -79,6 +79,31 @@ namespace CompeteServer.Network
         private const int KickNotifyGraceMs = 2000;
 
         /// <summary>
+        /// 账号操作（登录/注册）连续失败次数上限：达到后进入冷却窗口。
+        /// 通用令牌桶 20 帧/秒只挡"海量小帧"，对登录这种一次一击数据库的接口而言额度太大，
+        /// 不额外限制就等于允许在线暴破；账号维度的跨会话封锁需要共享状态，留到分服阶段再做
+        /// </summary>
+        private const int AuthFailureLimit = 5;
+
+        /// <summary>账号操作冷却窗口（毫秒）：窗口内直接拒绝，不查库</summary>
+        private const int AuthLockoutMs = 60_000;
+
+        /// <summary>本会话账号操作连续失败次数（仅会话处理 worker 单线程读写）</summary>
+        private int authFailures;
+
+        /// <summary>最近一次失败的时间戳（Stopwatch 单调时钟，0=尚未失败过）</summary>
+        private long lastAuthFailureTimestamp;
+
+        /// <summary>本会话当前挑战局的开局标识（结算上报时一次性校验并清空）</summary>
+        private string? challengeRunId;
+
+        /// <summary>本会话当前挑战局的挑战ID</summary>
+        private int challengeRunChallengeId;
+
+        /// <summary>本会话当前挑战局的开局时刻（Stopwatch 单调时钟，不受系统改时间影响）</summary>
+        private long challengeRunStartTimestamp;
+
+        /// <summary>
         /// TCP客户端对象
         /// 类型：TcpClient
         /// 用途：底层的TCP连接对象，用于与客户端通信
@@ -112,6 +137,36 @@ namespace CompeteServer.Network
         /// 用途：登录成功后绑定的账号唯一标识ID
         /// </summary>
         public int PlayerId { get; set; }
+
+        /// <summary>
+        /// 本次登录的会话标识（登录成功时生成）
+        /// 用途：Valkey 会话登记的值，用来判定"本会话是否仍是该玩家的当前会话"；
+        /// 未登录或登记降级时为空，此时心跳校验直接跳过
+        /// </summary>
+        public string? SessionEpoch { get; set; }
+
+        /// <summary>会话登记校验间隔（毫秒）：客户端心跳 15s，30s 一次校验足以在两次心跳内发现被顶替</summary>
+        private const int RegistryCheckIntervalMs = 30_000;
+
+        /// <summary>上次会话登记校验的单调时钟时刻（0=尚未校验过），仅会话 worker 单线程读写</summary>
+        private long lastRegistryCheckTimestamp;
+
+        /// <summary>
+        /// 心跳节流判定：距上次校验已过一个间隔才需要访问 Valkey。
+        /// 目的是把每会话的登记校验压到 30s 一次，不在每个心跳帧都发一次往返
+        /// </summary>
+        /// <returns>返回值类型：bool，用途：本次心跳是否需要做登记校验</returns>
+        public bool ShouldCheckRegistry()
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (lastRegistryCheckTimestamp != 0 &&
+                (now - lastRegistryCheckTimestamp) * 1000 / Stopwatch.Frequency < RegistryCheckIntervalMs)
+            {
+                return false;
+            }
+            lastRegistryCheckTimestamp = now;
+            return true;
+        }
 
         /// <summary>
         /// 构造函数 - 创建客户端会话实例
@@ -214,6 +269,98 @@ namespace CompeteServer.Network
         /// 用途：供巡检/风控识别异常账号，长期非零的会话即脚本或客户端 bug
         /// </summary>
         public long RateRejectedCount => Interlocked.Read(ref rateRejectedCount);
+
+        /// <summary>
+        /// 账号操作是否处于冷却窗口的方法
+        /// 连续失败达到上限后，窗口内不再查库；窗口自然过期则重置计数重新放行
+        /// </summary>
+        /// <returns>返回值类型：bool，用途：true=应拒绝本次登录/注册</returns>
+        public bool IsAuthLocked()
+        {
+            if (authFailures < AuthFailureLimit) return false;
+
+            double elapsedMs = (Stopwatch.GetTimestamp() - lastAuthFailureTimestamp)
+                / (double)Stopwatch.Frequency * 1000.0;
+            if (elapsedMs >= AuthLockoutMs)
+            {
+                authFailures = 0;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 记录一次账号操作失败的方法
+        /// </summary>
+        public void RecordAuthFailure()
+        {
+            authFailures++;
+            lastAuthFailureTimestamp = Stopwatch.GetTimestamp();
+
+            if (authFailures == AuthFailureLimit)
+            {
+                Console.WriteLine($"Session登录失败达上限({AuthFailureLimit}次)，冷却{AuthLockoutMs / 1000}s:{SessionID}");
+            }
+        }
+
+        /// <summary>
+        /// 清空账号操作失败计数的方法（登录成功时调用）
+        /// </summary>
+        public void ResetAuthFailures()
+        {
+            authFailures = 0;
+            lastAuthFailureTimestamp = 0;
+        }
+
+        /// <summary>
+        /// 记录一次挑战开局的方法
+        /// 同一会话重复开局会覆盖上一局（崩溃重进场景等场景），旧局标识随即失效
+        /// </summary>
+        /// <param name="challengeId">参数名：challengeId，类型：int，用途：挑战ID</param>
+        /// <returns>返回值类型：string，用途：本局标识，结算上报时回传</returns>
+        public string BeginChallengeRun(int challengeId)
+        {
+            challengeRunId = Guid.NewGuid().ToString("N");
+            challengeRunChallengeId = challengeId;
+            challengeRunStartTimestamp = Stopwatch.GetTimestamp();
+            return challengeRunId;
+        }
+
+        /// <summary>
+        /// 结算一局挑战的方法
+        /// 一次性消费：无论校验是否通过都会清空记录，防止同一局被重复上报
+        /// </summary>
+        /// <param name="runId">参数名：runId，类型：string，用途：客户端回传的局标识</param>
+        /// <param name="challengeId">参数名：challengeId，类型：int，用途：客户端上报的挑战ID</param>
+        /// <param name="elapsedMs">参数名：elapsedMs，类型：long，用途：输出本局服务端计时（毫秒）</param>
+        /// <param name="message">参数名：message，类型：string，用途：输出失败原因</param>
+        /// <returns>返回值类型：bool，用途：校验通过返回 true</returns>
+        public bool TryFinishChallengeRun(string runId, int challengeId, out long elapsedMs, out string message)
+        {
+            elapsedMs = 0;
+            message = string.Empty;
+
+            if (string.IsNullOrEmpty(challengeRunId) || string.IsNullOrEmpty(runId)
+                || !string.Equals(challengeRunId, runId, StringComparison.Ordinal))
+            {
+                message = "成绩缺少有效开局记录";
+                return false;
+            }
+
+            elapsedMs = (long)((Stopwatch.GetTimestamp() - challengeRunStartTimestamp)
+                * 1000.0 / Stopwatch.Frequency);
+
+            bool sameChallenge = challengeRunChallengeId == challengeId;
+            challengeRunId = null;
+            challengeRunStartTimestamp = 0;
+
+            if (!sameChallenge)
+            {
+                message = "挑战ID与开局记录不一致";
+                return false;
+            }
+            return true;
+        }
 
         /// <summary>
         /// 标记本会话已被同账号的新登录顶下（由 SessionManager 在锁内调用）

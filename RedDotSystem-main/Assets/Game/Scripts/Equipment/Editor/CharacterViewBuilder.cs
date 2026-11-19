@@ -23,7 +23,7 @@ using UnityEngine.UI;
 public static class CharacterViewBuilder
 {
     private const string PrefabPath = "Assets/Game/UI/Character/CharacterView.prefab";
-    private const string ArtDir = "Assets/Game/Resources/ui/Character";
+    private const string ArtDir = "Assets/Game/Art/UI/Character";
     private const string BgPath = ArtDir + "/character_bg_haze.jpg";
     private const string BgSourcePath = ArtDir + "/character_bg_gold.jpg";
     private const string CircleSpritePath = ArtDir + "/avatar_circle.png";
@@ -509,7 +509,6 @@ public static class CharacterViewBuilder
         // 头像行必须压在 3D 预览之上：RawImage 是后建的兄弟节点，否则会盖住头顶
         avatarRow.SetSiblingIndex(previewRoot.GetSiblingIndex() + 1);
 
-        view.heroStats = CollectHeroStats();
         int bindings = BindFields(root, view, controlData);
 
         wrapper.layer = Layer.UI;
@@ -522,28 +521,8 @@ public static class CharacterViewBuilder
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Debug.Log($"[CharacterView] 生成 {PrefabPath}，绑定 {bindings} 项，角色数据 {view.heroStats?.Length ?? 0} 份");
+        Debug.Log($"[CharacterView] 生成 {PrefabPath}，绑定 {bindings} 项");
         Selection.activeObject = prefab;
-    }
-
-    /// <summary>按 PlayerSO.characterId 把角色配置挂到下标位置（找不到的角色留空）</summary>
-    private static PlayerSO[] CollectHeroStats()
-    {
-        var stats = new PlayerSO[BattleHeroCatalog.Count];
-        string[] guids = AssetDatabase.FindAssets("t:PlayerSO");
-        foreach (string guid in guids)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            PlayerSO so = AssetDatabase.LoadAssetAtPath<PlayerSO>(path);
-            if (so == null || so.CharacterId < 0 || so.CharacterId >= stats.Length) continue;
-            if (stats[so.CharacterId] != null)
-            {
-                Debug.LogWarning($"[CharacterView] 角色ID {so.CharacterId} 有多份 PlayerSO，保留先找到的 {stats[so.CharacterId].name}");
-                continue;
-            }
-            stats[so.CharacterId] = so;
-        }
-        return stats;
     }
 
     /// <summary>左侧菜单一行：胶囊选中底 + 菱形标记 + 文字（未开放的页签只做版式占位）</summary>

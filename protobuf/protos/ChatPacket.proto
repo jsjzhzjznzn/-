@@ -200,6 +200,15 @@ message ChatReceiveNotify {
   /// 用途：接收方在线时收到并追加到会话
   /// </summary>
   ChatMessageItem message = 1;
+
+  /// <summary>
+  /// 推送后该好友的权威未读数
+  /// 类型：int32
+  /// 用途：客户端用自己的 +1 累加容易与真相漂移，这里下发服务端算出的绝对数，
+  ///       客户端直接覆盖写入红点叶子，保证角标与服务端一致
+  /// 说明：服务端计数失败（Mongo 不可用）时为 -1，表示"本次没有权威值"，客户端回退为 +1
+  /// </summary>
+  int32 unread_count = 2;
 }
 
 // ────────────────────────── 世界频道 ──────────────────────────
@@ -304,4 +313,38 @@ message WorldChatNotify {
   /// 用途：在线玩家收到后追加到世界频道列表
   /// </summary>
   ChatMessageItem message = 1;
+}
+
+/// <summary>
+/// 单个好友的未读条目
+/// </summary>
+message ChatUnreadEntry {
+  /// <summary>
+  /// 好友玩家ID
+  /// 类型：int32
+  /// 用途：对应客户端的动态红点叶子 100000+好友ID
+  /// </summary>
+  int32 friend_id = 1;
+
+  /// <summary>
+  /// 该好友发给我的未读条数
+  /// 类型：int32
+  /// 用途：客户端用它覆盖写红点，不是增量
+  /// </summary>
+  int32 unread_count = 2;
+}
+
+/// <summary>
+/// 全量未读快照推送（服务端 → 登录成功后的本会话）
+/// 用途：闭环离线期间收到的消息与客户端本地累加产生的漂移——
+///       离线时聊天推送只落库不推送，客户端只有登录这一刻能拿到权威数字
+/// 语义：本快照即全部好友的权威未读表，客户端应整体覆盖（表里没有的好友视为 0）
+/// </summary>
+message ChatUnreadSnapshotNotify {
+  /// <summary>
+  /// 各好友的未读条目
+  /// 类型：repeated ChatUnreadEntry
+  /// 用途：只包含未读大于 0 的好友，客户端据此点亮角标
+  /// </summary>
+  repeated ChatUnreadEntry entries = 1;
 }

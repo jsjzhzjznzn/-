@@ -1090,8 +1090,9 @@ namespace CompeteServer.Database
         /// </summary>
         /// <param name="playerId">参数名：playerId，类型：int，用途：玩家ID</param>
         /// <param name="scoreId">参数名：scoreId，类型：int，用途：发生变化的生涯指标ID</param>
+        /// <param name="liveValue">参数名：liveValue，类型：int?，用途：该指标当前的值；调用方刚写完生涯指标时应传入，省略则现读</param>
         /// <returns>返回值类型：List，用途：发生变化的任务状态 (任务ID, 状态, 进度)</returns>
-        public List<(int QuestId, int State, int Progress)> OnCareerChanged(int playerId, int scoreId)
+        public List<(int QuestId, int State, int Progress)> OnCareerChanged(int playerId, int scoreId, int? liveValue = null)
         {
             var changed = new List<(int QuestId, int State, int Progress)>();
             if (playerId <= 0 || scoreId <= 0) return changed;
@@ -1111,7 +1112,8 @@ namespace CompeteServer.Database
                 }
                 if (related.Count == 0) return changed;
 
-                int live = new CareerRepository().GetValue(playerId, scoreId);
+                // 调用方刚写完生涯指标时值已知，从这里传进来，省掉一次只为读它而做的库往返
+                int live = liveValue ?? new CareerRepository().GetValue(playerId, scoreId);
                 foreach ((PlayerQuestRow row, QuestConfig config) in related)
                 {
                     int state = live >= config.TargetProgress ? StateFinished : StateProcessing;

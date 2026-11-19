@@ -70,7 +70,7 @@ public class DashijiePlayerSwitcher : MonoBehaviour
         BindCamera(next);
         PlayerChanged?.Invoke(next);
 
-        Debug.Log($"[Dashijie] 切换角色 charId={charId} → {instance.name} pos={position}", this);
+        GameLog.Info($"[Dashijie] 切换角色 charId={charId} → {instance.name} pos={position}", this);
         return true;
     }
 

@@ -217,7 +217,7 @@ public class SkillComponent : NetworkBehaviour
         if (_records.TryGetValue(def.skillIdHash, out var rec))
         {
             if (rec.def != def)
-                Debug.LogWarning($"[Skill] 同一 skillId 传入了不同资产（现有 {rec.def.name} / 传入 {def.name}），将沿用现有配置", this);
+                GameLog.Warn($"[Skill] 同一 skillId 传入了不同资产（现有 {rec.def.name} / 传入 {def.name}），将沿用现有配置", this);
 
             if (rec.charges > rec.def.maxCharges) rec.charges = rec.def.maxCharges;
             return rec;
@@ -348,7 +348,7 @@ public class SkillComponent : NetworkBehaviour
             var def = SkillDatabase.ResolveSkill(state.idHash);
             if (def == null)
             {
-                Debug.LogWarning($"[Skill] 客户端无法解析 skillIdHash={state.idHash}，跳过（SkillDatabase 两端不一致？）", this);
+                GameLog.Warn($"[Skill] 客户端无法解析 skillIdHash={state.idHash}，跳过（SkillDatabase 两端不一致？）", this);
                 continue;
             }
 
@@ -420,6 +420,6 @@ public class SkillComponent : NetworkBehaviour
     private void RejectCastClientRpc(int skillIdHash, byte result)
     {
         if (!IsOwner) return;
-        Debug.LogWarning($"[Skill] 释放被服务端拒绝 skillId={skillIdHash} reason={(SkillCastResult)result}", this);
+        GameLog.Warn($"[Skill] 释放被服务端拒绝 skillId={skillIdHash} reason={(SkillCastResult)result}", this);
     }
 }

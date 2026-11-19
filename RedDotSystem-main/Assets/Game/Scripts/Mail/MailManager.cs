@@ -5,6 +5,12 @@ using Common.Network;
 
 using MH;
 
+using Game.Mail;
+
+using MiMieEventBus;
+
+using MieMieFrameWork;
+
 using UnityEngine;
 
 /// <summary>
@@ -15,37 +21,34 @@ using UnityEngine;
 /// 登录成功即拉列表，面板未开也亮入口角标（微信式，与任务/好友同款）
 /// 领取附件后物品进包 → 静默重拉背包（与任务提交同款处理）
 /// </summary>
-public class MailManager : MonoBehaviour
+public class MailManager : SingletonBehaviour<MailManager>, IMailService
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例实现
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（UI 层访问邮件数据的入口）</summary>
-    public static MailManager Instance { get; private set; }
 
-    /// <summary>
-    /// 运行时自举
-    /// 进入 Play 模式自动创建，无需手动挂载（与 ClientNetworkManager / BagManager / QuestManager 相同模式）
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("MailManager");
-        holder.AddComponent<MailManager>();
-        DontDestroyOnLoad(holder);
-    }
 
     // ──────────────────────────────
     // 事件（主线程触发，UI 可安全订阅）
     // ──────────────────────────────
 
     /// <summary>邮件数据变化（列表到达 / 任意操作成功 / 收到新邮件推送，UI 重渲染）</summary>
-    public event Action MailsUpdated;
+    /// <summary>全局业务事件总线（邮件对外通知：MailEvents.Updated / MailEvents.Status）</summary>
+    public static readonly EventBusCore Bus = new();
 
-    /// <summary>提示文案（操作成功/失败的 message，UI 显示在状态栏）</summary>
-    public event Action<string> StatusChanged;
 
     // ──────────────────────────────
     // 私有字段
@@ -105,40 +108,37 @@ public class MailManager : MonoBehaviour
     // Unity 生命周期
     // ──────────────────────────────
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+        base.Awake();
     }
 
     private void Start()
     {
         // ClientNetworkManager 的自举同样发生在 BeforeSceneLoad，Start 时必已存在
-        if (ClientNetworkManager.Instance == null) return;
-        ClientNetworkManager.Instance.MailListResponseReceived += OnMailListResponse;
-        ClientNetworkManager.Instance.MailReadResponseReceived += OnMailReadResponse;
-        ClientNetworkManager.Instance.MailClaimResponseReceived += OnMailClaimResponse;
-        ClientNetworkManager.Instance.MailDeleteResponseReceived += OnMailDeleteResponse;
-        ClientNetworkManager.Instance.MailGrantResponseReceived += OnMailGrantResponse;
-        ClientNetworkManager.Instance.MailReceiveNotifyReceived += OnMailReceiveNotify;
+        if (ClientNetworkManager.Instance == null || ClientNetworkManager.Instance.Network == null) return;
+        ClientNetworkManager.Instance.Network.Subscribe<MailListResponse>(OnMailListResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<MailReadResponse>(OnMailReadResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<MailClaimResponse>(OnMailClaimResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<MailDeleteResponse>(OnMailDeleteResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<MailGrantResponse>(OnMailGrantResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<MailReceiveNotify>(OnMailReceiveNotify);
         ClientNetworkManager.Instance.LoginResponseReceived += OnLoginResponse;
+        ClientNetworkManager.Instance.ConnectionBroken += OnConnectionBroken;
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         if (ClientNetworkManager.Instance == null) return;
-        ClientNetworkManager.Instance.MailListResponseReceived -= OnMailListResponse;
-        ClientNetworkManager.Instance.MailReadResponseReceived -= OnMailReadResponse;
-        ClientNetworkManager.Instance.MailClaimResponseReceived -= OnMailClaimResponse;
-        ClientNetworkManager.Instance.MailDeleteResponseReceived -= OnMailDeleteResponse;
-        ClientNetworkManager.Instance.MailGrantResponseReceived -= OnMailGrantResponse;
-        ClientNetworkManager.Instance.MailReceiveNotifyReceived -= OnMailReceiveNotify;
+
+
+
+
+
+
         ClientNetworkManager.Instance.LoginResponseReceived -= OnLoginResponse;
+        ClientNetworkManager.Instance.ConnectionBroken -= OnConnectionBroken;
     }
 
     // ──────────────────────────────
@@ -150,7 +150,7 @@ public class MailManager : MonoBehaviour
     {
         if (ClientNetworkManager.Instance == null) return;
         loading = true;
-        MailsUpdated?.Invoke();   // 先刷一次让 UI 立刻显示加载状态
+        Bus.Publish(MailEvents.Updated);   // 先刷一次让 UI 立刻显示加载状态
         _ = ClientNetworkManager.Instance.SendMailListRequest();
     }
 
@@ -200,8 +200,8 @@ public class MailManager : MonoBehaviour
 
         if (!response.Success)
         {
-            StatusChanged?.Invoke(response.Message);
-            MailsUpdated?.Invoke();
+            Bus.Publish(MailEvents.Status, response.Message);
+            Bus.Publish(MailEvents.Updated);
             return;
         }
 
@@ -227,7 +227,7 @@ public class MailManager : MonoBehaviour
     /// <summary>GM 发件响应：只提示；发给自己的场景由推送/重拉补齐列表</summary>
     private void OnMailGrantResponse(MailGrantResponse response)
     {
-        if (!string.IsNullOrEmpty(response.Message)) StatusChanged?.Invoke(response.Message);
+        if (!string.IsNullOrEmpty(response.Message)) Bus.Publish(MailEvents.Status, response.Message);
     }
 
     /// <summary>
@@ -244,7 +244,7 @@ public class MailManager : MonoBehaviour
 
         mailsById[notify.Mail.MailId] = notify.Mail;
 
-        if (!string.IsNullOrEmpty(notify.Message)) StatusChanged?.Invoke(notify.Message);
+        if (!string.IsNullOrEmpty(notify.Message)) Bus.Publish(MailEvents.Status, notify.Message);
         NotifyMailsChanged();
     }
 
@@ -256,7 +256,7 @@ public class MailManager : MonoBehaviour
     private void ApplyOperationResult(bool success, string message, IEnumerable<MailInfo> snapshot)
     {
         ApplyMails(snapshot);
-        if (!string.IsNullOrEmpty(message)) StatusChanged?.Invoke(message);
+        if (!string.IsNullOrEmpty(message)) Bus.Publish(MailEvents.Status, message);
         NotifyMailsChanged();
     }
 
@@ -287,6 +287,13 @@ public class MailManager : MonoBehaviour
         RequestMails();
     }
 
+    /// <summary>断线：回执不会再来，必须复位加载态，否则面板永远停在加载中</summary>
+    private void OnConnectionBroken()
+    {
+        loading = false;
+        Bus.Publish(MailEvents.Updated);
+    }
+
     /// <summary>
     /// 邮件数据变化统一出口：刷新红点 + 广播给 UI
     /// 所有会改变未读数的路径都必须走这里（漏掉就会出现角标不更新的陈旧红点）
@@ -294,7 +301,7 @@ public class MailManager : MonoBehaviour
     private void NotifyMailsChanged()
     {
         RefreshRedDot();
-        MailsUpdated?.Invoke();
+        Bus.Publish(MailEvents.Updated);
     }
 
     /// <summary>
@@ -303,13 +310,10 @@ public class MailManager : MonoBehaviour
     /// 写叶子不写父节点（框架规则：父节点的计数由子节点传播，禁止直接 Set 父节点）。
     /// 角标要显示数字必须用 Number 类型（框架只对 Number 显示数字文本，Default 会被隐藏成光点）。
     /// 数量为 0 时框架自动移除该类型，红点熄灭。
-    /// 红点系统可能未初始化（如 LOGIN 场景没有 RedDotManager），此处判空保护
+    /// 红点系统已改为进程级自举，走 TrySet 后在未就绪时会告警一次而不是静默丢弃
     /// </summary>
     private void RefreshRedDot()
     {
-        RedDotSingleton redDot = RedDotSingleton.Instance;
-        if (redDot == null) return;
-
-        redDot.Set(RedDotKeys.MailSystem, UnreadCount, RedDotFlags.Number);
+        RedDotSingleton.TrySet(RedDotKeys.MailSystem, UnreadCount, RedDotFlags.Number);
     }
 }

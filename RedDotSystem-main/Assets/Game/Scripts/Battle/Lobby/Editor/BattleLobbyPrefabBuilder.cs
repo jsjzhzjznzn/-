@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using DG.Tweening;
@@ -48,7 +48,7 @@ public static class BattleLobbyPrefabBuilder
 
     /// <summary>主页那套程序化 9 宫格贴图（BarPanel/EntryButton），房间复用保持风格一致</summary>
     private const string HomeArtDir = "Assets/Game/UI/Home/Art";
-    private const string ThemeArtDir = "Assets/Game/Resources/ui/Theme";
+    private const string ThemeArtDir = "Assets/Game/Art/UI/Theme";
     private const string PanelSpritePath = ThemeArtDir + "/panel_round.png";
     private const string ButtonSpritePath = ThemeArtDir + "/btn_round.png";
     private const string ShadowSpritePath = HomeArtDir + "/BarShadow.png";

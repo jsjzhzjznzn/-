@@ -94,9 +94,9 @@ public class SkillDefinition : ScriptableObject
     private void OnValidate()
     {
         if (string.IsNullOrEmpty(_skillId))
-            Debug.LogWarning($"[SkillDefinition] \"{name}\" 未填 skillId，将临时用资产名当键；建议显式填写", this);
+            GameLog.Warn($"[SkillDefinition] \"{name}\" 未填 skillId，将临时用资产名当键；建议显式填写", this);
         if (_combo == null)
-            Debug.LogWarning($"[SkillDefinition] \"{name}\" 未配招式（ComboData），释放时只有冷却没有动画与伤害", this);
+            GameLog.Warn($"[SkillDefinition] \"{name}\" 未配招式（ComboData），释放时只有冷却没有动画与伤害", this);
     }
 #endif
 }

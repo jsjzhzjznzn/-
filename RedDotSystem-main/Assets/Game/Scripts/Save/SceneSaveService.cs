@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Common.Network;
+using Game.Save;
 using UnityEngine;
 
 /// <summary>
@@ -14,7 +15,7 @@ using UnityEngine;
 /// 说明：位置只在事件点上报（对话节点变更/选项/对话结束/打开设置/返回主页/退出/失焦），
 /// 不做定时写库——这是与用户确认过的取舍（崩溃最多丢最后一段位移，对话节点不会丢）。
 /// </summary>
-public class SceneSaveService : MonoBehaviour
+public class SceneSaveService : MonoBehaviour, ISceneSaveService
 {
     /// <summary>单例（跨场景存活）</summary>
     public static SceneSaveService Instance { get; private set; }
@@ -23,6 +24,8 @@ public class SceneSaveService : MonoBehaviour
     private const float PushAckTimeoutSeconds = 3f;
 
     private ClientNetworkManager net;
+    private System.IDisposable pullToken;
+    private System.IDisposable pushToken;
     private TaskCompletionSource<SaveStatePullResponse> pullWaiter;
     private string pullSceneName;
     private SceneSaveSnapshot pendingSnapshot;   // 待发/补发的最新快照
@@ -99,7 +102,7 @@ public class SceneSaveService : MonoBehaviour
 
         if (!IsAvailable)
         {
-            Debug.LogWarning($"[SceneSave] 未连接或未登录，跳过存档拉取（场景={sceneName}）");
+            GameLog.Warn($"[SceneSave] 未连接或未登录，跳过存档拉取（场景={sceneName}）");
             return null;
         }
 
@@ -113,7 +116,7 @@ public class SceneSaveService : MonoBehaviour
         catch (Exception exception)
         {
             pullWaiter = null;
-            Debug.LogWarning($"[SceneSave] 存档拉取请求发送失败：{exception.Message}");
+            GameLog.Warn($"[SceneSave] 存档拉取请求发送失败：{exception.Message}");
             return null;
         }
 
@@ -124,7 +127,7 @@ public class SceneSaveService : MonoBehaviour
         if (winner != pullWaiter.Task)
         {
             pullWaiter = null;
-            Debug.LogWarning($"[SceneSave] 存档拉取超时 {timeoutSeconds:0.##}s（场景={sceneName}），按首次进入处理");
+            GameLog.Warn($"[SceneSave] 存档拉取超时 {timeoutSeconds:0.##}s（场景={sceneName}），按首次进入处理");
             return null;
         }
 
@@ -134,14 +137,14 @@ public class SceneSaveService : MonoBehaviour
 
         if (!response.Success)
         {
-            Debug.LogWarning($"[SceneSave] 存档拉取失败：{response.Message}");
+            GameLog.Warn($"[SceneSave] 存档拉取失败：{response.Message}");
             return null;
         }
 
         if (!response.HasSave || response.Snapshot == null) return null;
         if (!string.Equals(response.Snapshot.SceneName, sceneName, StringComparison.Ordinal))
         {
-            Debug.LogWarning($"[SceneSave] 存档场景不匹配（期望 {sceneName}，收到 {response.Snapshot.SceneName}），已忽略");
+            GameLog.Warn($"[SceneSave] 存档场景不匹配（期望 {sceneName}，收到 {response.Snapshot.SceneName}），已忽略");
             return null;
         }
 
@@ -213,7 +216,7 @@ public class SceneSaveService : MonoBehaviour
         {
             pushInFlight = false;
             pendingSnapshot ??= snapshot;
-            Debug.LogWarning($"[SceneSave] 存档上报发送失败，已保留待补发：{exception.Message}");
+            GameLog.Warn($"[SceneSave] 存档上报发送失败，已保留待补发：{exception.Message}");
             return;
         }
 
@@ -228,12 +231,12 @@ public class SceneSaveService : MonoBehaviour
         if (pushRetryBudget < 1)
         {
             pushRetryBudget++;
-            Debug.LogWarning("[SceneSave] 存档回执超时，自动重试一次");
+            GameLog.Warn("[SceneSave] 存档回执超时，自动重试一次");
             FlushPending();
         }
         else
         {
-            Debug.LogWarning("[SceneSave] 存档回执连续超时，已保留最新快照等下次事件点补发");
+            GameLog.Warn("[SceneSave] 存档回执连续超时，已保留最新快照等下次事件点补发");
         }
     }
 
@@ -245,10 +248,10 @@ public class SceneSaveService : MonoBehaviour
     {
         UnbindNetwork();
         net = ClientNetworkManager.Instance;
-        if (net == null) return;
+        if (net == null || net.Network == null) return;
 
-        net.SaveStatePullResponseReceived += OnPullResponse;
-        net.SaveStatePushResponseReceived += OnPushResponse;
+        pullToken = net.Network.Subscribe<SaveStatePullResponse>(OnPullResponse);
+        pushToken = net.Network.Subscribe<SaveStatePushResponse>(OnPushResponse);
         net.LoginResponseReceived += OnLoginResponse;
     }
 
@@ -256,8 +259,10 @@ public class SceneSaveService : MonoBehaviour
     {
         if (net == null) return;
 
-        net.SaveStatePullResponseReceived -= OnPullResponse;
-        net.SaveStatePushResponseReceived -= OnPushResponse;
+        pullToken?.Dispose();
+        pushToken?.Dispose();
+        pullToken = null;
+        pushToken = null;
         net.LoginResponseReceived -= OnLoginResponse;
         net = null;
     }

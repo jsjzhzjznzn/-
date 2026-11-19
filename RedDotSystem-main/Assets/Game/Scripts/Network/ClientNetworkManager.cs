@@ -1,25 +1,54 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.Net.Sockets;
-using System.Threading;
 using System.Threading.Tasks;
 
 using Common.Enum;
 using Common.Network;
 
+using Game.Network;
+
 using Google.Protobuf;
+
+using MieMieFrameWork;
 
 using UnityEngine;
 
 /// <summary>
-/// 客户端网络管理器
-/// 负责 TCP 连接、protobuf 消息收发与主线程分发
-/// 帧结构：[4字节小端长度头][4字节消息ID][protobuf消息体]
+/// 客户端网络管理器（外壳）
+/// 传输、拆包与按消息类型分发在 Game.Network.NetworkClient；
+/// 本类保留单例入口、登录会话（凭据、重连、被顶号）与既有具名事件
 /// </summary>
-public class ClientNetworkManager : MonoBehaviour
+public class ClientNetworkManager : SingletonBehaviour<ClientNetworkManager>
 {
+    /// <summary>
+    /// 首个场景加载完成后确保实例存在，并换掉"僵尸实例"。
+    /// 启动链上的第一个访问点（组合根的等待等）可能发生在还没有已加载场景时，基类的懒创建
+    /// 于是把 GameObject 造在无效场景里（实测 scene.name=""、IsValid=false）：Unity 不给这种对象
+    /// 调 Awake 与 Update，收包队列只进不出——能连上服务器、回执永远没人处理，表现为"登录进不去"。
+    /// 这种对象即使重新挂回 DDOL 场景也不会恢复生命周期，只能销毁后在有效场景里重建。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureCreated()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded -= RepairOrphanedInstance;
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += RepairOrphanedInstance;
+        RepairOrphanedInstance();
+    }
+
+    private static void RepairOrphanedInstance()
+    {
+        ClientNetworkManager existing = Instance;
+        if (existing != null && !existing.gameObject.scene.IsValid())
+            Destroy(existing.gameObject);   // OnDestroy 会清掉单例引用，下面的访问随即重建
+
+        _ = Instance;
+    }
+
+    private static void RepairOrphanedInstance(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
+    {
+        RepairOrphanedInstance();
+    }
+
     // ──────────────────────────────
     // 服务器连接参数（登录/注册等界面共用，避免常量散落多处漂移）
     // ──────────────────────────────
@@ -37,14 +66,8 @@ public class ClientNetworkManager : MonoBehaviour
     public const string LoginSceneName = "LOGIN";
 
     // ──────────────────────────────
-    // 心跳与自动重连参数
+    // 自动重连参数
     // ──────────────────────────────
-
-    /// <summary>心跳发送间隔（秒），需显著小于 ReceiveTimeoutSeconds</summary>
-    private const int HeartbeatIntervalSeconds = 15;
-
-    /// <summary>读超时（秒）：超过该时长收不到任何完整帧即判定断线（可容忍两次心跳丢失+回执延迟）</summary>
-    private const int ReceiveTimeoutSeconds = 45;
 
     /// <summary>自动重连基础退避（毫秒），指数递增封顶</summary>
     private const int ReconnectBaseDelayMs = 1000;
@@ -59,31 +82,12 @@ public class ClientNetworkManager : MonoBehaviour
     // 单例实现
     // ──────────────────────────────
 
-    /// <summary>
-    /// 全局唯一实例
-    /// 类型：ClientNetworkManager
-    /// 用途：供 UI 层访问网络功能的入口
-    /// </summary>
-    public static ClientNetworkManager Instance { get; private set; }
 
-    /// <summary>
-    /// 运行时自举
-    /// 用途：进入 Play 模式后自动创建网络管理器，无需在场景中手动挂载
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("ClientNetworkManager");
-        holder.AddComponent<ClientNetworkManager>();
-        DontDestroyOnLoad(holder);
-    }
 
     // ──────────────────────────────
     // 事件
     // ──────────────────────────────
 
-    /// <summary>连接状态变化（主线程触发，UI 可安全订阅）</summary>
     public event Action<string> StatusChanged;
 
     /// <summary>登录响应到达（主线程触发）</summary>
@@ -114,22 +118,16 @@ public class ClientNetworkManager : MonoBehaviour
     public event Action<FriendRequestsResponse> FriendRequestsResponseReceived;
 
     /// <summary>发送聊天消息响应到达（主线程触发）</summary>
-    public event Action<ChatSendResponse> ChatSendResponseReceived;
 
     /// <summary>聊天历史响应到达（主线程触发）</summary>
-    public event Action<ChatHistoryResponse> ChatHistoryResponseReceived;
 
     /// <summary>聊天消息推送到达（主线程触发，服务端主动推给接收方，非请求响应）</summary>
-    public event Action<ChatReceiveNotify> ChatReceiveNotifyReceived;
 
     /// <summary>世界频道发送响应到达（主线程触发）</summary>
-    public event Action<WorldChatSendResponse> WorldChatSendResponseReceived;
 
     /// <summary>世界频道历史响应到达（主线程触发）</summary>
-    public event Action<WorldChatHistoryResponse> WorldChatHistoryResponseReceived;
 
     /// <summary>世界频道消息广播到达（主线程触发，服务端主动广播给全部在线会话，非请求响应）</summary>
-    public event Action<WorldChatNotify> WorldChatNotifyReceived;
 
     /// <summary>Agent（阿福）聊天响应到达（主线程触发：最终回复+耗时，思考过程不出现）</summary>
     public event Action<AgentChatResponse> AgentChatResponseReceived;
@@ -152,6 +150,9 @@ public class ClientNetworkManager : MonoBehaviour
     /// <summary>排行榜查询响应（TopN 条目+我的排名）</summary>
     public event Action<LeaderboardResponse> LeaderboardResponseReceived;
 
+    /// <summary>挑战开局响应（带回本局 runId，结算上报时回传）</summary>
+    public event Action<ChallengeStartResponse> ChallengeStartResponseReceived;
+
     /// <summary>背包列表响应（槽位快照 + 物品静态配置表）</summary>
     public event Action<BagListResponse> BagListResponseReceived;
 
@@ -171,49 +172,35 @@ public class ClientNetworkManager : MonoBehaviour
     public event Action<BagGrantResponse> BagGrantResponseReceived;
 
     /// <summary>成就列表响应（配置 + 玩家状态 + 汇总）</summary>
-    public event Action<AchievementListResponse> AchievementListResponseReceived;
 
     /// <summary>成就领取响应（发放明细 + 操作后的快照）</summary>
-    public event Action<AchievementClaimResponse> AchievementClaimResponseReceived;
 
     /// <summary>成就解锁推送（服务端主动推给在线玩家，非请求响应）</summary>
-    public event Action<AchievementUnlockedNotify> AchievementUnlockedNotifyReceived;
 
     /// <summary>成就进度推送（预留；服务端当前只在解锁时推 3405）</summary>
-    public event Action<AchievementProgressNotify> AchievementProgressNotifyReceived;
 
     /// <summary>成就 GM 响应（联调用）</summary>
-    public event Action<AchievementGmResponse> AchievementGmResponseReceived;
 
     /// <summary>装备列表响应（配置 + 本人实例 + 槽位）</summary>
-    public event Action<EquipmentListResponse> EquipmentListResponseReceived;
 
     /// <summary>穿戴/卸下响应（结果码 + 操作后的槽位与实例）</summary>
-    public event Action<EquipResponse> EquipResponseReceived;
 
     /// <summary>新手引导进度拉取响应（是否有记录 + 下一步下标 + 完成标记）</summary>
-    public event Action<GuidePullResponse> GuidePullResponseReceived;
 
     /// <summary>新手引导进度上报响应（服务端落库后的步骤下标与完成标记）</summary>
     public event Action<GuidePushResponse> GuidePushResponseReceived;
 
     /// <summary>邮件列表响应（邮箱容量 + 全部有效邮件快照）</summary>
-    public event Action<MailListResponse> MailListResponseReceived;
 
     /// <summary>邮件置读响应（操作后的邮件快照）</summary>
-    public event Action<MailReadResponse> MailReadResponseReceived;
 
     /// <summary>领取附件响应（操作后的邮件快照）</summary>
-    public event Action<MailClaimResponse> MailClaimResponseReceived;
 
     /// <summary>删除邮件响应（操作后的邮件快照）</summary>
-    public event Action<MailDeleteResponse> MailDeleteResponseReceived;
 
     /// <summary>GM 发件响应（发件结果）</summary>
-    public event Action<MailGrantResponse> MailGrantResponseReceived;
 
     /// <summary>收到新邮件推送（服务端主动推给在线收件人，非请求响应）</summary>
-    public event Action<MailReceiveNotify> MailReceiveNotifyReceived;
 
     /// <summary>叙事任务拉取响应（Mm框架·登录后拉取玩家任务状态快照）</summary>
     public event Action<NarrativeQuestSyncResponse> NarrativeQuestSyncResponseReceived;
@@ -237,7 +224,6 @@ public class ClientNetworkManager : MonoBehaviour
     public event Action<ActivityListResponse> ActivityListResponseReceived;
 
     /// <summary>唤取响应（结果列表 + 保底计数 + 操作后的背包快照与涉及物品配置）</summary>
-    public event Action<GachaDrawResponse> GachaDrawResponseReceived;
 
     /// <summary>唤取流水响应（鸣潮"唤取详单"，倒序）</summary>
     public event Action<GachaHistoryResponse> GachaHistoryResponseReceived;
@@ -246,7 +232,6 @@ public class ClientNetworkManager : MonoBehaviour
     public event Action<SignInListResponse> SignInListResponseReceived;
 
     /// <summary>签到响应（签到结果 + 完整天次快照 + 操作后的背包快照与涉及物品配置）</summary>
-    public event Action<SignInClaimResponse> SignInClaimResponseReceived;
 
     /// <summary>活动切换推送（GM 轮换生效后服务端全服广播当前活动状态）</summary>
     public event Action<ActivityChangeNotify> ActivityChangeNotifyReceived;
@@ -255,28 +240,20 @@ public class ClientNetworkManager : MonoBehaviour
     public event Action<ActivityGmRotateResponse> ActivityGmRotateResponseReceived;
 
     /// <summary>对战邀请创建响应（房主侧：邀请是否送达 + 凭据/过期时间）</summary>
-    public event Action<BattleInviteResponse> BattleInviteResponseReceived;
 
     /// <summary>对战邀请推送（好友侧：服务端主动推送，弹邀请卡片）</summary>
-    public event Action<BattleInviteNotify> BattleInviteNotifyReceived;
 
     /// <summary>回应对战邀请响应（好友侧：同意时带房主地址，据此直连 7777）</summary>
-    public event Action<BattleInviteRespondResponse> BattleInviteRespondResponseReceived;
 
     /// <summary>邀请结果推送（房主侧：同意/拒绝/过期/取消）</summary>
-    public event Action<BattleInviteResultNotify> BattleInviteResultNotifyReceived;
 
     /// <summary>取消邀请响应（房主侧：实际取消条数）</summary>
-    public event Action<BattleInviteCancelResponse> BattleInviteCancelResponseReceived;
 
     /// <summary>邀请失效推送（好友侧：房主取消/超时/下线，客户端立刻收起弹窗）</summary>
-    public event Action<BattleInviteCancelledNotify> BattleInviteCancelledNotifyReceived;
 
     /// <summary>场景存档拉取响应（进入场景时恢复位置/相机/对话节点；has_save=false 走场景默认）</summary>
-    public event Action<SaveStatePullResponse> SaveStatePullResponseReceived;
 
     /// <summary>场景存档上报响应（仅确认与排障用，玩法不依赖）</summary>
-    public event Action<SaveStatePushResponse> SaveStatePushResponseReceived;
 
     /// <summary>
     /// 连接已不可用（主线程触发，可能触发多次，订阅方需幂等）
@@ -289,32 +266,8 @@ public class ClientNetworkManager : MonoBehaviour
     // 私有字段
     // ──────────────────────────────
 
-    /// <summary>TCP 客户端对象，用途：底层连接</summary>
-    private TcpClient client;
-
-    /// <summary>网络数据流，用途：读写网络数据</summary>
-    private NetworkStream stream;
-
-    /// <summary>发送锁，用途：串行化写入操作防止多线程交错</summary>
-    private readonly SemaphoreSlim sendLock = new(1, 1);
-
-    /// <summary>收包队列，用途：后台线程收包、主线程取包处理</summary>
-    private readonly ConcurrentQueue<byte[]> packetQueue = new();
-
-    /// <summary>状态消息队列，用途：把后台线程的状态文本转移到主线程</summary>
-    private readonly ConcurrentQueue<string> statusQueue = new();
-
-    /// <summary>主线程动作队列，用途：把后台线程检测到的连接事件转移到主线程派发</summary>
-    private readonly ConcurrentQueue<Action> mainThreadActions = new();
-
-    /// <summary>接收循环运行标记</summary>
-    private bool receiving;
-
-    /// <summary>连接中标记，用途：防止连点/并发重入导致共享字段被交错置空</summary>
-    private bool connecting;
-
-    /// <summary>自动重连开关：连接成功后置 true，主动 Disconnect/退出应用时置 false</summary>
-    private volatile bool autoReconnect;
+    /// <summary>传输层：连接、收发与按类型分发</summary>
+    private NetworkClient network;
 
     /// <summary>
     /// 被顶号后抑制自动登录（本进程内有效，用户主动点"登录"时复位）
@@ -343,15 +296,27 @@ public class ClientNetworkManager : MonoBehaviour
     /// <summary>自动登录令牌缓存（仅内存驻留；令牌登录的会话重连时用它免密码恢复，密码缓存存在时优先密码）</summary>
     private string cachedToken;
 
-    /// <summary>下次发送心跳的时间（主线程 Update 使用）</summary>
-    private DateTime nextHeartbeatAt;
+    /// <summary>自动重连开关：连接成功后置 true，主动 Disconnect/退出应用时置 false</summary>
+    private volatile bool autoReconnect;
 
     // ──────────────────────────────
     // 属性
     // ──────────────────────────────
 
     /// <summary>是否已连接服务器</summary>
-    public bool IsConnected => client != null && client.Connected;
+    public bool IsConnected => network != null && network.IsConnected;
+
+    /// <summary>传输服务（业务模块通过 GameHub 取得同一实例）</summary>
+    public INetworkService Network
+    {
+        get
+        {
+            // Awake 未执行过（单例在本场景加载完成前被杀掉又重建）时按需补齐，
+            // 否则热键重载后会出现"实例在、Network 为 null"的整体雪崩（各管理器 Start 全部 NRE）。
+            if (network == null) RebuildNetwork();
+            return network;
+        }
+    }
 
     /// <summary>
     /// 自己的玩家ID
@@ -364,62 +329,105 @@ public class ClientNetworkManager : MonoBehaviour
     // Unity 生命周期
     // ──────────────────────────────
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+
+        base.Awake();
+
+        RebuildNetwork();
+    }
+
+    private void RebuildNetwork()
+    {
+        network = new NetworkClient();
+        network.StatusChanged += OnStatus;
+        network.ConnectionBroken += OnConnectionBroken;
+        BindMessages();
     }
 
     private void Update()
     {
-        // 心跳：到点发 PingRequest，服务端回 Pong；链路死亡由读超时/发送失败兜底
-        TickHeartbeat();
-
-        // 每帧最多处理 64 个包，防止极端情况下卡帧
-        int processed = 0;
-        while (processed < 64 && packetQueue.TryDequeue(out byte[] data))
-        {
-            try
-            {
-                HandlePacket(data);
-            }
-            catch (Exception exception)
-            {
-                // 坏包意味着字节流已失步（protobuf 解析失败/未知结构），继续处理后续包只会错上加错：
-                // 记录后断开连接，由订阅方清理在途状态
-                Debug.LogError($"[Compete网络]坏包中断处理，断开连接: {exception.Message}");
-                Disconnect();
-                break;
-            }
-            processed++;
-        }
-
-        // 主线程派发状态消息
-        while (statusQueue.TryDequeue(out string status))
-        {
-            StatusChanged?.Invoke(status);
-        }
-
-        // 主线程派发连接事件（先处理完本帧收到的包，再宣告连接死亡，保证回执先于回滚）
-        while (mainThreadActions.TryDequeue(out Action action))
-        {
-            action?.Invoke();
-        }
+        network?.Pump();
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         Disconnect();
     }
 
     private void OnApplicationQuit()
     {
         Disconnect();
+    }
+
+    // ──────────────────────────────
+    // 回包订阅
+    // ──────────────────────────────
+
+    /// <summary>
+    /// 把传输层按类型分发的消息转发成本类既有事件
+    /// 登录与被顶号带会话副作用，单独处理
+    /// </summary>
+    private void BindMessages()
+    {
+        network.Subscribe<LoginResponse>(message =>
+        {
+            // 缓存自己的玩家ID（消息气泡左右分栏、未读数统计都要用）
+            if (message.Success) MyPlayerId = message.PlayerId;
+            LoginResponseReceived?.Invoke(message);
+        });
+
+        network.Subscribe<KickoutNotify>(message =>
+        {
+            // 被顶号：凭据与重连开关都是本类私有字段，只能在这里清，
+            // 否则读循环会拿旧凭据自动重登，造成两端无限互踢
+            cachedAccount = null;
+            cachedPassword = null;
+            cachedToken = null;
+            AutoLoginSuppressedByKick = true;
+            GameLog.Warn($"[Compete网络]被顶号下线：{message.Reason}");
+            Disconnect();
+            KickoutNotifyReceived?.Invoke(message);
+        });
+
+        Forward<RegisterResponse>(message => RegisterResponseReceived?.Invoke(message));
+        Forward<FriendListResponse>(message => FriendListResponseReceived?.Invoke(message));
+        Forward<QueryPlayerResponse>(message => QueryPlayerResponseReceived?.Invoke(message));
+        Forward<FriendAddResponse>(message => FriendAddResponseReceived?.Invoke(message));
+        Forward<FriendRespondResponse>(message => FriendRespondResponseReceived?.Invoke(message));
+        Forward<FriendRequestsResponse>(message => FriendRequestsResponseReceived?.Invoke(message));
+        Forward<AgentChatResponse>(message => AgentChatResponseReceived?.Invoke(message));
+        Forward<AgentChatChunk>(message => AgentChatChunkReceived?.Invoke(message));
+        Forward<AgentBriefNotify>(message => AgentBriefNotifyReceived?.Invoke(message));
+        Forward<AgentHistoryResponse>(message => AgentHistoryResponseReceived?.Invoke(message));
+        Forward<AgentProactiveNotify>(message => AgentProactiveNotifyReceived?.Invoke(message));
+        Forward<ScoreSubmitResponse>(message => ScoreSubmitResponseReceived?.Invoke(message));
+        Forward<LeaderboardResponse>(message => LeaderboardResponseReceived?.Invoke(message));
+        Forward<ChallengeStartResponse>(message => ChallengeStartResponseReceived?.Invoke(message));
+        Forward<BagListResponse>(message => BagListResponseReceived?.Invoke(message));
+        Forward<BagUseResponse>(message => BagUseResponseReceived?.Invoke(message));
+        Forward<BagDiscardResponse>(message => BagDiscardResponseReceived?.Invoke(message));
+        Forward<BagTidyResponse>(message => BagTidyResponseReceived?.Invoke(message));
+        Forward<BagSwapResponse>(message => BagSwapResponseReceived?.Invoke(message));
+        Forward<BagGrantResponse>(message => BagGrantResponseReceived?.Invoke(message));
+        Forward<GuidePushResponse>(message => GuidePushResponseReceived?.Invoke(message));
+        Forward<NarrativeQuestSyncResponse>(message => NarrativeQuestSyncResponseReceived?.Invoke(message));
+        Forward<NarrativeQuestAcceptResponse>(message => NarrativeQuestAcceptResponseReceived?.Invoke(message));
+        Forward<NarrativeQuestSubmitResponse>(message => NarrativeQuestSubmitResponseReceived?.Invoke(message));
+        Forward<NarrativeQuestStateNotify>(message => NarrativeQuestStateNotifyReceived?.Invoke(message));
+        Forward<NarrativeQuestAbandonResponse>(message => NarrativeQuestAbandonResponseReceived?.Invoke(message));
+        Forward<NarrativeQuestToastNotify>(message => NarrativeQuestToastNotifyReceived?.Invoke(message));
+        Forward<ActivityListResponse>(message => ActivityListResponseReceived?.Invoke(message));
+        Forward<GachaHistoryResponse>(message => GachaHistoryResponseReceived?.Invoke(message));
+        Forward<SignInListResponse>(message => SignInListResponseReceived?.Invoke(message));
+        Forward<ActivityChangeNotify>(message => ActivityChangeNotifyReceived?.Invoke(message));
+        Forward<ActivityGmRotateResponse>(message => ActivityGmRotateResponseReceived?.Invoke(message));
+    }
+
+    private void Forward<TMessage>(Action<TMessage> target) where TMessage : class, IMessage
+    {
+        network.Subscribe<TMessage>(message => target?.Invoke(message));
     }
 
     // ──────────────────────────────
@@ -434,38 +442,14 @@ public class ClientNetworkManager : MonoBehaviour
     /// <returns>返回值类型：Task&lt;bool&gt;，用途：连接成功返回true</returns>
     public async Task<bool> ConnectAsync(string host, int port)
     {
-        // 重入保护：上一次连接流程未结束时忽略新的连接请求（防连点/并发竞态）
-        if (connecting) return false;
-        connecting = true;
-        try
+        bool connected = await network.ConnectAsync(host, port);
+        if (connected)
         {
-            CloseTransport();
-            // 用局部引用操作新连接，await 恢复时不依赖共享字段（防止并发 Disconnect 置空引发空引用）
-            TcpClient newClient = new TcpClient();
-            client = newClient;
-            await newClient.ConnectAsync(host, port);
-            newClient.NoDelay = true;
-            NetworkStream newStream = newClient.GetStream();
-            stream = newStream;
-            // 每连接独立的局部引用：旧接收循环不会被"复活"去读新流
-            receiving = true;
             lastHost = host;
             lastPort = port;
             autoReconnect = true;
-            nextHeartbeatAt = DateTime.Now.AddSeconds(HeartbeatIntervalSeconds);
-            _ = ReceiveLoop(newClient, newStream);
-            OnStatus($"已连接 {host}:{port}");
-            return true;
         }
-        catch (Exception exception)
-        {
-            OnStatus($"连接失败:{exception.Message}");
-            return false;
-        }
-        finally
-        {
-            connecting = false;
-        }
+        return connected;
     }
 
     /// <summary>
@@ -474,40 +458,18 @@ public class ClientNetworkManager : MonoBehaviour
     public void Disconnect()
     {
         autoReconnect = false;
-        CloseTransport();
-    }
-
-    /// <summary>
-    /// 关闭当前传输层（不动 autoReconnect 标记）
-    /// 用途：ConnectAsync 内部换连接时复用，避免误关自动重连开关
-    /// </summary>
-    private void CloseTransport()
-    {
-        receiving = false;
         MyPlayerId = 0;   // 断线后身份失效，避免残留旧账号的ID
-        stream?.Close();
-        client?.Close();
-        stream = null;
-        client = null;
+        network?.Disconnect();
     }
 
-    // ──────────────────────────────
-    // 心跳与自动重连
-    // ──────────────────────────────
-
     /// <summary>
-    /// 心跳循环（主线程 Update 调用）：到点且仍在连接状态就发 PingRequest
-    /// 服务端回 PongResponse；若链路死了，发送失败/读超时会走断线路径，这里不用额外判活
+    /// 连接不可用：先通知订阅方清理在途状态，再按需启动自动重连
     /// </summary>
-    private void TickHeartbeat()
+    private void OnConnectionBroken()
     {
-        if (!receiving || stream == null) return;
-        if (DateTime.Now < nextHeartbeatAt) return;
-        nextHeartbeatAt = DateTime.Now.AddSeconds(HeartbeatIntervalSeconds);
-        _ = SendAsync(MessageID.PingRequest, new PingRequest
-        {
-            ClientMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        });
+        ConnectionBroken?.Invoke();
+        if (autoReconnect && !reconnecting)
+            _ = ReconnectLoopAsync();
     }
 
     /// <summary>
@@ -564,392 +526,15 @@ public class ClientNetworkManager : MonoBehaviour
     }
 
     // ──────────────────────────────
-    // 收包
+    // 发送
     // ──────────────────────────────
 
-    /// <summary>
-    /// 后台接收循环方法
-    /// 持续读取完整数据包并入队，等待主线程处理（4字节长度前缀解决粘包/半包）
-    /// </summary>
-    private async Task ReceiveLoop(TcpClient loopClient, NetworkStream loopStream)
-    {
-        try
-        {
-            while (receiving)
-            {
-                // 每帧独立超时窗：Tuanjie 运行时没有 CancellationTokenSource.TryReset（.NET 6+ API），
-                // 改为每帧新建带超时的 CTS，收到完整帧后下一帧自然重新计时
-                using CancellationTokenSource frameCts = new CancellationTokenSource(TimeSpan.FromSeconds(ReceiveTimeoutSeconds));
-                byte[] header = new byte[4];
-                if (!await ReadExactly(loopStream, frameCts.Token, header, 4)) break;
-                int length = BitConverter.ToInt32(header, 0);
-                // 帧体至少含4字节消息ID；1~3 为坏帧（原先只拦 <=0，会让 BitConverter 在主线程抛越界）
-                if (length < 4 || length > 1024 * 1024)
-                    throw new InvalidDataException($"非法数据包长度:{length}");
-                byte[] data = new byte[length];
-                if (!await ReadExactly(loopStream, frameCts.Token, data, length)) break;
-                packetQueue.Enqueue(data);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            OnStatus($"连接已 {ReceiveTimeoutSeconds}s 未收到任何数据，判定断线");
-        }
-        catch (Exception exception)
-        {
-            // Disconnect 主动关流也会走到这里，不算异常
-            OnStatus($"连接断开:{exception.Message}");
-        }
-
-        // 接收循环结束（对端关闭 / 网络异常 / 读超时 / Disconnect 关流）= 连接已不可用。
-        // 统一在此宣告断线，订阅方据此清理在途状态（事件可重复触发，订阅方需幂等）
-        mainThreadActions.Enqueue(() => ConnectionBroken?.Invoke());
-
-        // 非主动断线且允许自动重连时，后台启动退避重连
-        if (autoReconnect && loopClient == client)
-        {
-            _ = ReconnectLoopAsync();
-        }
-    }
-
-    /// <summary>
-    /// 精确读取指定字节数的方法（带每连接取消源，读超时由外层 ReceiveLoop 兜底）
-    /// </summary>
-    private async Task<bool> ReadExactly(NetworkStream loopStream, CancellationToken loopToken, byte[] buffer, int length)
-    {
-        int offset = 0;
-        while (offset < length)
-        {
-            int read = await loopStream.ReadAsync(buffer.AsMemory(offset, length - offset), loopToken);
-            if (read <= 0) return false;
-            offset += read;
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// 数据包处理方法（主线程调用）
-    /// 解析消息ID与protobuf消息体并分发到对应事件
-    /// </summary>
-    private void HandlePacket(byte[] data)
-    {
-        // 帧结构：[4字节消息ID][protobuf消息体]
-        int messageId = BitConverter.ToInt32(data, 0);
-        byte[] body = new byte[data.Length - 4];
-        Buffer.BlockCopy(data, 4, body, 0, body.Length);
-
-        switch ((MessageID)messageId)
-        {
-            case MessageID.PongResponse:
-                // 心跳回执：仅作链路活性证据（收包即重置读超时），RTT 调试日志留在开关内
-                PongResponse pong = PongResponse.Parser.ParseFrom(body);
-                long rttMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - pong.ClientMs;
-                if (Debug.isDebugBuild) Debug.Log($"[Compete网络]心跳RTT:{rttMs}ms");
-                break;
-
-            case MessageID.LoginResponse:
-                LoginResponse loginResponse = LoginResponse.Parser.ParseFrom(body);
-                // 缓存自己的玩家ID（消息气泡左右分栏、未读数统计都要用）
-                if (loginResponse.Success) MyPlayerId = loginResponse.PlayerId;
-                LoginResponseReceived?.Invoke(loginResponse);
-                break;
-
-            case MessageID.TokenLoginResponse:
-                // 自动登录响应复用 LoginResponse 体，成功路径与密码登录完全一致
-                LoginResponse tokenLoginResponse = LoginResponse.Parser.ParseFrom(body);
-                if (tokenLoginResponse.Success) MyPlayerId = tokenLoginResponse.PlayerId;
-                LoginResponseReceived?.Invoke(tokenLoginResponse);
-                break;
-
-            case MessageID.KickoutNotify:
-                // 被顶号：传输层自卫必须在这里做——autoReconnect 与 cached* 凭据都是私有字段，
-                // 外部订阅者只能 Disconnect、清不掉凭据；若后台读循环抢先重连，就会拿旧凭据自动重登
-                KickoutNotify kickout = KickoutNotify.Parser.ParseFrom(body);
-                cachedAccount = null;
-                cachedPassword = null;
-                cachedToken = null;
-                AutoLoginSuppressedByKick = true;
-                Debug.LogWarning($"[Compete网络]被顶号下线：{kickout.Reason}");
-                Disconnect();
-                KickoutNotifyReceived?.Invoke(kickout);
-                break;
-
-            case MessageID.RegisterResponse:
-                RegisterResponseReceived?.Invoke(RegisterResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.FriendListResponse:
-                FriendListResponseReceived?.Invoke(FriendListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.QueryPlayerResponse:
-                QueryPlayerResponseReceived?.Invoke(QueryPlayerResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.FriendAddResponse:
-                FriendAddResponseReceived?.Invoke(FriendAddResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.FriendRespondResponse:
-                FriendRespondResponseReceived?.Invoke(FriendRespondResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.FriendRequestsResponse:
-                FriendRequestsResponseReceived?.Invoke(FriendRequestsResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ChatSendResponse:
-                ChatSendResponseReceived?.Invoke(ChatSendResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ChatHistoryResponse:
-                ChatHistoryResponseReceived?.Invoke(ChatHistoryResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ChatReceiveNotify:
-                ChatReceiveNotifyReceived?.Invoke(ChatReceiveNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.WorldChatSendResponse:
-                WorldChatSendResponseReceived?.Invoke(WorldChatSendResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.WorldChatHistoryResponse:
-                WorldChatHistoryResponseReceived?.Invoke(WorldChatHistoryResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.WorldChatNotify:
-                WorldChatNotifyReceived?.Invoke(WorldChatNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AgentChatResponse:
-                AgentChatResponseReceived?.Invoke(AgentChatResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AgentChatChunk:
-                AgentChatChunkReceived?.Invoke(AgentChatChunk.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AgentBriefNotify:
-                AgentBriefNotifyReceived?.Invoke(AgentBriefNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AgentHistoryResponse:
-                AgentHistoryResponseReceived?.Invoke(AgentHistoryResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AgentProactiveNotify:
-                AgentProactiveNotifyReceived?.Invoke(AgentProactiveNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ScoreSubmitResponse:
-                ScoreSubmitResponseReceived?.Invoke(ScoreSubmitResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.LeaderboardResponse:
-                LeaderboardResponseReceived?.Invoke(LeaderboardResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BagListResponse:
-                BagListResponseReceived?.Invoke(BagListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BagUseResponse:
-                BagUseResponseReceived?.Invoke(BagUseResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BagDiscardResponse:
-                BagDiscardResponseReceived?.Invoke(BagDiscardResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BagTidyResponse:
-                BagTidyResponseReceived?.Invoke(BagTidyResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BagSwapResponse:
-                BagSwapResponseReceived?.Invoke(BagSwapResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BagGrantResponse:
-                BagGrantResponseReceived?.Invoke(BagGrantResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AchievementListResponse:
-                AchievementListResponseReceived?.Invoke(AchievementListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AchievementClaimResponse:
-                AchievementClaimResponseReceived?.Invoke(AchievementClaimResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AchievementUnlockedNotify:
-                AchievementUnlockedNotifyReceived?.Invoke(AchievementUnlockedNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.EquipmentListResponse:
-                EquipmentListResponseReceived?.Invoke(EquipmentListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.EquipResponse:
-                EquipResponseReceived?.Invoke(EquipResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.GuidePullResponse:
-                GuidePullResponseReceived?.Invoke(GuidePullResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.GuidePushResponse:
-                GuidePushResponseReceived?.Invoke(GuidePushResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AchievementProgressNotify:
-                AchievementProgressNotifyReceived?.Invoke(AchievementProgressNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.AchievementGmResponse:
-                AchievementGmResponseReceived?.Invoke(AchievementGmResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.MailListResponse:
-                MailListResponseReceived?.Invoke(MailListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.MailReadResponse:
-                MailReadResponseReceived?.Invoke(MailReadResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.MailClaimResponse:
-                MailClaimResponseReceived?.Invoke(MailClaimResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.MailDeleteResponse:
-                MailDeleteResponseReceived?.Invoke(MailDeleteResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.MailGrantResponse:
-                MailGrantResponseReceived?.Invoke(MailGrantResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.MailReceiveNotify:
-                MailReceiveNotifyReceived?.Invoke(MailReceiveNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.NarrativeQuestSyncResponse:
-                NarrativeQuestSyncResponseReceived?.Invoke(NarrativeQuestSyncResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.NarrativeQuestAcceptResponse:
-                NarrativeQuestAcceptResponseReceived?.Invoke(NarrativeQuestAcceptResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.NarrativeQuestSubmitResponse:
-                NarrativeQuestSubmitResponseReceived?.Invoke(NarrativeQuestSubmitResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.NarrativeQuestStateNotify:
-                NarrativeQuestStateNotifyReceived?.Invoke(NarrativeQuestStateNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.NarrativeQuestAbandonResponse:
-                NarrativeQuestAbandonResponseReceived?.Invoke(NarrativeQuestAbandonResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.NarrativeQuestToastNotify:
-                NarrativeQuestToastNotifyReceived?.Invoke(NarrativeQuestToastNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ActivityListResponse:
-                ActivityListResponseReceived?.Invoke(ActivityListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.GachaDrawResponse:
-                GachaDrawResponseReceived?.Invoke(GachaDrawResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.GachaHistoryResponse:
-                GachaHistoryResponseReceived?.Invoke(GachaHistoryResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.SignInListResponse:
-                SignInListResponseReceived?.Invoke(SignInListResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.SignInClaimResponse:
-                SignInClaimResponseReceived?.Invoke(SignInClaimResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ActivityChangeNotify:
-                ActivityChangeNotifyReceived?.Invoke(ActivityChangeNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.ActivityGmRotateResponse:
-                ActivityGmRotateResponseReceived?.Invoke(ActivityGmRotateResponse.Parser.ParseFrom(body));
-                break;
-
-            // ── 对战好友邀请（信令层）──
-            case MessageID.BattleInviteResponse:
-                BattleInviteResponseReceived?.Invoke(BattleInviteResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BattleInviteNotify:
-                BattleInviteNotifyReceived?.Invoke(BattleInviteNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BattleInviteRespondResponse:
-                BattleInviteRespondResponseReceived?.Invoke(BattleInviteRespondResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BattleInviteResultNotify:
-                BattleInviteResultNotifyReceived?.Invoke(BattleInviteResultNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BattleInviteCancelResponse:
-                BattleInviteCancelResponseReceived?.Invoke(BattleInviteCancelResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.BattleInviteCancelledNotify:
-                BattleInviteCancelledNotifyReceived?.Invoke(BattleInviteCancelledNotify.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.SaveStatePullResponse:
-                SaveStatePullResponseReceived?.Invoke(SaveStatePullResponse.Parser.ParseFrom(body));
-                break;
-
-            case MessageID.SaveStatePushResponse:
-                SaveStatePushResponseReceived?.Invoke(SaveStatePushResponse.Parser.ParseFrom(body));
-                break;
-
-            default:
-                Debug.LogWarning($"未知消息:{messageId}");
-                break;
-        }
-    }
-
-    // ──────────────────────────────
-    // 发包
-    // ──────────────────────────────
-
-    /// <summary>
-    /// 发送 protobuf 消息的方法
-    /// 组装[消息ID+消息体]后走统一的长度前缀发送路径
-    /// </summary>
-    /// <param name="id">参数名：id，类型：MessageID，用途：消息ID枚举值</param>
-    /// <param name="message">参数名：message，类型：IMessage，用途：protobuf消息对象</param>
+    /// <summary>发送一条协议消息</summary>
     public Task SendAsync(MessageID id, IMessage message)
     {
-        byte[] body = message.ToByteArray();
-        byte[] payload = new byte[4 + body.Length];
-        BitConverter.GetBytes((int)id).CopyTo(payload, 0);
-        Buffer.BlockCopy(body, 0, payload, 4, body.Length);
-        return SendRawAsync(payload);
+        return network.SendAsync(id, message);
     }
 
-    /// <summary>
-    /// 发送登录请求的方法
-    /// </summary>
-    /// <param name="account">参数名：account，类型：string，用途：账号</param>
-    /// <param name="password">参数名：password，类型：string，用途：密码</param>
-    /// <param name="rememberMe">参数名：rememberMe，类型：bool，用途：是否勾选"下次自动登录"（true=登录成功后服务器签发令牌随响应下发）</param>
     public Task SendLogin(string account, string password, bool rememberMe = false)
     {
         // 缓存凭据（仅内存）：断线自动重连成功后用它免登录恢复会话
@@ -1019,15 +604,30 @@ public class ClientNetworkManager : MonoBehaviour
 
     /// <summary>
     /// 发送成绩上报请求的方法（排行榜：服务端按"只保留最高分"入账）
+    /// 必须带上开局时拿到的 runId：服务端据此还原开局时刻，校验耗时与分数
     /// </summary>
     /// <param name="challengeId">参数名：challengeId，类型：int，用途：挑战ID</param>
     /// <param name="score">参数名：score，类型：long，用途：本次挑战成绩</param>
-    public Task SendScoreSubmit(int challengeId, long score)
+    /// <param name="runId">参数名：runId，类型：string，用途：开局响应下发的局标识</param>
+    public Task SendScoreSubmit(int challengeId, long score, string runId)
     {
         return SendAsync(MessageID.ScoreSubmitRequest, new ScoreSubmitRequest
         {
             ChallengeId = challengeId,
             Score = score,
+            RunId = runId ?? string.Empty,
+        });
+    }
+
+    /// <summary>
+    /// 发送挑战开局请求的方法（服务端记录开局时刻，响应里带回 runId）
+    /// </summary>
+    /// <param name="challengeId">参数名：challengeId，类型：int，用途：挑战ID</param>
+    public Task SendChallengeStart(int challengeId)
+    {
+        return SendAsync(MessageID.ChallengeStartRequest, new ChallengeStartRequest
+        {
+            ChallengeId = challengeId,
         });
     }
 
@@ -1608,51 +1208,16 @@ public class ClientNetworkManager : MonoBehaviour
         });
     }
 
-    /// <summary>
-    /// 原始发送方法（带4字节长度头）
-    /// </summary>
-    private async Task SendRawAsync(byte[] data)
-    {
-        // 用局部引用发送：await 期间 Disconnect 可能把共享字段置空，不能依赖它们
-        NetworkStream currentStream = stream;
-        if (currentStream == null)
-        {
-            // 静默返回会让调用方以为已发出：记警告，由订阅方的超时/回执逻辑兜底
-            Debug.LogWarning($"[Compete网络]未连接，忽略发送消息 {(MessageID)BitConverter.ToInt32(data, 0)}");
-            return;
-        }
-
-        byte[] header = BitConverter.GetBytes(data.Length);
-        await sendLock.WaitAsync();
-        try
-        {
-            await currentStream.WriteAsync(header);
-            await currentStream.WriteAsync(data);
-        }
-        catch (Exception exception)
-        {
-            // 发送失败是比 TcpClient.Connected 更可靠的断线信号（后者只反映最后一次 IO）：
-            // 置为断线状态、提示 UI，并让订阅方（ChatManager）回滚在途的乐观消息
-            OnStatus($"发送失败，连接断开:{exception.Message}");
-            mainThreadActions.Enqueue(() => ConnectionBroken?.Invoke());
-            Disconnect();
-        }
-        finally
-        {
-            sendLock.Release();
-        }
-    }
-
     // ──────────────────────────────
     // 状态上报
     // ──────────────────────────────
 
     /// <summary>
-    /// 状态上报方法（任意线程可调用，安全转移到主线程）
+    /// 状态上报方法（主线程派发，供 UI 显示连接状态）
     /// </summary>
     private void OnStatus(string message)
     {
-        Debug.Log($"[Compete网络]{message}");
-        statusQueue.Enqueue(message);
+        GameLog.Info($"[Compete网络]{message}");
+        StatusChanged?.Invoke(message);
     }
 }

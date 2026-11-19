@@ -46,7 +46,7 @@ public class DashijieMapView : UIView
         minimap = new DashijieMinimap();
         if (!minimap.Load())
         {
-            Debug.LogWarning($"[DashijieMapView] 底图缺失：Resources/{DashijieMinimap.ResourcePath}");
+            GameLog.Warn($"[DashijieMapView] 底图缺失：Resources/{DashijieMinimap.ResourcePath}");
             minimap = null;
         }
         else if (mapImage != null)

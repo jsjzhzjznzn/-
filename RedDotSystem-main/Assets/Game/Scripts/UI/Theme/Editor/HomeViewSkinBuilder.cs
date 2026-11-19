@@ -18,10 +18,10 @@ using UnityEngine.UI;
 public static class HomeViewSkinBuilder
 {
     private const string PrefabPath = "Assets/Game/UI/Home/HomeView.prefab";
-    private const string BackgroundPath = "Assets/Game/Resources/ui/Theme/home_bg.png";
-    private const string RoundedPath = "Assets/Game/Resources/ui/Theme/panel_round.png";
-    private const string CirclePath = "Assets/Game/Resources/ui/Theme/circle.png";
-    private const string ChipPath = "Assets/Game/Resources/ui/Theme/btn_round.png";
+    private const string BackgroundPath = "Assets/Game/Art/UI/Theme/home_bg.png";
+    private const string RoundedPath = "Assets/Game/Art/UI/Theme/panel_round.png";
+    private const string CirclePath = "Assets/Game/Art/UI/Theme/circle.png";
+    private const string ChipPath = "Assets/Game/Art/UI/Theme/btn_round.png";
     private const string FontPath = "Assets/Codely/Fonts/NotoSansSC-Regular SDF.asset";
     private const string IconsFolder = "Assets/Game/UI/Home/Art/Icons";
     private const string ArtFolder = "Assets/Game/UI/Home/Art";

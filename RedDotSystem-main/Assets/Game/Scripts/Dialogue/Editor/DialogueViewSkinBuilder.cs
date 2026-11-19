@@ -28,7 +28,7 @@ namespace SkierFrameworkUIMigration
     {
         private const string PrefabPath = "Assets/Game/UI/Dialogue/DialogueView.prefab";
         private const string TextureFolder = "Assets/Game/UI/Dialogue/Textures";
-        private const string PanelSpritePath = "Assets/Game/Resources/ui/Theme/panel_round.png";
+        private const string PanelSpritePath = "Assets/Game/Art/UI/Theme/panel_round.png";
         private const string FontPath = "Assets/Codely/Fonts/NotoSansSC-Regular SDF.asset";
 
         private const int OptionCount = 3;

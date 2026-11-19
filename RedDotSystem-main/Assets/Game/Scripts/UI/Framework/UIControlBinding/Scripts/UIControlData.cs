@@ -1,4 +1,4 @@
-﻿/*
+/*
     URL: https://github.com/Misaka-Mikoto-Tech/UIControlBinding
     使用方法:
     UE: 将此脚本添加到UI根节点，与程序协商好需要绑定的控件及其变量名后，将需要绑定的控件拖到脚本上
@@ -810,7 +810,7 @@ namespace SkierFramework
 
             string path = UILuaTemplateGenerator.GenerateForInstance(gameObject);
             if (path != null)
-                Debug.Log("Lua 模板就绪: " + path);
+                GameLog.Info("Lua 模板就绪: " + path);
         }
 
 

@@ -1,4 +1,10 @@
+using System;
+
 using System.Collections.Generic;
+
+using MieMieFrameWork.Business;
+
+using Game.Bag;
 
 using Common.Network;
 
@@ -11,6 +17,7 @@ using SkierFramework;
 
 using TMPro;
 
+using Game.Narrative.Quest;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -26,6 +33,12 @@ using UnityEngine.UI;
 /// </summary>
 public class QuestView : UIView
 {
+
+    /// <summary>任务数据变化订阅令牌（关闭页面时释放）</summary>
+    private IDisposable questUpdatedToken;
+
+    /// <summary>背包事件订阅令牌</summary>
+    private IDisposable bagUpdatedToken;
     // ──────────────────────────────
     // 序列化引用（编辑器搭建脚本注入）
     // ──────────────────────────────
@@ -92,6 +105,9 @@ public class QuestView : UIView
     /// <summary>实例化出来的行（重刷时统一销毁）</summary>
     private readonly List<GameObject> spawnedRows = new();
 
+    /// <summary>详情页奖励格的图标引用（背包变化时只换这几个图标，不重建列表）</summary>
+    private readonly List<(int ItemId, Image Icon)> rewardIcons = new();
+
     /// <summary>主按钮当前语义</summary>
     private enum PrimaryAction
     {
@@ -121,12 +137,12 @@ public class QuestView : UIView
     {
         base.OnInit(uIControlData, controller);
 
-        if (MmQuestRuntime.Instance != null)
-            MmQuestRuntime.Instance.QuestsUpdated += RefreshAll;
+        if (GameHub.Get<IQuestService>() != null)
+            questUpdatedToken = MmQuestRuntime.Bus.Subscribe(QuestEvents.Updated, RefreshAll);
 
         // 奖励格图标来自背包物品配置：背包未拉时 iconKey 为空，格子只剩空底框
         if (BagManager.Instance != null)
-            BagManager.Instance.BagUpdated += OnBagUpdated;
+            bagUpdatedToken = BagManager.Bus.Subscribe(BagEvents.Updated, OnBagUpdated);
 
         // 切场景（进副本/大世界/对话等）必须收起本页：全屏底板留着会盖住新场景，
         // 而且面板实例常驻 DDOL，不收起还会一直显示旧场景算出来的内容（NPC/区域文案）
@@ -142,8 +158,24 @@ public class QuestView : UIView
         UIManager.Instance.Close(UIType.QuestView).Forget();
     }
 
-    /// <summary>背包配置到达后补刷奖励格图标</summary>
-    private void OnBagUpdated() => RefreshAll();
+    /// <summary>背包配置到达后补刷奖励格图标；列表卡片不显示物品图标，无需重建列表</summary>
+    private void OnBagUpdated()
+    {
+        if (UIManager.Instance == null || !UIManager.Instance.IsOpen(UIType.QuestView)) return;
+        RefreshRewardIcons();
+    }
+
+    /// <summary>就地更新奖励格图标（背包未拉取时格子只有空底框，配置到达后补上）</summary>
+    private void RefreshRewardIcons()
+    {
+        for (int i = 0; i < rewardIcons.Count; i++)
+        {
+            Image icon = rewardIcons[i].Icon;
+            if (icon == null) continue;
+            icon.sprite = ItemIconLoader.Get(ItemIconKey(rewardIcons[i].ItemId));
+            icon.enabled = icon.sprite != null;
+        }
+    }
 
     public override void OnAddListener()
     {
@@ -177,11 +209,12 @@ public class QuestView : UIView
         RefreshAll();
 
         // 打开即拉最新快照（服务端权威：面板展示的必须是刚拉到的状态）
-        MmQuestRuntime.Instance?.RequestSync();
+        GameHub.Get<IQuestService>()?.RequestSync();
 
         // 奖励图标依赖背包物品配置，没拉到就补一次
-        if (BagManager.Instance != null && BagManager.Instance.AllConfigs.Count == 0)
-            BagManager.Instance.RequestBag();
+        IBagService bag = GameHub.Get<IBagService>();
+        if (bag != null && bag.AllConfigs.Count == 0)
+            bag.RequestBag();
     }
 
     public override void OnCancel()
@@ -193,10 +226,11 @@ public class QuestView : UIView
     {
         UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= OnActiveSceneChanged;
 
-        if (MmQuestRuntime.Instance != null)
-            MmQuestRuntime.Instance.QuestsUpdated -= RefreshAll;
-        if (BagManager.Instance != null)
-            BagManager.Instance.BagUpdated -= OnBagUpdated;
+        // 退订不依赖发布者存活：发布者先销毁而订阅仍在时，回调会打到已销毁的视图上
+        questUpdatedToken?.Dispose();
+        questUpdatedToken = null;
+        bagUpdatedToken?.Dispose();
+        bagUpdatedToken = null;
     }
 
     // ──────────────────────────────
@@ -205,7 +239,7 @@ public class QuestView : UIView
 
     private void RefreshAll()
     {
-        MmQuestRuntime quests = MmQuestRuntime.Instance;
+        IQuestService quests = GameHub.Get<IQuestService>();
         if (quests == null) return;
 
         if (titleText != null) titleText.SetText("任务");
@@ -215,7 +249,7 @@ public class QuestView : UIView
     }
 
     /// <summary>重建列表：分组标题条 + 任务卡片；选中项不存在时退回第一个任务</summary>
-    private void RebuildList(MmQuestRuntime quests)
+    private void RebuildList(IQuestService quests)
     {
         if (listContent == null || cardTemplate == null) return;
 
@@ -233,7 +267,7 @@ public class QuestView : UIView
         if (questScroll != null) questScroll.verticalNormalizedPosition = 1f;
     }
 
-    private void AddSection(MmQuestRuntime quests, EQuestCategory category, string title, string watermark)
+    private void AddSection(IQuestService quests, EQuestCategory category, string title, string watermark)
     {
         List<QuestData> list = quests.QuestsOf(category);
         if (list.Count == 0) return;
@@ -262,7 +296,7 @@ public class QuestView : UIView
         foreach (QuestData quest in list) AddCard(quests, quest);
     }
 
-    private static int RankOf(MmQuestRuntime quests, int questId)
+    private static int RankOf(IQuestService quests, int questId)
     {
         if (quests.IsSubmittable(questId)) return 0;
         return quests.StateOf(questId) switch
@@ -274,7 +308,7 @@ public class QuestView : UIView
         };
     }
 
-    private void AddCard(MmQuestRuntime quests, QuestData quest)
+    private void AddCard(IQuestService quests, QuestData quest)
     {
         if (cardTemplate == null) return;
 
@@ -331,7 +365,7 @@ public class QuestView : UIView
         for (int i = 0; i < goals.Count; i++) AddGoalRow(quests, questId, goals[i], i, goalRoot);
     }
 
-    private void AddGoalRow(MmQuestRuntime quests, int questId, QuestGoal goal, int index, RectTransform parent)
+    private void AddGoalRow(IQuestService quests, int questId, QuestGoal goal, int index, RectTransform parent)
     {
         if (goalTemplate == null) return;
 
@@ -363,7 +397,7 @@ public class QuestView : UIView
     }
 
     /// <summary>右列详情：标题 / 当前目标胶囊 / 区域名 / 描述 / 目标清单 / 奖励 / 主按钮</summary>
-    private void RefreshDetail(MmQuestRuntime quests)
+    private void RefreshDetail(IQuestService quests)
     {
         QuestData quest = quests.ConfigOf(selectedQuestId);
 
@@ -438,6 +472,8 @@ public class QuestView : UIView
         IReadOnlyList<QuestRewardConfig> rewards = quest.Rewards;
         if (rewardSection != null) rewardSection.SetActive(rewards.Count > 0);
 
+        rewardIcons.Clear();
+
         foreach (QuestRewardConfig reward in rewards)
         {
             if (reward == null || reward.itemId <= 0) continue;
@@ -451,6 +487,7 @@ public class QuestView : UIView
             {
                 icon.sprite = ItemIconLoader.Get(ItemIconKey(reward.itemId));
                 icon.enabled = icon.sprite != null;
+                rewardIcons.Add((reward.itemId, icon));
             }
 
             TMP_Text count = cell.Find("Count")?.GetComponent<TMP_Text>();
@@ -467,7 +504,7 @@ public class QuestView : UIView
     }
 
     /// <summary>目标清单文案（全部目标 + 状态，与服务端进度一一对应）</summary>
-    private static string BuildGoalList(MmQuestRuntime quests, QuestData quest)
+    private static string BuildGoalList(IQuestService quests, QuestData quest)
     {
         System.Text.StringBuilder builder = new();
         IReadOnlyList<QuestGoal> goals = quest.GetGoals();
@@ -500,7 +537,7 @@ public class QuestView : UIView
 
     private void OnPrimaryClicked()
     {
-        MmQuestRuntime quests = MmQuestRuntime.Instance;
+        IQuestService quests = GameHub.Get<IQuestService>();
         if (quests == null || selectedQuestId == 0) return;
 
         switch (primaryAction)
@@ -538,7 +575,7 @@ public class QuestView : UIView
         PauseManager.Pop(PauseManager.Layer.Quest);
 
         if (Application.isEditor)
-            Debug.Log($"[QuestView] 关闭按钮已触发（isOpen={UIManager.Instance.IsOpen(UIType.QuestView)}）", this);
+            GameLog.Info($"[QuestView] 关闭按钮已触发（isOpen={UIManager.Instance.IsOpen(UIType.QuestView)}）", this);
 
         UIManager.Instance.Close(UIType.QuestView).Forget();
     }
@@ -575,7 +612,7 @@ public class QuestView : UIView
     // 文案
     // ──────────────────────────────
 
-    private static int PickDefaultQuest(MmQuestRuntime quests)
+    private static int PickDefaultQuest(IQuestService quests)
     {
         int best = 0;
         int bestRank = int.MaxValue;
@@ -590,7 +627,7 @@ public class QuestView : UIView
         return best;
     }
 
-    private static string SubtitleOf(MmQuestRuntime quests, QuestData quest)
+    private static string SubtitleOf(IQuestService quests, QuestData quest)
     {
         string category = CategoryName(quest.Category);
         return quests.StateOf(quest.QuestId) switch

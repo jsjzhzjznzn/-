@@ -85,7 +85,7 @@ public class BuffData : ScriptableObject
     private void OnValidate()
     {
         if (string.IsNullOrEmpty(_buffId))
-            Debug.LogWarning($"[BuffData] \"{name}\" 未填 buffId，将临时用资产名当叠层键；建议显式填写（同一 buffId 视为同一 Buff）", this);
+            GameLog.Warn($"[BuffData] \"{name}\" 未填 buffId，将临时用资产名当叠层键；建议显式填写（同一 buffId 视为同一 Buff）", this);
     }
 #endif
 }

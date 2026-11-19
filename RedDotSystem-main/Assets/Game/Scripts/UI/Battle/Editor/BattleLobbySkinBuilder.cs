@@ -42,11 +42,11 @@ public static class BattleLobbySkinBuilder
         Sprite circle = EnsureRoundedSprite(ThemeDir + "/circle.png", 128, 64, 0);
 
         // 羊皮纸面板底图（金色描边 + 四角藤蔓），九宫格切分：四角装饰不拉伸，中间纸面跟着面板走
-        string panelArtPath = FindAssetPath(ThemeDir + "/panel_bg.png", "Assets/Game/Resources/ui/Theme/panel_bg.png");
+        string panelArtPath = FindAssetPath(ThemeDir + "/panel_bg.png", "Assets/Game/Art/UI/Theme/panel_bg.png");
         Sprite panelArt = panelArtPath != null ? EnsureSlicedSprite(panelArtPath, 200) : null;
 
         // 背景图：主页虚化底（低分辨率模糊图，本来就是做全屏 backdrop 用的）
-        Sprite backdropArt = LoadSprite(ThemeDir + "/blur_home.png", "Assets/Game/Resources/ui/Theme/blur_home.png");
+        Sprite backdropArt = LoadSprite(ThemeDir + "/blur_home.png", "Assets/Game/Art/UI/Theme/blur_home.png");
         TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
 
         GameObject root = new GameObject("BattleLobbyView", typeof(RectTransform));

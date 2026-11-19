@@ -19,7 +19,11 @@ namespace CompeteServer.Network
         /// <summary>监听端口（与游戏 TCP 端口分离，避免协议混跑；默认 8899，随 ServerConfig 集中定义）</summary>
         public static int Port => ServerConfig.HotContentPort;
 
-        /// <summary>单文件响应大小上限（20MB），超限返回 413，防止超大文件占满内存/带宽</summary>
+        /// <summary>
+        /// 单文件响应大小上限（20MB），超限返回 413，防止超大文件占满带宽。
+        /// 超过该上限说明有资源被打进了不该去的包（例如界面预制体把模型/字体的依赖带进热更包），应修正收集范围而不是放宽上限。
+        /// 下发走 FileStream 流式拷贝，不会把整个文件读进内存。
+        /// </summary>
         private const long MaxResponseBytes = 20 * 1024 * 1024;
 
         /// <summary>客户端拼 URL 用的主机前缀（本机联调固定 127.0.0.1）</summary>

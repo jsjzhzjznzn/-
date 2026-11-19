@@ -35,7 +35,7 @@ public sealed class StaggerAction : EnemyAction
         brain.PlayClip(clip, 0.06f);
 
         if (brain.logActions)
-            Debug.Log($"[AI] {brain.name} 硬直 {duration:F2}s（破韧={poiseBroken}）", brain);
+            GameLog.Info($"[AI] {brain.name} 硬直 {duration:F2}s（破韧={poiseBroken}）", brain);
     }
 
     public override void Tick(float deltaTime)

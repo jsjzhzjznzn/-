@@ -5,6 +5,7 @@ using CompeteServer.Database;
 using CompeteServer.Entity;
 using CompeteServer.Manager;
 using CompeteServer.Network;
+using CompeteServer.Security;
 
 namespace CompeteServer.Handler
 {
@@ -84,6 +85,10 @@ namespace CompeteServer.Handler
 
                 case MessageID.LeaderboardRequest:
                     LeaderboardHandler.HandleLeaderboard(session, body);
+                    break;
+
+                case MessageID.ChallengeStartRequest:
+                    LeaderboardHandler.HandleChallengeStart(session, body);
                     break;
 
                 case MessageID.BagListRequest:
@@ -283,6 +288,38 @@ namespace CompeteServer.Handler
                 ClientMs = request.ClientMs,
                 ServerMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
+
+            // 登记校验在后台做：Valkey 离线时单条命令要等 2s 超时才降级，
+            // 放在会话 worker 上会让该玩家的所有消息（含心跳回执之后的操作）一起卡住
+            if (session.PlayerId > 0 && !string.IsNullOrEmpty(session.SessionEpoch) && session.ShouldCheckRegistry())
+            {
+                int playerId = session.PlayerId;
+                string sessionEpoch = session.SessionEpoch!;
+                _ = Task.Run(() => VerifySessionOwnership(session, playerId, sessionEpoch));
+            }
+        }
+
+        /// <summary>
+        /// 核对会话归属：本会话已被同账号的新登录顶替时主动踢下。
+        /// 这是顶号的第二道防线——第一道是登录时推送 KickoutNotify 并关流，
+        /// 但通知受 2 秒宽限期限制，旧设备网络极差时会丢包（客户端只看到断线，
+        /// 随后用缓存的账号密码自动重登形成互踢），此处按 Valkey 登记校正。
+        /// 按会话节流 30 秒一次，Valkey 不可用时不做任何处置（不踢人）
+        /// </summary>
+        /// <param name="session">参数名：session，类型：ClientSession，用途：收到心跳的会话</param>
+        /// <param name="playerId">参数名：playerId，类型：int，用途：会话绑定的玩家ID（调用时快照）</param>
+        /// <param name="sessionEpoch">参数名：sessionEpoch，类型：string，用途：会话标识（调用时快照）</param>
+        private static void VerifySessionOwnership(ClientSession session, int playerId, string sessionEpoch)
+        {
+            // 返回 false 表示无法判定（Valkey 不可用或键已过期），此时保持连接不动
+            if (!SessionRegistry.Instance.TryValidate(playerId, sessionEpoch, out bool stillOwner)) return;
+            if (stillOwner) return;
+
+            Console.WriteLine($"[顶号] 心跳校验发现会话已被顶替 SessionID={session.SessionID} 玩家={playerId}");
+            // 必须先标记被顶号再踢：否则 Close 会走"正常下线"分支，
+            // 按 PlayerId 删掉线上记录——而该记录此时属于新会话，会造成新会话在线却不在线表里
+            session.MarkEvicted();
+            session.KickOut("账号在其它设备登录");
         }
 
         // ──────────────────────────────
@@ -302,6 +339,17 @@ namespace CompeteServer.Handler
 
             RegisterRequest request = RegisterRequest.Parser.ParseFrom(body);
 
+            // 冷却窗口内直接拒绝：注册同样是每次一击数据库，与登录共用失败计数
+            if (session.IsAuthLocked())
+            {
+                _ = session.Send(MessageID.RegisterResponse, new RegisterResponse
+                {
+                    Success = false,
+                    Message = "尝试次数过多，请稍后再试",
+                });
+                return;
+            }
+
             AccountRepository repository = new AccountRepository();
             (bool success, string message) = repository.Register(request.Account, request.Password);
 
@@ -311,6 +359,9 @@ namespace CompeteServer.Handler
                 Message = message,
             };
             Console.WriteLine($"注册结果:{request.Account} → {message}");
+
+            if (success) session.ResetAuthFailures();
+            else session.RecordAuthFailure();
 
             _ = session.Send(MessageID.RegisterResponse, response);
         }
@@ -328,20 +379,34 @@ namespace CompeteServer.Handler
 
             LoginRequest request = LoginRequest.Parser.ParseFrom(body);
 
+            // 冷却窗口内直接拒绝，不查库
+            if (session.IsAuthLocked())
+            {
+                _ = session.Send(MessageID.LoginResponse, new LoginResponse
+                {
+                    Success = false,
+                    Message = "尝试次数过多，请稍后再试",
+                });
+                return;
+            }
+
             AccountRepository repository = new AccountRepository();
             int? playerId = repository.Login(request.Account, request.Password);
 
             LoginResponse response = new LoginResponse();
 
-            // 失败：账号不存在或密码错误
+            // 失败：账号不存在或密码错误（两者文案一致，不暴露账号是否存在）
             if (playerId == null)
             {
+                session.RecordAuthFailure();
                 response.Success = false;
                 response.Message = "账号或密码错误";
             }
             // 成功（含会话绑定与在线注册；账号已在线时由共享路径写失败文案）
             else if (CompleteLogin(session, playerId.Value, request.Account, response))
             {
+                session.ResetAuthFailures();
+
                 // 勾选"下次自动登录" → 签发令牌；重新签发会覆盖旧令牌（旧的立即作废）
                 if (request.RememberMe)
                 {
@@ -367,6 +432,17 @@ namespace CompeteServer.Handler
 
             TokenLoginRequest request = TokenLoginRequest.Parser.ParseFrom(body);
 
+            // 令牌登录同样会打数据库，与密码登录共用冷却窗口与失败计数
+            if (session.IsAuthLocked())
+            {
+                _ = session.Send(MessageID.TokenLoginResponse, new LoginResponse
+                {
+                    Success = false,
+                    Message = "尝试次数过多，请稍后再试",
+                });
+                return;
+            }
+
             LoginResponse response = new LoginResponse
             {
                 Success = false,
@@ -376,6 +452,7 @@ namespace CompeteServer.Handler
             int? playerId = new AccountRepository().GetPlayerIdByAccount(request.Account);
             if (playerId == null)
             {
+                session.RecordAuthFailure();
                 _ = session.Send(MessageID.TokenLoginResponse, response);
                 return;
             }
@@ -384,6 +461,7 @@ namespace CompeteServer.Handler
             if (!valid)
             {
                 Console.WriteLine($"自动登录失败:玩家{playerId} 令牌无效或已过期");
+                session.RecordAuthFailure();
                 _ = session.Send(MessageID.TokenLoginResponse, response);
                 return;
             }
@@ -394,6 +472,8 @@ namespace CompeteServer.Handler
                 _ = session.Send(MessageID.TokenLoginResponse, response);
                 return;
             }
+
+            session.ResetAuthFailures();
 
             // 滑动续期：新过期时间随响应下发，客户端更新本地保存（令牌本体不变）
             response.AutoLoginToken = request.Token;
@@ -427,6 +507,12 @@ namespace CompeteServer.Handler
             response.PlayerId = playerId;
             response.Message = "登录成功";
 
+            // 会话登记：生成会话标识并写入 Valkey，供心跳校验判定"本会话是否仍是当前会话"。
+            // 必须先登记再踢旧会话——旧会话关闭时会按自己的标识做比较删除，
+            // 此时值已是新会话标识，比较不成立即为空操作，不会误删新登记
+            session.SessionEpoch = Guid.NewGuid().ToString("N");
+            SessionRegistry.Instance.TryRegister(playerId, session.SessionEpoch);
+
             // 构建在线玩家实体并加入管理器（聊天/好友等系统从这里查询在线状态）
             // 顶号场景下 AddPlayer 是字典索引器覆盖，天然替换旧实体，故这里不需要对 PlayerManager 做任何清理
             PlayerManager.Instance.AddPlayer(new PlayerEntity
@@ -452,6 +538,10 @@ namespace CompeteServer.Handler
 
             // 成就登录初始化：补齐应激活行，并按历史统计静默重算（不推送，避免登录瞬间刷旧成就）
             AchievementService.OnPlayerLogin(playerId);
+
+            // 聊天未读快照：补齐离线期间收到的消息（离线只落库不推送，这是唯一能拿到权威未读数的时机）
+            // 失败不阻断登录：Mongo 不可用时返回空表，快照只是空推送，不影响后续正常收消息
+            ChatHandler.PushUnreadSnapshot(session, playerId);
 
             return true;
         }
@@ -594,7 +684,7 @@ namespace CompeteServer.Handler
             _ = session.Send(MessageID.BagSwapResponse, response);
         }
 
-        /// <summary>测试发放处理方法（本期物品唯一来源，调试用）。</summary>
+        /// <summary>测试发放处理方法（联调便利，仅白名单账号可用）。</summary>
         /// <param name="session">参数名：session，类型：ClientSession，用途：客户端的会话连接对象</param>
         /// <param name="body">参数名：body，类型：byte[]，用途：protobuf序列化的请求消息体</param>
         private static void HandleBagGrant(ClientSession session, ReadOnlySpan<byte> body)
@@ -603,6 +693,15 @@ namespace CompeteServer.Handler
             {
                 _ = session.Send(MessageID.BagGrantResponse,
                     new BagGrantResponse { Success = false, Message = "请先登录" });
+                return;
+            }
+
+            // 调试能力闸门：白名单之外的账号一律拒绝，且不解析请求体、不碰数据库
+            if (!DebugAccountGate.IsAllowed(session.PlayerId))
+            {
+                Console.WriteLine($"背包发放被拒(非调试账号):{session.PlayerId}");
+                _ = session.Send(MessageID.BagGrantResponse,
+                    new BagGrantResponse { Success = false, Message = "测试发放未开放" });
                 return;
             }
 

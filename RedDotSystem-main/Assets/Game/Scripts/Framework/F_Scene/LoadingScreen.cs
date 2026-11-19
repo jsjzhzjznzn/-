@@ -63,7 +63,10 @@ public class LoadingScreen : MonoBehaviour
     private void Build(string sceneName)
     {
         canvasGroup = gameObject.AddComponent<CanvasGroup>();
-        canvasGroup.alpha = 0f;
+        // 直接全量可见：淡入依赖帧率，而加载起步那一帧可能有上千毫秒的卡顿，
+        // 淡入会把"遮罩已经出现"拖到几秒后，玩家看到的是"点了没反应"。
+        // 加载遮罩要的是立刻反馈，不是过渡动效。
+        canvasGroup.alpha = 1f;
 
         Canvas canvas = gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -112,14 +115,14 @@ public class LoadingScreen : MonoBehaviour
 
     private void Update()
     {
-        if (canvasGroup == null)
+        // 只有隐藏时才走补间；显示时 alpha 在 Build 里已置 1，不依赖帧率
+        if (!hiding || canvasGroup == null)
             return;
 
-        float target = hiding ? 0f : 1f;
-        canvasGroup.alpha = Mathf.MoveTowards(canvasGroup.alpha, target,
+        canvasGroup.alpha = Mathf.MoveTowards(canvasGroup.alpha, 0f,
                                               Time.unscaledDeltaTime / FadeDuration);
 
-        if (hiding && canvasGroup.alpha <= 0f)
+        if (canvasGroup.alpha <= 0f)
             Destroy(gameObject);
     }
 

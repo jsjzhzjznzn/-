@@ -68,9 +68,9 @@ namespace Miemie.DialogSystem
             }
 
             if (NextTransition.toNodeId == 0)
-                Debug.LogWarning("Node is Over");
+                GameLog.Warn("Node is Over");
             else if (graph != null && graph.FindNode(NextTransition.toNodeId) == null)
-                Debug.LogWarning($"Node [{nodeConfigId}] next target {NextTransition.toNodeId} not found");
+                GameLog.Warn($"Node [{nodeConfigId}] next target {NextTransition.toNodeId} not found");
         }
 
         /// <summary>

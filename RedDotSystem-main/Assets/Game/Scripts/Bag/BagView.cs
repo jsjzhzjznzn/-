@@ -1,4 +1,11 @@
+using System;
+
+using Game.Equipment;
 using System.Collections.Generic;
+
+using MieMieFrameWork.Business;
+
+using Game.Bag;
 
 using Common.Network;
 
@@ -14,9 +21,9 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 背包界面控制器（beibao Canvas）
-/// 布局：全屏深色底 + 网格纹理、左上标题、右上"x/容量 格"与红色关闭键、71.5% 竖分隔线、
-/// 左区 6 列滚动槽位区、右区浅灰预览方块 + 物品详情 + 使用/丢弃、左下"加物品/整理"、
-/// 底部状态栏、正中蓝色加载指示器
+/// 布局：羊皮纸底图（PanelSkin 的 bg_bag）、左上标题 + 标题金线、右上"x/容量 格"与圆形关闭徽记、
+/// 左侧竖排页签（武器背包 / 道具背包）、中部 7 列滚动槽位区、金褐竖分隔饰、
+/// 右区预览底板 + 物品详情 + 使用/丢弃、左下"加物品/整理"、底部状态栏、正中金色加载指示器
 /// 槽位区虚拟化（VirtualScrollList）：500 格 = 84 行（一行 6 格），只实例化视口内十来行，
 /// 滚动时行从对象池复用换绑；格子交互（点击选中/拖拽换位）只对可见行生效
 /// 换位拖拽：拖影只活到松手，且起手行可能中途被换绑/回收，所以源槽位按值缓存、
@@ -25,6 +32,12 @@ using UnityEngine.UI;
 /// </summary>
 public class BagView : UIView, IDragHandler, IEndDragHandler
 {
+
+    /// <summary>背包事件订阅令牌（关闭页面时释放）</summary>
+    private IDisposable bagUpdatedToken;
+
+    /// <summary>背包状态文案订阅令牌</summary>
+    private IDisposable bagStatusToken;
     // ──────────────────────────────
     // 序列化引用（编辑器搭建脚本注入）
     // ──────────────────────────────
@@ -47,10 +60,7 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
     [ControlBinding]
     public TMP_Text capacityText;
 
-    [Header("背景与槽位滚动区")]
-    [ControlBinding("Background")]
-    public Image backgroundImage;
-
+    [Header("槽位滚动区")]
     [ControlBinding]
     public ScrollRect slotScroll;
 
@@ -101,33 +111,30 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
     /// <summary>格子边长（行高；与背景网格瓦片同尺寸）</summary>
     public float cellSize = 67f;
 
-    /// <summary>槽位普通边框色（明显亮于背景网格线，空槽也能一眼看清格子）</summary>
-    public Color slotFrameColor = new(0.55f, 0.60f, 0.67f, 1f);
+    /// <summary>槽位常态色（乘在格子底贴图上：中性白底 × 土黄 = 羊皮纸格子；选中/已装备再乘金色）</summary>
+    public Color slotFrameColor = new(0.722f, 0.621f, 0.451f, 1f);
 
     /// <summary>槽位选中边框色（金色高亮）</summary>
     public Color slotSelectedColor = new(0.91f, 0.77f, 0.42f, 1f);
 
-    /// <summary>背景网格填充色（深灰蓝底）</summary>
-    public Color gridFillColor = new(0.149f, 0.169f, 0.20f, 1f);
-
-    /// <summary>背景网格线色（略亮于底色）</summary>
-    public Color gridLineColor = new(0.196f, 0.216f, 0.255f, 1f);
-
-    /// <summary>加载指示器颜色（蓝色圆环）</summary>
-    public Color spinnerColor = new(0.29f, 0.55f, 0.90f, 1f);
-
-    /// <summary>背景网格瓦片边长（与格子边长一致 → 槽位网格与背景网格对齐）</summary>
-    public float backgroundTileSize = 67f;
+    /// <summary>加载指示器颜色（金色圆弧）</summary>
+    public Color spinnerColor = new(0.69f, 0.55f, 0.31f, 1f);
 
     /// <summary>滚轮每格滚动几行（1=一格滚一行仍偏慢；默认 3 翻得快，Inspector 可随时调）</summary>
     public float wheelRowsPerNotch = 3f;
 
-    [Header("页签颜色")]
-    /// <summary>当前页签底色（金）</summary>
-    public Color tabActiveColor = new(0.91f, 0.77f, 0.42f, 1f);
+    [Header("页签外观（换贴图 + 换字色 + 左侧金色指示条）")]
+    /// <summary>选中页签贴图（暖金纸片）</summary>
+    public Sprite tabActiveSprite;
 
-    /// <summary>非当前页签底色（压暗）</summary>
-    public Color tabIdleColor = new(0.32f, 0.35f, 0.40f, 1f);
+    /// <summary>未选中页签贴图（米纸片）</summary>
+    public Sprite tabIdleSprite;
+
+    /// <summary>选中页签字色（深褐）</summary>
+    public Color tabActiveTextColor = new(0.29f, 0.23f, 0.13f, 1f);
+
+    /// <summary>未选中页签字色（次级褐）</summary>
+    public Color tabIdleTextColor = new(0.549f, 0.522f, 0.471f, 1f);
 
     [Header("换位拖拽")]
     /// <summary>光标进到视口上下多宽的带里开始自动翻页（占视口高度比例）</summary>
@@ -220,7 +227,6 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
         {
             columns = rowTemplate.childCount;
             if (rowTemplate.rect.height > 1f) cellSize = rowTemplate.rect.height;
-            backgroundTileSize = cellSize;   // 背景网格与格子同尺寸，纹路才对得上
         }
 
         ApplyProceduralSprites();
@@ -228,8 +234,8 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
 
         if (BagManager.Instance != null)
         {
-            BagManager.Instance.BagUpdated += HandleBagUpdated;
-            BagManager.Instance.StatusChanged += SetStatus;
+            bagUpdatedToken = BagManager.Bus.Subscribe(BagEvents.Updated, HandleBagUpdated);
+            bagStatusToken = BagManager.Bus.Subscribe(BagEvents.Status, SetStatus);
         }
     }
 
@@ -280,8 +286,8 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
     private void OnDestroy()
     {
         if (BagManager.Instance == null) return;
-        BagManager.Instance.BagUpdated -= HandleBagUpdated;
-        BagManager.Instance.StatusChanged -= SetStatus;
+        bagUpdatedToken?.Dispose();
+        bagStatusToken?.Dispose();
     }
 
     private void Update()
@@ -323,17 +329,37 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
         RefreshAll();   // 内部会 RefreshData（行数随页签变化）
     }
 
-    /// <summary>页签选中态：当前页签亮金、另一个压暗（染按钮底色，不额外做图）</summary>
+    /// <summary>页签选中态：换贴图 + 换标签字色 + 只让当前页签显示左侧金色指示条</summary>
     private void RefreshTabLook()
     {
-        SetTabColor(tabWeaponButton, activeTab == TabWeapon);
-        SetTabColor(tabItemButton, activeTab == TabItem);
+        SetTabLook(tabWeaponButton, activeTab == TabWeapon);
+        SetTabLook(tabItemButton, activeTab == TabItem);
     }
 
-    private void SetTabColor(Button button, bool selected)
+    private void SetTabLook(Button button, bool selected)
     {
-        if (button == null || button.targetGraphic == null) return;
-        button.targetGraphic.color = selected ? tabActiveColor : tabIdleColor;
+        if (button == null) return;
+
+        if (button.targetGraphic != null)
+        {
+            Image chip = button.targetGraphic as Image;
+            if (chip != null)
+            {
+                Sprite sprite = selected ? tabActiveSprite : tabIdleSprite;
+                if (sprite != null)
+                {
+                    chip.sprite = sprite;
+                    chip.type = Image.Type.Sliced;
+                }
+                chip.color = Color.white;   // 两态的区别在贴图里，不再靠染底色
+            }
+        }
+
+        TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
+        if (label != null) label.color = selected ? tabActiveTextColor : tabIdleTextColor;
+
+        Transform indicator = button.transform.Find("Indicator");
+        if (indicator != null) indicator.gameObject.SetActive(selected);
     }
 
     // ──────────────────────────────
@@ -401,9 +427,10 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
                 count = slot.Count;
                 icon = ItemIconLoader.Get(bag.GetConfig(slot.ItemId)?.IconKey);
                 // 装备实例正穿在某个角色身上 → 金色边框标注（服务端实例表是唯一真相，本地只读缓存）
+                IEquipmentService gameEquipment = GameHub.Get<IEquipmentService>();
                 equipped = slot.InstanceId > 0
-                           && EquipmentManager.Instance != null
-                           && EquipmentManager.Instance.GetEquippedChar(slot.InstanceId) >= 0;
+                           && gameEquipment != null
+                           && gameEquipment.GetEquippedChar(slot.InstanceId) >= 0;
             }
             view.Render(icon, count, slotIndex == selectedSlot, equipped);
         }
@@ -462,7 +489,8 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
             // 已穿戴的装备在详情里点名，避免"金色边框"被误读成稀有度强调
             if (config != null && slot != null && slot.InstanceId > 0 && EquipmentManager.Instance != null)
             {
-                int equippedChar = EquipmentManager.Instance.GetEquippedChar(slot.InstanceId);
+                IEquipmentService gameEquipment = GameHub.Get<IEquipmentService>();
+                int equippedChar = gameEquipment != null ? gameEquipment.GetEquippedChar(slot.InstanceId) : -1;
                 if (equippedChar >= 0) meta += $" · 已装备：{BattleHeroCatalog.GetDisplayName(equippedChar)}";
             }
             detailMetaText.SetText(meta);
@@ -492,7 +520,7 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
 
     /// <summary>槽位是否可发起物品拖拽（空槽不吞拖拽，转给滚动区）</summary>
     public bool IsSlotDraggable(int index)
-        => BagManager.Instance != null && BagManager.Instance.HasItem(index);
+        => GameHub.Get<IBagService>()?.HasItem(index) ?? false;
 
     /// <summary>把拖拽事件转投滚动区（拖空白格子 = 滚动长列表）</summary>
     public void RedirectDragToScroll(PointerEventData eventData)
@@ -678,110 +706,28 @@ public class BagView : UIView, IDragHandler, IEndDragHandler
         BagManager.Instance?.Tidy();
     }
 
-    // ──────────────────────────────
-    // 程序化贴图（不依赖美术资源：网格底纹 / 槽位边框 / 加载圆环）
-    // 静态缓存：贴图与 Sprite 整个会话只创建一次（此前 Awake 每次新建 3 张 Texture2D 且不释放，
-    // 每次重进场景泄漏 3 张）。按尺寸键控——Inspector 改尺寸才重建；
+// ──────────────────────────────
+    // 程序化贴图（不依赖美术资源：加载圆环）
+    // 格子底 / 页签 / 按钮 / 关闭徽记 / 预览底板 / 分隔饰的贴图由 BagViewSkinBuilder 烘进预制体
+    // （菜单 Tools/UI/重建背包界面），运行期不再生成，避免每帧/每次开面板再算一遍
+    // 静态缓存：圆环贴图整个会话只创建一次；
     // 判空必须用 == 而不是 ?? / ?.（Unity 的 == 对已销毁对象返回真，域重载关闭时残留的已销毁引用会被安全重建）
     // ──────────────────────────────
-
-    /// <summary>背景网格瓦片缓存（尺寸 = backgroundTileSize）</summary>
-    private static Sprite cachedGridTile;
-
-    /// <summary>缓存瓦片对应的尺寸（键控，尺寸变化才重建）</summary>
-    private static int cachedGridTileSize;
-
-    /// <summary>槽位边框缓存（尺寸 = cellSize）</summary>
-    private static Sprite cachedFrame;
-
-    /// <summary>缓存边框对应的尺寸</summary>
-    private static int cachedFrameSize;
 
     /// <summary>加载圆环缓存（尺寸固定 40）</summary>
     private static Sprite cachedRing;
 
     private void ApplyProceduralSprites()
     {
-        if (backgroundImage != null)
-        {
-            int tileSize = Mathf.Max(8, (int)Mathf.Round(backgroundTileSize));
-            if (cachedGridTile == null || cachedGridTileSize != tileSize)
-            {
-                cachedGridTile = CreateGridTileSprite(tileSize);
-                cachedGridTileSize = tileSize;
-            }
-            backgroundImage.sprite = cachedGridTile;
-            backgroundImage.type = Image.Type.Tiled;
-            backgroundImage.color = Color.white;   // 颜色由贴图自带
-        }
+        if (loadingIndicator == null) return;
 
-        // 行模板内 6 个格子的边框贴图（克隆行携带同一贴图；尺寸随格子边长走）
-        if (rowTemplate != null)
-        {
-            int frameSize = Mathf.Max(16, (int)Mathf.Round(cellSize));
-            if (cachedFrame == null || cachedFrameSize != frameSize)
-            {
-                cachedFrame = CreateFrameSprite(frameSize);
-                cachedFrameSize = frameSize;
-            }
-            foreach (BagSlotView view in rowTemplate.GetComponentsInChildren<BagSlotView>(true))
-            {
-                if (view.frameImage == null) continue;
-                view.frameImage.sprite = cachedFrame;
-                view.frameImage.type = Image.Type.Simple;
-            }
-        }
+        Image spinner = loadingIndicator.GetComponent<Image>();
+        if (spinner == null) return;
 
-        if (loadingIndicator != null)
-        {
-            Image spinner = loadingIndicator.GetComponent<Image>();
-            if (spinner != null)
-            {
-                if (cachedRing == null) cachedRing = CreateRingSprite(40, 5f);
-                spinner.sprite = cachedRing;
-                spinner.color = spinnerColor;
-                spinner.raycastTarget = false;
-            }
-        }
-    }
-
-    /// <summary>生成无缝网格瓦片：深色底 + 上/左各 1px 亮线（平铺后形成均匀网格）</summary>
-    private Sprite CreateGridTileSprite(int size)
-    {
-        Texture2D texture = new(size, size, TextureFormat.RGBA32, false)
-        {
-            wrapMode = TextureWrapMode.Repeat,
-            filterMode = FilterMode.Point,
-        };
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                bool onLine = x == 0 || y == 0;
-                texture.SetPixel(x, y, onLine ? gridLineColor : gridFillColor);
-            }
-        }
-        texture.Apply();
-        return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
-    }
-
-    /// <summary>生成槽位边框：2px 描边 + 中心淡填充（格子有"实体感"，实际颜色由 Image.color 染，便于切换选中态）</summary>
-    private Sprite CreateFrameSprite(int size)
-    {
-        Texture2D texture = new(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-        Color fill = new(1f, 1f, 1f, 0.08f);   // 中心 8% 淡填充，避免空槽"只剩轮廓"融进背景
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                bool onBorder = x <= 1 || y <= 1 || x >= size - 2 || y >= size - 2;
-                texture.SetPixel(x, y, onBorder ? Color.white : fill);
-            }
-        }
-        texture.Apply();
-        return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        if (cachedRing == null) cachedRing = CreateRingSprite(40, 5f);
+        spinner.sprite = cachedRing;
+        spinner.color = spinnerColor;
+        spinner.raycastTarget = false;
     }
 
     /// <summary>生成圆环（270° 弧，留缺口让旋转可见）：白色，颜色由 Image.color 染</summary>

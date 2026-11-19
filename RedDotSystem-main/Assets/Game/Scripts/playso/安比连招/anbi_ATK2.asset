@@ -43,6 +43,9 @@ MonoBehaviour:
   _enemyLayer:
     serializedVersion: 2
     m_Bits: 0
+  _arc: 200
+  _maxTargets: 0
+  _requireLineOfSight: 0
   _hitFrameTime: 0.35
   _pauseFrameTime: 0.06
   _shakeForce: 0.18

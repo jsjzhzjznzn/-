@@ -1,5 +1,7 @@
 using System;
 
+using MieMieFrameWork;
+
 using UnityEngine;
 
 using XLua;
@@ -19,26 +21,25 @@ using XLua;
 ///
 /// 注意：LuaEnv 是懒创建的（第一次访问 Env 才真正 new），不使用 Lua 的场景零开销。
 /// </summary>
-public class LuaEnvManager : MonoBehaviour
+public class LuaEnvManager : SingletonBehaviour<LuaEnvManager>
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例实现
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（业务代码访问 Lua 的入口）</summary>
-    public static LuaEnvManager Instance { get; private set; }
 
-    /// <summary>
-    /// 运行时自举（与 BagManager / ChatManager 相同的模式）
-    /// 只创建管理器本体，LuaEnv 在首次访问 Env 时才创建
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("LuaEnvManager");
-        holder.AddComponent<LuaEnvManager>();
-    }
 
     // ──────────────────────────────
     // 配置
@@ -77,7 +78,7 @@ public class LuaEnvManager : MonoBehaviour
             {
                 env = new LuaEnv();
                 if (Loader != null) env.AddLoader(CustomLoader);
-                Debug.Log("[LuaEnvManager] LuaEnv 创建完成");
+                GameLog.Info("[LuaEnvManager] LuaEnv 创建完成");
             }
             return env;
         }
@@ -130,15 +131,10 @@ public class LuaEnvManager : MonoBehaviour
     // 生命周期
     // ──────────────────────────────
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+
+        base.Awake();
     }
 
     private void Update()
@@ -149,10 +145,10 @@ public class LuaEnvManager : MonoBehaviour
         env.Tick();
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         DisposeEnv();
-        if (Instance == this) Instance = null;
     }
 
     /// <summary>
@@ -175,14 +171,14 @@ public class LuaEnvManager : MonoBehaviour
             {
                 target.Dispose();
                 env = null;
-                Debug.Log("[LuaEnvManager] LuaEnv 已释放");
+                GameLog.Info("[LuaEnvManager] LuaEnv 已释放");
                 return true;
             }
             catch (Exception e)
             {
                 if (attempt == 1)
                 {
-                    Debug.LogWarning("[LuaEnvManager] LuaEnv 释放被拒（" + e.Message + "），补一轮 GC 后重试");
+                    GameLog.Warn("[LuaEnvManager] LuaEnv 释放被拒（" + e.Message + "），补一轮 GC 后重试");
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
                 }

@@ -45,7 +45,7 @@ namespace MieMieFrameWork
                 var Prefab = Resources.Load<GameObject>(FrameRootLocation);
                 if (Prefab == null)
                 {
-                    FrameLog.Error("[ModuleHub] 找不到 Resources/" + FrameRootLocation + ".prefab，框架未启动", "Module");
+                    GameLog.Error("[Module] [ModuleHub] 找不到 Resources/" + FrameRootLocation + ".prefab，框架未启动");
                     return null;
                 }
 

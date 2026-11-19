@@ -27,6 +27,20 @@ public static class GameLog
         if (enabled) Debug.LogWarning(message);
     }
 
+    /// <summary>
+    /// 带上下文对象的普通日志：保留 Debug 第二参数（编辑器里点日志能定位到对象），同时受总开关控制
+    /// </summary>
+    public static void Info(string message, Object context)
+    {
+        if (enabled) Debug.Log(message, context);
+    }
+
+    /// <summary>带上下文对象的警告</summary>
+    public static void Warn(string message, Object context)
+    {
+        if (enabled) Debug.LogWarning(message, context);
+    }
+
     public static void Error(string message)
     {
         if (enabled) Debug.LogError(message);

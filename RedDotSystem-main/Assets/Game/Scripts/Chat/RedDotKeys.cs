@@ -16,7 +16,7 @@ public static class RedDotKeys
     public const ERedDotKeyType QuestEntry = (ERedDotKeyType)16;
 
     /// <summary>成就入口（可领取成就数量；Key17，独立于任务 Key16）</summary>
-    public const ERedDotKeyType AchievementEntry = (ERedDotKeyType)17;
+    public const ERedDotKeyType AchievementEntry = ERedDotKeyType.Key17;
 
     /// <summary>邮箱入口（框架预留 Key5"邮箱"：主界面 ← 邮箱 ← 系统邮件/个人邮件）＝所有子节点之和（未读邮件数）</summary>
     public const ERedDotKeyType MailEntry = (ERedDotKeyType)5;

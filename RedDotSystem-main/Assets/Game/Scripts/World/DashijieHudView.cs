@@ -1,8 +1,12 @@
+using System;
+
 using Cysharp.Threading.Tasks;
 using Common.Network;
 using Miemie.DialogSystem.Quest;
 using SkierFramework;
 using TMPro;
+using Game.Narrative.Quest;
+using MieMieFrameWork.Business;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -15,6 +19,9 @@ using UnityEngine.UI;
 /// </summary>
 public class DashijieHudView : UIView
 {
+
+    /// <summary>任务数据变化订阅令牌</summary>
+    private IDisposable questUpdatedToken;
     [ControlBinding] public CanvasGroup contentGroup;
 
     [ControlBinding] public GameObject questTrackerRoot;
@@ -90,6 +97,9 @@ public class DashijieHudView : UIView
     /// <summary>面板状态轮询间隔（秒，非缩放时间）：面板用自身按钮关闭时兜底对齐暂停栈</summary>
     private const float PanelPollInterval = 0.1f;
 
+    /// <summary>空闲（没有面板打开）时重新扫描的间隔（秒）：UI 初始化完成前查询恒为 false，用长间隔重试</summary>
+    private const float PanelPollIntervalIdle = 0.5f;
+
     private Hotkey[] hotkeys;
 
     private DashijiePlayerSwitcher switcher;
@@ -101,6 +111,9 @@ public class DashijieHudView : UIView
 
     /// <summary>任务标记数据源（场景里的任务导演；首次刷新时按需查找）</summary>
     private WorldQuestDirector questDirector;
+
+    /// <summary>是否已经为任务导演做过一次查找（场景里没有就不重复全场景扫描）</summary>
+    private bool questDirectorSearched;
 
     /// <summary>当前由 HUD 记录在案的面板（null = 没有面板）</summary>
     private UIType? activePanel;
@@ -134,7 +147,7 @@ public class DashijieHudView : UIView
         // 打开 HUD 时世界可能已经被暂停（例如直接热重载进场景），补一次门禁
         if (PauseManager.IsPaused) PlayerInputGate.Push(PlayerInputGate.Source.WorldPause);
 
-        if (MmQuestRuntime.Instance != null) MmQuestRuntime.Instance.QuestsUpdated += RefreshQuestTracker;
+        if (GameHub.Get<IQuestService>() != null) questUpdatedToken = MmQuestRuntime.Bus.Subscribe(QuestEvents.Updated, RefreshQuestTracker);
         RefreshQuestTracker();
         RefreshSwitchHint();
         LoadMinimap();
@@ -154,7 +167,8 @@ public class DashijieHudView : UIView
         PlayerInputGate.Pop(PlayerInputGate.Source.WorldPause);
 
         PauseManager.PausedChanged -= OnPausedChanged;
-        if (MmQuestRuntime.Instance != null) MmQuestRuntime.Instance.QuestsUpdated -= RefreshQuestTracker;
+        if (GameHub.Get<IQuestService>() != null) questUpdatedToken?.Dispose();
+            questUpdatedToken = null;
         if (switcher != null) switcher.PlayerChanged -= OnPlayerChanged;
 
         UnbindHealth();
@@ -353,19 +367,24 @@ public class DashijieHudView : UIView
     }
 
     /// <summary>
-    /// 每 0.1 秒对齐一次面板状态：
+    /// 每 0.1 秒对齐一次面板状态（空闲时 0.5 秒扫一次）：
     /// 面板被自身关闭按钮关掉时 Pop 暂停层；面板被外部打开时隐藏 HUD 内容。
     /// </summary>
     private void SyncPanelState()
     {
         if (UIManager.Instance == null) return;
         if (Time.unscaledTime < nextPanelPollTime) return;
-        nextPanelPollTime = Time.unscaledTime + PanelPollInterval;
 
         if (activePanel == null)
         {
             UIType? external = FindOpenPanel();
-            if (external == null) return;
+            // 未命中很可能是 UI 还没初始化好（查询会返回 false），这是正常时序：放宽重试间隔
+            if (external == null)
+            {
+                nextPanelPollTime = Time.unscaledTime + PanelPollIntervalIdle;
+                return;
+            }
+            nextPanelPollTime = Time.unscaledTime + PanelPollInterval;
 
             activePanel = external;
             activeLayer = null;
@@ -581,7 +600,7 @@ public class DashijieHudView : UIView
         minimap = new DashijieMinimap();
         if (!minimap.Load())
         {
-            Debug.LogWarning($"[DashijieHudView] 小地图底图缺失：Resources/{DashijieMinimap.ResourcePath}（先跑 Tools/地图/烘焙大世界小地图）");
+            GameLog.Warn($"[DashijieHudView] 小地图底图缺失：Resources/{DashijieMinimap.ResourcePath}（先跑 Tools/地图/烘焙大世界小地图）");
             minimap = null;
             return;
         }
@@ -629,7 +648,11 @@ public class DashijieHudView : UIView
     {
         if (questMarker == null) return;
 
-        if (questDirector == null) questDirector = FindObjectOfType<WorldQuestDirector>();
+        if (questDirector == null && !questDirectorSearched)
+        {
+            questDirector = FindObjectOfType<WorldQuestDirector>();
+            questDirectorSearched = true;   // 场景里没有导演时不每帧全场景扫描
+        }
 
         Vector3 markerWorld = Vector3.zero;
         bool show = questDirector != null && questDirector.TryGetTrackedMarker(out markerWorld, out _);
@@ -654,7 +677,7 @@ public class DashijieHudView : UIView
     {
         if (questTrackerRoot == null) return;
 
-        MmQuestRuntime quests = MmQuestRuntime.Instance;
+        IQuestService quests = GameHub.Get<IQuestService>();
         int trackedId = quests != null ? quests.ResolveTrackedQuest() : 0;
         QuestData tracked = trackedId > 0 ? quests.ConfigOf(trackedId) : null;
 

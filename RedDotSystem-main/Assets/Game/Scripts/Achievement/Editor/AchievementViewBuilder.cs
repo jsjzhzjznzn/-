@@ -21,8 +21,8 @@ namespace SkierFrameworkUIMigration
     public static class AchievementViewBuilder
     {
         private const string PrefabPath = "Assets/Game/UI/Achievement/AchievementView.prefab";
-        private const string PanelSpritePath = "Assets/Game/Resources/ui/Theme/panel_round.png";
-        private const string ButtonSpritePath = "Assets/Game/Resources/ui/Theme/btn_round.png";
+        private const string PanelSpritePath = "Assets/Game/Art/UI/Theme/panel_round.png";
+        private const string ButtonSpritePath = "Assets/Game/Art/UI/Theme/btn_round.png";
 
         private static readonly Color PanelColor = new(0.149f, 0.169f, 0.200f, 1f);
         private static readonly Color SubPanelColor = new(0.180f, 0.200f, 0.239f, 1f);

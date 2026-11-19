@@ -1,8 +1,14 @@
+using System;
+
 using System.Collections.Generic;
 
 using Common.Network;
 
+using Game.Achievement;
+
 using TMPro;
+
+using MieMieFrameWork;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,36 +18,35 @@ using UnityEngine.UI;
 /// 服务端 3405 推送到达时逐条展示"成就解锁 · 名称 +N 成就点"，1.6 秒/条，队列播放。
 /// 只做表现：不参与任何业务判断；raycastTarget=false，不挡点击。
 /// </summary>
-public class AchievementToast : MonoBehaviour
+public class AchievementToast : SingletonBehaviour<AchievementToast>
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+    /// <summary>成就解锁订阅令牌</summary>
+    private IDisposable unlockedToken;
     private const int SortingOrder = 320;
     private const float BannerWidth = 420f;
     private const float BannerHeight = 74f;
 
-    public static AchievementToast Instance { get; private set; }
 
     private readonly Queue<AchievementUnlockedInfo> queue = new();
     private RectTransform root;
     private bool playing;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("AchievementToast");
-        holder.AddComponent<AchievementToast>();
-        DontDestroyOnLoad(holder);
-    }
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+
+        base.Awake();
 
         BuildCanvas();
     }
@@ -50,15 +55,17 @@ public class AchievementToast : MonoBehaviour
     {
         if (AchievementManager.Instance != null)
         {
-            AchievementManager.Instance.Unlocked += OnUnlocked;
+            unlockedToken = AchievementManager.Bus.Subscribe(AchievementEvents.Unlocked, OnUnlocked);
         }
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         if (AchievementManager.Instance != null)
         {
-            AchievementManager.Instance.Unlocked -= OnUnlocked;
+            unlockedToken?.Dispose();
+            unlockedToken = null;
         }
     }
 

@@ -52,7 +52,7 @@ public class Camera_ZoomController : MonoBehaviour
         // 场景接线缺失时关掉自己，避免逐帧空引用刷屏（源工程未做校验，因为预制体是唯一来源）
         if (CinemachineFramingTransposer == null || CinemachineInputProvider == null)
         {
-            Debug.LogWarning("[Camera_ZoomController] 缺少 CinemachineFramingTransposer 或 CinemachineInputProvider，滚轮缩放已停用：" + name, this);
+            GameLog.Warn("[Camera_ZoomController] 缺少 CinemachineFramingTransposer 或 CinemachineInputProvider，滚轮缩放已停用：" + name, this);
             enabled = false;
             return;
         }
@@ -88,10 +88,6 @@ public class Camera_ZoomController : MonoBehaviour
 
         // 写回实际相机距离
         CinemachineFramingTransposer.m_CameraDistance = realDistance;
-
-        // 已到达目标距离，无需继续处理
-        if (realDistance == currentDistance)
-        { return; }
     }
 
     /// <summary>

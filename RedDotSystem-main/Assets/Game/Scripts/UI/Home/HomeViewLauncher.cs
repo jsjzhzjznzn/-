@@ -39,7 +39,7 @@ public class HomeViewLauncher : MonoBehaviour
         ClientNetworkManager net = ClientNetworkManager.Instance;
         if (net == null)
         {
-            Debug.LogWarning("[HomeViewLauncher] ClientNetworkManager 不存在，主界面不会自动打开");
+            GameLog.Warn("[HomeViewLauncher] ClientNetworkManager 不存在，主界面不会自动打开");
             return;
         }
 

@@ -61,6 +61,12 @@ namespace Game.MiniGame.FogHunt
         private float _detect;
         private float _detectPeak;
         private int _phase = 1;
+
+        /// <summary>本局在服务端排行榜中的挑战ID（迷雾信标）</summary>
+        private const int FogHuntChallengeId = 3;
+
+        /// <summary>开局时服务端下发的本局标识；为空表示未登记开局，结算不上报</summary>
+        private string _runId;
         private float _detectMul = 1f;
         private bool _over;
         private bool _paused;
@@ -199,6 +205,25 @@ namespace Game.MiniGame.FogHunt
             _started = true;
             _hud.HideIntro();
             _hud.Refresh(BuildState());
+            BeginScoreRun();
+        }
+
+        /// <summary>
+        /// 登记本局开局：服务端记录开局时刻并下发 runId，结算上报时回传（服务端据此校验耗时与分数）
+        /// </summary>
+        private void BeginScoreRun()
+        {
+            var network = ClientNetworkManager.Instance;
+            if (network == null || network.MyPlayerId <= 0) return;
+
+            network.ChallengeStartResponseReceived += OnChallengeStartResponse;
+            _ = network.SendChallengeStart(FogHuntChallengeId);
+        }
+
+        private void OnChallengeStartResponse(ChallengeStartResponse response)
+        {
+            if (response.Success) _runId = response.RunId;
+            else GameLog.Warn("[迷雾信标] 开局登记失败，本局成绩不会上榜：" + response.Message);
         }
 
         public void UiMove(int dx, int dy)
@@ -570,14 +595,19 @@ namespace Game.MiniGame.FogHunt
             SubmitScore(score);
         }
 
-        /// <summary>结算上报：分数越高越好，服务端按 challengeId=3 排行。</summary>
+        /// <summary>结算上报：分数越高越好，服务端按 challengeId=3 排行（必须带开局下发的 runId）。</summary>
         private void SubmitScore(long score)
         {
             var network = ClientNetworkManager.Instance;
             if (network == null || network.MyPlayerId <= 0) return;
+            if (string.IsNullOrEmpty(_runId))
+            {
+                GameLog.Warn("[迷雾信标] 本局未登记开局，成绩不上榜");
+                return;
+            }
 
             network.ScoreSubmitResponseReceived += OnScoreSubmitResponse;
-            _ = network.SendScoreSubmit(3, score);
+            _ = network.SendScoreSubmit(FogHuntChallengeId, score, _runId);
         }
 
         private int ExplorePercent()

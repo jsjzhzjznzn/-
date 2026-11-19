@@ -19,17 +19,17 @@ namespace Miemie.DialogSystem.Quest
 
         if (stateDict.ContainsKey(quest.QuestId))
         {
-          Debug.LogWarning($"[Quest] 任务ID重复 {quest.QuestId} 请检查 {quest.name}");
+          GameLog.Warn($"[Quest] 任务ID重复 {quest.QuestId} 请检查 {quest.name}");
           continue;
         }
 
         stateDict[quest.QuestId] = new QuestRuntimeState(quest);
         if (stateDict[quest.QuestId].goalList.Count == 0)
-          Debug.LogWarning($"[Quest] {quest.Title} 无目标 请在 goalList 添加步骤");
+          GameLog.Warn($"[Quest] {quest.Title} 无目标 请在 goalList 添加步骤");
       }
 
       if (stateDict.Count == 0)
-        Debug.LogWarning("[Quest] questList 为空 请在 Inspector 拖入 Quest 资源");
+        GameLog.Warn("[Quest] questList 为空 请在 Inspector 拖入 Quest 资源");
     }
 
     /// <summary>
@@ -115,7 +115,7 @@ namespace Miemie.DialogSystem.Quest
       activeQuestList.Remove(runtime);
       runtime.eQuestState = EQuestState.提交;
 
-      Debug.Log($"[Quest] 提交 {runtime.questData.Title} (id={runtime.questData.QuestId})");
+      GameLog.Info($"[Quest] 提交 {runtime.questData.Title} (id={runtime.questData.QuestId})");
       NotifyCompleted(runtime);
       RefreshAvailable();
     }

@@ -109,19 +109,85 @@ namespace CompeteServer.Manager
         /// <summary>启动健康检查：连接 + PING，失败抛异常（由调用方决定告警还是阻止启动）。</summary>
         public async Task CheckHealthAsync()
         {
-            ConnectionMultiplexer mux = await ConnectionMultiplexer.ConnectAsync(
-                $"{connectionString},abortConnect=false,connectTimeout=2000,syncTimeout=2000");
             try
             {
-                await mux.GetDatabase().PingAsync();
+                ConnectionMultiplexer mux = await ConnectionMultiplexer.ConnectAsync(
+                    $"{connectionString},abortConnect=false,connectTimeout=2000,syncTimeout=2000");
+                try
+                {
+                    await mux.GetDatabase().PingAsync();
+                }
+                catch
+                {
+                    mux.Dispose();
+                    throw;
+                }
+                // 健康检查建立的连接保留下来复用给后续操作
+                multiplexer = mux;
             }
-            catch
+            catch (Exception exception)
             {
-                mux.Dispose();
+                // 失败即进熔断：否则启动时 Valkey 就不在的情况下，登录登记与首次心跳校验
+                // 每条命令都要各自白等一次 2s 超时
+                MarkDown("启动检查", exception);
                 throw;
             }
-            // 健康检查建立的连接保留下来复用给后续操作
-            multiplexer = mux;
+        }
+
+        // ──────────────────────────────
+        // 字符串与脚本（全部容错：失败返回 false，不抛出）
+        // ──────────────────────────────
+
+        /// <summary>SET 一个带过期的字符串键（会话登记等需要读回原值的数据用）。</summary>
+        /// <param name="value">参数名：value，类型：string，用途：键值</param>
+        /// <param name="ttl">参数名：ttl，类型：TimeSpan，用途：存活时长，到期自动放行下一次判定</param>
+        /// <returns>返回值类型：bool，用途：命令是否执行成功（false = Valkey 不可用）</returns>
+        public bool TryStringSet(string key, string value, TimeSpan ttl)
+        {
+            IDatabase? db = GetDatabase();
+            if (db == null) return false;
+            try
+            {
+                db.StringSet(key, value, ttl);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MarkDown("SET", exception);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 执行只返回整数的原子 Lua 脚本（比较后续期、比较后删除这类必须原子完成的多步判定）。
+        /// 调用方约定：脚本用 1 / 0 / -1 等整数表达结果
+        /// </summary>
+        /// <param name="script">参数名：script，类型：string，用途：Lua 脚本正文</param>
+        /// <param name="key">参数名：key，类型：string，用途：脚本操作的键（KEYS[1]）</param>
+        /// <param name="arguments">参数名：arguments，类型：object[]，用途：脚本参数（ARGV[1..n]）</param>
+        /// <param name="result">参数名：result，类型：out long，用途：脚本返回值（命令成功时有效）</param>
+        /// <returns>返回值类型：bool，用途：命令是否执行成功（false = Valkey 不可用，此时 result 无意义）</returns>
+        public bool TryEvaluateLong(string script, string key, object[] arguments, out long result)
+        {
+            result = 0;
+            IDatabase? db = GetDatabase();
+            if (db == null) return false;
+            try
+            {
+                RedisResult redisResult = db.ScriptEvaluate(
+                    script,
+                    new RedisKey[] { key },
+                    Array.ConvertAll(arguments, argument => (RedisValue)(argument.ToString() ?? string.Empty)));
+                // 脚本未显式 return 时返回 nil，按不可判定处理
+                if (redisResult.IsNull) return false;
+                result = (long)redisResult;
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MarkDown("EVAL", exception);
+                return false;
+            }
         }
 
         // ──────────────────────────────

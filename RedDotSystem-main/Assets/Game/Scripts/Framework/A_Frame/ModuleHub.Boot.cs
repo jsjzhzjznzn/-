@@ -15,15 +15,15 @@ namespace MieMieFrameWork
         {
             if (!initializeResource)
             {
-                FrameLog.Warn("已关闭资源初始化，按路径加载的音频将不可用", "Module");
+                GameLog.Warn("[Module] 已关闭资源初始化，按路径加载的音频将不可用");
                 return;
             }
 
             try
             {
-                FrameLog.Info("初始化资源后端", "Module");
+                GameLog.Info("[Module] 初始化资源后端");
                 await ResourceManager.Instance.InitializeAsync(cancellationToken);
-                FrameLog.Info("资源后端就绪", "Module");
+                GameLog.Info("[Module] 资源后端就绪");
             }
             catch (OperationCanceledException)
             {
@@ -31,7 +31,7 @@ namespace MieMieFrameWork
             }
             catch (Exception Exception)
             {
-                FrameLog.Error("资源后端初始化失败，框架继续启动（按路径加载的资源会失败）：" + Exception.Message, "Module");
+                GameLog.Error("[Module] 资源后端初始化失败，框架继续启动（按路径加载的资源会失败）：" + Exception.Message);
             }
         }
     }

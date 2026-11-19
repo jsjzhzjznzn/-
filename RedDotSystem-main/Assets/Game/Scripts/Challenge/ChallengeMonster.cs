@@ -147,14 +147,29 @@ public class ChallengeMonster : MonoBehaviour
         var targetHealth = target.GetComponentInParent<HealthModel>();
         if (targetHealth == null || !targetHealth.IsAlive) return;
 
-        targetHealth.RequestDamage(new DamageRequest
+        // 无判定几何的来源：用"极小半径整球 + 只打一个目标"表达"就打死目标"，
+        // 走同一套管线，自动获得存活/阵营过滤口径。
+        var context = new AttackContext
         {
-            damage = attackDamage,
-            isCritical = false,
+            attacker = gameObject,
+            faction = CombatFaction.Enemy,
+            origin = target.position,
+            forward = transform.forward,
+            radius = 0.05f,
+            arc = 360f,
+            layerMask = ~0,
+            delivery = AttackDelivery.Scripted,
+            requireLineOfSight = false,
+            maxTargets = 1,
+            flatDamage = attackDamage,
             sourceId = 0,
-            isDoT = false,
-        }, gameObject);
+        };
+
+        CombatPipeline.Resolve(context, _combatBuffer);
     }
+
+    /// <summary>命中管线用的缓冲（复用避免每次出手分配）</summary>
+    private readonly Collider[] _combatBuffer = new Collider[8];
 
     /// <summary>被玩家打中：播受击动画（打断攻击），播完回待机</summary>
     private void OnDamaged(DamageData data)

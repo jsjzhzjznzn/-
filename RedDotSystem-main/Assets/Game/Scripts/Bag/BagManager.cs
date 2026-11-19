@@ -3,6 +3,12 @@ using System.Collections.Generic;
 
 using Common.Network;
 
+using Game.Bag;
+
+using MiMieEventBus;
+
+using MieMieFrameWork;
+
 using UnityEngine;
 
 /// <summary>
@@ -12,37 +18,32 @@ using UnityEngine;
 ///           configs = 物品静态配置表（随列表响应下发一次，供 UI 查名字/图标/堆叠上限）
 /// UI（BagUIController）只订阅 BagUpdated 渲染，不直接碰网络（与 ChatManager 同款分层）
 /// </summary>
-public class BagManager : MonoBehaviour
+public class BagManager : SingletonBehaviour<BagManager>, IBagService
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例实现
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（UI 层访问背包数据的入口）</summary>
-    public static BagManager Instance { get; private set; }
 
-    /// <summary>
-    /// 运行时自举
-    /// 进入 Play 模式自动创建，无需手动挂载（与 ClientNetworkManager / ChatManager 相同模式）
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("BagManager");
-        holder.AddComponent<BagManager>();
-        DontDestroyOnLoad(holder);
-    }
 
     // ──────────────────────────────
     // 事件（主线程触发，UI 可安全订阅）
     // ──────────────────────────────
 
-    /// <summary>背包数据变化（列表到达 / 任意操作成功后触发，UI 重渲染）</summary>
-    public event Action BagUpdated;
-
-    /// <summary>提示文案（操作成功/失败的 message，UI 显示在状态栏）</summary>
-    public event Action<string> StatusChanged;
+    /// <summary>全局业务事件总线（背包对外通知：BagEvents.Updated / BagEvents.Status）</summary>
+    public static readonly EventBusCore Bus = new();
 
     // ──────────────────────────────
     // 私有字段
@@ -125,34 +126,30 @@ public class BagManager : MonoBehaviour
     // Unity 生命周期
     // ──────────────────────────────
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+        base.Awake();
     }
 
     private void Start()
     {
         // ClientNetworkManager 的自举同样发生在 BeforeSceneLoad，Start 时必已存在
-        if (ClientNetworkManager.Instance == null) return;
+        if (ClientNetworkManager.Instance == null || ClientNetworkManager.Instance.Network == null) return;
         ClientNetworkManager.Instance.BagListResponseReceived += OnBagListResponse;
         ClientNetworkManager.Instance.BagUseResponseReceived += OnBagUseResponse;
         ClientNetworkManager.Instance.BagDiscardResponseReceived += OnBagDiscardResponse;
         ClientNetworkManager.Instance.BagTidyResponseReceived += OnBagTidyResponse;
         ClientNetworkManager.Instance.BagSwapResponseReceived += OnBagSwapResponse;
         ClientNetworkManager.Instance.BagGrantResponseReceived += OnBagGrantResponse;
-        ClientNetworkManager.Instance.GachaDrawResponseReceived += OnGachaDrawResponse;
-        ClientNetworkManager.Instance.SignInClaimResponseReceived += OnSignInClaimResponse;
         ClientNetworkManager.Instance.LoginResponseReceived += OnLoginResponse;
+        ClientNetworkManager.Instance.ConnectionBroken += OnConnectionBroken;
+        ClientNetworkManager.Instance.Network.Subscribe<GachaDrawResponse>(OnGachaDrawResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<SignInClaimResponse>(OnSignInClaimResponse);
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         if (ClientNetworkManager.Instance == null) return;
         ClientNetworkManager.Instance.BagListResponseReceived -= OnBagListResponse;
         ClientNetworkManager.Instance.BagUseResponseReceived -= OnBagUseResponse;
@@ -160,9 +157,8 @@ public class BagManager : MonoBehaviour
         ClientNetworkManager.Instance.BagTidyResponseReceived -= OnBagTidyResponse;
         ClientNetworkManager.Instance.BagSwapResponseReceived -= OnBagSwapResponse;
         ClientNetworkManager.Instance.BagGrantResponseReceived -= OnBagGrantResponse;
-        ClientNetworkManager.Instance.GachaDrawResponseReceived -= OnGachaDrawResponse;
-        ClientNetworkManager.Instance.SignInClaimResponseReceived -= OnSignInClaimResponse;
         ClientNetworkManager.Instance.LoginResponseReceived -= OnLoginResponse;
+        ClientNetworkManager.Instance.ConnectionBroken -= OnConnectionBroken;
     }
 
     // ──────────────────────────────
@@ -174,7 +170,7 @@ public class BagManager : MonoBehaviour
     {
         if (ClientNetworkManager.Instance == null) return;
         loading = true;
-        BagUpdated?.Invoke();   // 先刷一次让 UI 立刻显示加载指示器
+        Bus.Publish(BagEvents.Updated);   // 先刷一次让 UI 立刻显示加载指示器
         _ = ClientNetworkManager.Instance.SendBagListRequest();
     }
 
@@ -232,8 +228,8 @@ public class BagManager : MonoBehaviour
 
         if (!response.Success)
         {
-            StatusChanged?.Invoke(response.Message);
-            BagUpdated?.Invoke();
+            Bus.Publish(BagEvents.Status, response.Message);
+            Bus.Publish(BagEvents.Updated);
             return;
         }
 
@@ -249,7 +245,7 @@ public class BagManager : MonoBehaviour
         configOrder.Sort((left, right) => left.ItemId.CompareTo(right.ItemId));
 
         ApplySlots(response.Slots);
-        BagUpdated?.Invoke();
+        Bus.Publish(BagEvents.Updated);
     }
 
     private void OnBagUseResponse(BagUseResponse response)
@@ -332,8 +328,8 @@ public class BagManager : MonoBehaviour
     private void ApplyOperationResult(bool success, string message, IEnumerable<BagSlotInfo> snapshot)
     {
         if (success) ApplySlots(snapshot);
-        if (!string.IsNullOrEmpty(message)) StatusChanged?.Invoke(message);
-        if (success) BagUpdated?.Invoke();
+        if (!string.IsNullOrEmpty(message)) Bus.Publish(BagEvents.Status, message);
+        if (success) Bus.Publish(BagEvents.Updated);
     }
 
     /// <summary>
@@ -390,6 +386,13 @@ public class BagManager : MonoBehaviour
         UsedWeaponCount = 0;
         UsedItemCount = 0;
         loading = false;
-        BagUpdated?.Invoke();
+        Bus.Publish(BagEvents.Updated);
+    }
+
+    /// <summary>断线：回执不会再来，必须复位加载态，否则面板永远停在加载指示器上</summary>
+    private void OnConnectionBroken()
+    {
+        loading = false;
+        Bus.Publish(BagEvents.Updated);
     }
 }

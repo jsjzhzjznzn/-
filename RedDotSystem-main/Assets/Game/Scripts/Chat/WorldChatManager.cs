@@ -4,6 +4,12 @@ using System.Collections.Generic;
 
 using Common.Network;
 
+using Game.Chat;
+
+using MiMieEventBus;
+
+using MieMieFrameWork;
+
 using UnityEngine;
 
 /// <summary>
@@ -12,37 +18,35 @@ using UnityEngine;
 /// 没有"会话槽"（只有一条线性列表）、没有未读/红点、发送后由服务端广播给所有人（包括自己）
 /// 数据流：UI（WorldChatUIController）只订阅 WorldUpdated 重渲染，不直接碰网络
 /// </summary>
-public class WorldChatManager : MonoBehaviour
+public class WorldChatManager : SingletonBehaviour<WorldChatManager>, IWorldChatService
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例实现
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（UI 层访问世界频道缓存的入口）</summary>
-    public static WorldChatManager Instance { get; private set; }
 
-    /// <summary>
-    /// 运行时自举
-    /// 进入 Play 模式自动创建，无需手动挂载（与 ClientNetworkManager / ChatManager 相同模式）
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("WorldChatManager");
-        holder.AddComponent<WorldChatManager>();
-        DontDestroyOnLoad(holder);
-    }
 
     // ──────────────────────────────
     // 事件（主线程触发，UI 可安全订阅）
     // ──────────────────────────────
 
     /// <summary>世界频道有更新（历史到达/新消息到达/乐观项校准或回滚）；UI 据此重渲染</summary>
-    public event Action WorldUpdated;
+    /// <summary>全局业务事件总线（世界频道对外通知：Updated / SendFailed）</summary>
+    public static readonly EventBusCore Bus = new();
 
     /// <summary>乐观消息被拒绝或回滚（参数=可直接展示的原因文案）；UI 提示用</summary>
-    public event Action<string> SendFailed;
 
     // ──────────────────────────────
     // 常量
@@ -160,34 +164,30 @@ public class WorldChatManager : MonoBehaviour
     // Unity 生命周期
     // ──────────────────────────────
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+
+        base.Awake();
     }
 
     private void Start()
     {
         // ClientNetworkManager 的自举同样发生在 BeforeSceneLoad，Start 时必已存在
-        if (ClientNetworkManager.Instance == null) return;
-        ClientNetworkManager.Instance.WorldChatSendResponseReceived += OnWorldChatSendResponse;
-        ClientNetworkManager.Instance.WorldChatHistoryResponseReceived += OnWorldChatHistoryResponse;
-        ClientNetworkManager.Instance.WorldChatNotifyReceived += OnWorldChatNotify;
+        if (ClientNetworkManager.Instance == null || ClientNetworkManager.Instance.Network == null) return;
+        ClientNetworkManager.Instance.Network.Subscribe<WorldChatSendResponse>(OnWorldChatSendResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<WorldChatHistoryResponse>(OnWorldChatHistoryResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<WorldChatNotify>(OnWorldChatNotify);
         ClientNetworkManager.Instance.LoginResponseReceived += OnLoginResponse;
         ClientNetworkManager.Instance.ConnectionBroken += OnConnectionBroken;
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         if (ClientNetworkManager.Instance == null) return;
-        ClientNetworkManager.Instance.WorldChatSendResponseReceived -= OnWorldChatSendResponse;
-        ClientNetworkManager.Instance.WorldChatHistoryResponseReceived -= OnWorldChatHistoryResponse;
-        ClientNetworkManager.Instance.WorldChatNotifyReceived -= OnWorldChatNotify;
+
+
+
         ClientNetworkManager.Instance.LoginResponseReceived -= OnLoginResponse;
         ClientNetworkManager.Instance.ConnectionBroken -= OnConnectionBroken;
     }
@@ -206,7 +206,7 @@ public class WorldChatManager : MonoBehaviour
         IsOpen = true;
         if (Loaded || ClientNetworkManager.Instance == null) return;
         if (pendingBeforeMs == 0) return;   // 首页请求在途（预热/上一次打开），等它回来即可
-        Debug.Log("[世界频道]首次打开，拉取历史");
+        GameLog.Info("[世界频道]首次打开，拉取历史");
         RequestHistoryPage(0);
     }
 
@@ -239,7 +239,7 @@ public class WorldChatManager : MonoBehaviour
         if (ClientNetworkManager.Instance == null || !ClientNetworkManager.Instance.IsConnected) yield break;
         if (pendingBeforeMs == 0) yield break;
 
-        Debug.Log($"[世界频道]登录预热，拉取首页历史{HistoryPageSize}条（主页就绪={HomeViewLauncher.IsReady}）");
+        GameLog.Info($"[世界频道]登录预热，拉取首页历史{HistoryPageSize}条（主页就绪={HomeViewLauncher.IsReady}）");
         RequestHistoryPage(0);
     }
 
@@ -255,7 +255,7 @@ public class WorldChatManager : MonoBehaviour
         pendingSince = -1f;
         pendingBeforeMs = -1;
         IsLoadingOlder = false;
-        Debug.LogWarning("[世界频道]历史请求超时，已回退为未加载（下次打开可重试）");
+        GameLog.Warn("[世界频道]历史请求超时，已回退为未加载（下次打开可重试）");
     }
 
     /// <summary>关闭世界频道（仅置状态标记，缓存保留供下次秒开）</summary>
@@ -309,7 +309,7 @@ public class WorldChatManager : MonoBehaviour
 
         Append(pending);
         inflight.Enqueue(pendingId);
-        WorldUpdated?.Invoke();
+        Bus.Publish(WorldChatEvents.Updated);
 
         _ = ClientNetworkManager.Instance.SendWorldChatSend(content, contentType);
     }
@@ -323,7 +323,7 @@ public class WorldChatManager : MonoBehaviour
         if (!Loaded || IsLoadingOlder || !HasMoreHistory) return;
         if (oldestLoadedMs <= 0) return;   // 还没有可用的翻页游标
         IsLoadingOlder = true;
-        Debug.Log($"[世界频道]上拉加载更早历史 beforeMs={oldestLoadedMs}");
+        GameLog.Info($"[世界频道]上拉加载更早历史 beforeMs={oldestLoadedMs}");
         RequestHistoryPage(oldestLoadedMs);
     }
 
@@ -360,7 +360,7 @@ public class WorldChatManager : MonoBehaviour
             // 广播可能比回执先到：同一条消息已按服务端 MessageId 入列时不再重复追加
             Append(response.Echo);
 
-            WorldUpdated?.Invoke();
+            Bus.Publish(WorldChatEvents.Updated);
             return;
         }
 
@@ -369,9 +369,9 @@ public class WorldChatManager : MonoBehaviour
             messageIds.Remove(pendingId);
             messages.RemoveAt(index);
         }
-        Debug.Log($"[世界频道]发送失败:{response.Message}");
-        SendFailed?.Invoke(string.IsNullOrEmpty(response.Message) ? "发送失败" : response.Message);
-        WorldUpdated?.Invoke();
+        GameLog.Info($"[世界频道]发送失败:{response.Message}");
+        Bus.Publish(WorldChatEvents.SendFailed, string.IsNullOrEmpty(response.Message) ? "发送失败" : response.Message);
+        Bus.Publish(WorldChatEvents.Updated);
     }
 
     /// <summary>
@@ -404,8 +404,8 @@ public class WorldChatManager : MonoBehaviour
             if (response.Messages.Count < HistoryPageSize || messages.Count >= MaxCachedMessages) HasMoreHistory = false;
             UpdateOldestCursor();
 
-            Debug.Log($"[世界频道]更早历史到达:{response.Count}条(前置新增{older.Count}) 共{messages.Count}条 hasMore={HasMoreHistory}");
-            WorldUpdated?.Invoke();
+            GameLog.Info($"[世界频道]更早历史到达:{response.Count}条(前置新增{older.Count}) 共{messages.Count}条 hasMore={HasMoreHistory}");
+            Bus.Publish(WorldChatEvents.Updated);
             return;
         }
 
@@ -426,8 +426,8 @@ public class WorldChatManager : MonoBehaviour
         HasMoreHistory = response.Messages.Count >= HistoryPageSize && messages.Count > 0;
         UpdateOldestCursor();
         Loaded = true;
-        Debug.Log($"[世界频道]历史到达:{response.Count}条 hasMore={HasMoreHistory}");
-        WorldUpdated?.Invoke();
+        GameLog.Info($"[世界频道]历史到达:{response.Count}条 hasMore={HasMoreHistory}");
+        Bus.Publish(WorldChatEvents.Updated);
     }
 
     /// <summary>
@@ -455,7 +455,7 @@ public class WorldChatManager : MonoBehaviour
     {
         if (notify.Message == null) return;
         Append(notify.Message);
-        WorldUpdated?.Invoke();
+        Bus.Publish(WorldChatEvents.Updated);
     }
 
     /// <summary>
@@ -482,9 +482,9 @@ public class WorldChatManager : MonoBehaviour
             messageIds.Remove(pendingId);
             messages.RemoveAt(index);
         }
-        Debug.Log("[世界频道]连接断开，回滚在途消息");
-        SendFailed?.Invoke("连接已断开");
-        WorldUpdated?.Invoke();
+        GameLog.Info("[世界频道]连接断开，回滚在途消息");
+        Bus.Publish(WorldChatEvents.SendFailed, "连接已断开");
+        Bus.Publish(WorldChatEvents.Updated);
     }
 
     /// <summary>
@@ -533,10 +533,11 @@ public class WorldChatManager : MonoBehaviour
     /// <summary>从头部裁剪超出上限的消息（同时清理去重集合）</summary>
     private void Trim()
     {
-        while (messages.Count > MaxCachedMessages)
-        {
-            messageIds.Remove(messages[0].MessageId);
-            messages.RemoveAt(0);
-        }
+        int overflow = messages.Count - MaxCachedMessages;
+        if (overflow <= 0) return;
+
+        // 先取出要裁的这批的 id，再一次性移除：逐条 RemoveAt(0) 每次都要前移整个列表
+        for (int i = 0; i < overflow; i++) messageIds.Remove(messages[i].MessageId);
+        messages.RemoveRange(0, overflow);
     }
 }

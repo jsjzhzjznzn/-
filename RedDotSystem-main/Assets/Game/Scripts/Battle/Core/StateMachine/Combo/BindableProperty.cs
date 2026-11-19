@@ -18,7 +18,7 @@ using System.Collections.Generic;
 ///
 /// 【用法】
 ///   var index = new BindableProperty<int>();
-///   index.OnValueChanged += (oldV, newV) => Debug.Log($"下标从 {oldV} 变成：{newV}");   // 订阅
+///   index.OnValueChanged += (oldV, newV) => GameLog.Info($"下标从 {oldV} 变成：{newV}");   // 订阅
 ///   index.Value = 1;                                           // 赋值即通知（1 != 0 旧值，触发）
 ///   index.Value = 1;                                           // 再赋相同值，不重复触发
 ///

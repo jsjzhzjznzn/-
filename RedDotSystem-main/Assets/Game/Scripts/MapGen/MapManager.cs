@@ -453,7 +453,7 @@ namespace Game.MapGen
                 builder.Append(']');
             }
             builder.Append("]}");
-            Debug.Log(builder.ToString());
+            GameLog.Info(builder.ToString());
         }
 
         /// <summary>当前参数快照，便于脚本/自动化直接读取（与 SaveData 打印的字段一致）</summary>

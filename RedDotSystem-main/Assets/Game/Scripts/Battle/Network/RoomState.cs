@@ -1,4 +1,6 @@
 using System;
+using MieMieFrameWork.Business;
+using Game.Equipment;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
@@ -188,7 +190,7 @@ public class RoomState : MonoBehaviour
 
         if (_players.Count >= RequiredPlayerCount)
         {
-            Debug.LogWarning($"[RoomState] 房间已满({RequiredPlayerCount}人)，{clientId} 按旁观处理");
+            GameLog.Warn($"[RoomState] 房间已满({RequiredPlayerCount}人)，{clientId} 按旁观处理");
             return;
         }
 
@@ -200,7 +202,7 @@ public class RoomState : MonoBehaviour
             PlayerId = clientId == NetworkManager.ServerClientId ? ResolveLocalPlayerId() : 0,
         };
         _seats[clientId] = GetNextFreeSeat();
-        Debug.Log($"[RoomState] 玩家 {clientId} 进入房间，座位 {_seats[clientId]}");
+        GameLog.Info($"[RoomState] 玩家 {clientId} 进入房间，座位 {_seats[clientId]}");
 
         // 新人进房时，把其他已选英雄的玩家状态推给它
         foreach (var kv in _players)
@@ -253,7 +255,7 @@ public class RoomState : MonoBehaviour
         if (!IsServerNow()) return;
         _players.Remove(clientId);
         _seats.Remove(clientId);
-        Debug.Log($"[RoomState] 玩家 {clientId} 离开房间");
+        GameLog.Info($"[RoomState] 玩家 {clientId} 离开房间");
     }
 
     private int GetNextFreeSeat()
@@ -320,7 +322,7 @@ public class RoomState : MonoBehaviour
         }
         catch (Exception)
         {
-            Debug.LogWarning($"[RoomState] {senderClientId} 的 PeerReady 消息格式不对，忽略");
+            GameLog.Warn($"[RoomState] {senderClientId} 的 PeerReady 消息格式不对，忽略");
             return;
         }
         OnPeerReadyChanged?.Invoke(ulong.MaxValue, flag != 0);
@@ -339,7 +341,7 @@ public class RoomState : MonoBehaviour
         }
         catch (Exception)
         {
-            Debug.LogWarning($"[RoomState] {senderClientId} 的 PeerInfo 消息格式不对，忽略");
+            GameLog.Warn($"[RoomState] {senderClientId} 的 PeerInfo 消息格式不对，忽略");
             return;
         }
         _peerPlayerId = playerId;
@@ -358,14 +360,14 @@ public class RoomState : MonoBehaviour
         }
         catch (Exception)
         {
-            Debug.LogWarning($"[RoomState] {senderClientId} 的 Hello 消息格式不对，忽略");
+            GameLog.Warn($"[RoomState] {senderClientId} 的 Hello 消息格式不对，忽略");
             return;
         }
 
         if (!_players.TryGetValue(senderClientId, out PlayerState state)) return;
         state.PlayerId = playerId;
         _players[senderClientId] = state;
-        Debug.Log($"[RoomState] 玩家 {senderClientId} 身份上报 playerId={playerId}");
+        GameLog.Info($"[RoomState] 玩家 {senderClientId} 身份上报 playerId={playerId}");
 
         // 把新上报的身份转给其他人（对手），它据此把 clientId 换成昵称
         foreach (var kv in _players)
@@ -387,7 +389,7 @@ public class RoomState : MonoBehaviour
         using var writer = new FastBufferWriter(4, Allocator.Temp);
         writer.WriteValueSafe(playerId);
         nm.CustomMessagingManager.SendNamedMessage(MsgHello, NetworkManager.ServerClientId, writer);
-        Debug.Log($"[RoomState] 已上报身份 playerId={playerId}");
+        GameLog.Info($"[RoomState] 已上报身份 playerId={playerId}");
     }
 
     /// <summary>
@@ -405,14 +407,14 @@ public class RoomState : MonoBehaviour
         }
         catch (Exception)
         {
-            Debug.LogWarning($"[RoomState] {senderClientId} 的装备快照格式不对，忽略");
+            GameLog.Warn($"[RoomState] {senderClientId} 的装备快照格式不对，忽略");
             return;
         }
 
         if (!_players.TryGetValue(senderClientId, out PlayerState state)) return;
         state.EquipJson = json;
         _players[senderClientId] = state;
-        Debug.Log($"[RoomState] 玩家 {senderClientId} 上报装备快照 长度={(json?.Length ?? 0)}");
+        GameLog.Info($"[RoomState] 玩家 {senderClientId} 上报装备快照 长度={(json?.Length ?? 0)}");
     }
 
     /// <summary>
@@ -427,13 +429,13 @@ public class RoomState : MonoBehaviour
         if (nm.CustomMessagingManager == null) return;
         if (EquipmentManager.Instance == null) return;
 
-        EquipBattleSnapshot snapshot = EquipmentManager.Instance.BuildBattleSnapshot(charId);
+        EquipBattleSnapshot snapshot = GameHub.Get<IEquipmentService>()?.BuildBattleSnapshot(charId);
         string json = JsonUtility.ToJson(snapshot);
 
         using var writer = new FastBufferWriter(json.Length + 8, Allocator.Temp);
         writer.WriteValueSafe(json, false);
         nm.CustomMessagingManager.SendNamedMessage(MsgEquipSnapshot, NetworkManager.ServerClientId, writer);
-        Debug.Log($"[RoomState] 已上报装备快照 角色{charId} 装备{snapshot.items.Count}件");
+        GameLog.Info($"[RoomState] 已上报装备快照 角色{charId} 装备{snapshot.items.Count}件");
     }
 
     private void SendPeerInfoTo(ulong clientId, int playerId)
@@ -476,7 +478,7 @@ public class RoomState : MonoBehaviour
         }
         catch (Exception)
         {
-            Debug.LogWarning($"[RoomState] {senderClientId} 的消息格式不对，忽略");
+            GameLog.Warn($"[RoomState] {senderClientId} 的消息格式不对，忽略");
             return false;
         }
     }
@@ -489,12 +491,12 @@ public class RoomState : MonoBehaviour
         if (!IsServerNow()) return;
         if (!_players.ContainsKey(clientId))
         {
-            Debug.LogWarning($"[RoomState] {clientId} 不在房间状态里（可能是旁观者），忽略选英雄");
+            GameLog.Warn($"[RoomState] {clientId} 不在房间状态里（可能是旁观者），忽略选英雄");
             return;
         }
         if (charId < 0 || charId >= HeroCount)
         {
-            Debug.LogWarning($"[RoomState] {clientId} 上报非法英雄 CharId={charId}");
+            GameLog.Warn($"[RoomState] {clientId} 上报非法英雄 CharId={charId}");
             return;
         }
 
@@ -504,10 +506,10 @@ public class RoomState : MonoBehaviour
         bool wasReady = state.IsReady;
         // 换角色只复位准备态：装备快照按"该玩家上报的那一套"原样保留（客户端换角色后会重新上报）
         _players[clientId] = new PlayerState { IsReady = false, CharId = charId, EquipJson = state.EquipJson };
-        Debug.Log($"[RoomState] 玩家 {clientId} 选择英雄 {charId}");
+        GameLog.Info($"[RoomState] 玩家 {clientId} 选择英雄 {charId}");
         if (wasReady)
         {
-            Debug.Log($"[RoomState] 玩家 {clientId} 换人，准备状态已复位");
+            GameLog.Info($"[RoomState] 玩家 {clientId} 换人，准备状态已复位");
             ServerBroadcastPeerReady(clientId, false);
         }
 
@@ -534,9 +536,9 @@ public class RoomState : MonoBehaviour
         if (!_players.TryGetValue(clientId, out PlayerState state)) return;
         if (EquipmentManager.Instance == null) return;
 
-        state.EquipJson = JsonUtility.ToJson(EquipmentManager.Instance.BuildBattleSnapshot(charId));
+        state.EquipJson = JsonUtility.ToJson(GameHub.Get<IEquipmentService>()?.BuildBattleSnapshot(charId));
         _players[clientId] = state;
-        Debug.Log($"[RoomState] 服务端记录装备快照 client={clientId} 角色{charId}");
+        GameLog.Info($"[RoomState] 服务端记录装备快照 client={clientId} 角色{charId}");
     }
 
     /// <summary>取某玩家对手当前选的英雄（-1 = 对手没选/没有对手）；仅服务端。</summary>
@@ -579,17 +581,17 @@ public class RoomState : MonoBehaviour
         if (!IsServerNow()) return;
         if (!_players.ContainsKey(clientId))
         {
-            Debug.LogWarning($"[RoomState] {clientId} 不在房间状态里（可能是旁观者），忽略准备");
+            GameLog.Warn($"[RoomState] {clientId} 不在房间状态里（可能是旁观者），忽略准备");
             return;
         }
         if (charId < 0 || charId >= HeroCount)
         {
-            Debug.LogWarning($"[RoomState] {clientId} 上报非法英雄 CharId={charId}");
+            GameLog.Warn($"[RoomState] {clientId} 上报非法英雄 CharId={charId}");
             return;
         }
 
         _players[clientId] = new PlayerState { IsReady = true, CharId = charId };
-        Debug.Log($"[RoomState] 玩家 {clientId} 已准备，英雄 {charId}");
+        GameLog.Info($"[RoomState] 玩家 {clientId} 已准备，英雄 {charId}");
         ServerBroadcastPeerReady(clientId, true);
         CheckStartGame();
     }
@@ -601,7 +603,7 @@ public class RoomState : MonoBehaviour
         if (!state.IsReady) return;
 
         _players[clientId] = new PlayerState { IsReady = false, CharId = state.CharId };
-        Debug.Log($"[RoomState] 玩家 {clientId} 取消准备");
+        GameLog.Info($"[RoomState] 玩家 {clientId} 取消准备");
         ServerBroadcastPeerReady(clientId, false);
     }
 
@@ -624,13 +626,13 @@ public class RoomState : MonoBehaviour
     {
         if (!IsServerNow())
         {
-            Debug.LogWarning("[RoomState] 只有房主（服务端）能开始战斗");
+            GameLog.Warn("[RoomState] 只有房主（服务端）能开始战斗");
             return false;
         }
         if (_sceneLoading) return false;
         if (!AllReady)
         {
-            Debug.LogWarning("[RoomState] 还有玩家未准备，无法开始");
+            GameLog.Warn("[RoomState] 还有玩家未准备，无法开始");
             return false;
         }
         return LoadBattleScene();
@@ -672,7 +674,7 @@ public class RoomState : MonoBehaviour
             var p = _players[k];
             _players[k] = new PlayerState { IsReady = false, CharId = p.CharId, EquipJson = p.EquipJson };
         }
-        Debug.Log("[RoomState] 房主开始游戏，正在加载战斗场景 " + BattleSceneName);
+        GameLog.Info("[RoomState] 房主开始游戏，正在加载战斗场景 " + BattleSceneName);
         return true;
     }
 

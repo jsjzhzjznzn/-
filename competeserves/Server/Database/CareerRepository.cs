@@ -130,6 +130,26 @@ namespace CompeteServer.Database
         public int GetValue(int playerId, int scoreId)
             => GetValues(playerId).TryGetValue(scoreId, out int value) ? value : 0;
 
+        /// <summary>
+        /// 写入后读回单个指标：复用写入用的那条连接，只取一行。
+        /// 写路径拿这个数字只为满足原来的返回值约定（现有调用点都丢弃它），
+        /// 所以不能为此再开一条连接、把该玩家整张 career_scores 读回来。
+        /// </summary>
+        /// <param name="connection">参数名：connection，类型：MySqlConnection，用途：已打开的写入连接</param>
+        /// <param name="playerId">参数名：playerId，类型：int，用途：玩家ID</param>
+        /// <param name="scoreId">参数名：scoreId，类型：int，用途：指标ID</param>
+        /// <returns>返回值类型：int，用途：当前累计值（无记录为 0）</returns>
+        private static int ReadValue(MySqlConnection connection, int playerId, int scoreId)
+        {
+            using MySqlCommand command = new(
+                "SELECT `value` FROM career_scores WHERE `player_id` = @PlayerId AND `score_id` = @ScoreId",
+                connection);
+            command.Parameters.AddWithValue("@PlayerId", playerId);
+            command.Parameters.AddWithValue("@ScoreId", scoreId);
+            object? result = command.ExecuteScalar();
+            return result == null || result == DBNull.Value ? 0 : Convert.ToInt32(result);
+        }
+
         // ──────────────────────────────
         // 写入（经 QuestHandler 的玩法事件漏斗调用）
         // ──────────────────────────────
@@ -158,7 +178,7 @@ namespace CompeteServer.Database
                 command.Parameters.AddWithValue("@ScoreId", scoreId);
                 command.Parameters.AddWithValue("@Delta", delta);
                 command.ExecuteNonQuery();
-                return GetValue(playerId, scoreId);
+                return ReadValue(connection, playerId, scoreId);
             }
             catch (Exception exception)
             {
@@ -192,7 +212,7 @@ namespace CompeteServer.Database
                 command.Parameters.AddWithValue("@ScoreId", scoreId);
                 command.Parameters.AddWithValue("@Value", value);
                 command.ExecuteNonQuery();
-                return GetValue(playerId, scoreId);
+                return ReadValue(connection, playerId, scoreId);
             }
             catch (Exception exception)
             {

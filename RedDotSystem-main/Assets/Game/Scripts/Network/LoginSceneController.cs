@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 
 using Common.Network;
 
@@ -50,6 +51,9 @@ public class LoginSceneController : MonoBehaviour
 
     /// <summary>登录成功后跳转的主页面场景名</summary>
     private const string MainSceneName = "zhuye";
+
+    /// <summary>登录回执超时（秒）：超过该时长仍未收到回执就解除在途标记并提示重试</summary>
+    private const float LoginTimeoutSeconds = 12f;
 
     // PlayerPrefs 键（自动登录令牌只存客户端本地，服务端库内只存其哈希）
     // 公开给退出登录逻辑复用，避免两边字符串漂移
@@ -169,7 +173,9 @@ public class LoginSceneController : MonoBehaviour
     /// 登录按钮点击处理
     /// 校验输入 → 建立连接 → 发送登录请求（勾选自动登录时随请求要求服务器签发令牌）
     /// </summary>
-    private async void OnLoginClicked()
+    private void OnLoginClicked() => OnLoginClickedAsync().Forget();
+
+    private async UniTaskVoid OnLoginClickedAsync()
     {
         if (loginInflight) return;
         string username = usernameInput != null ? usernameInput.text.Trim() : string.Empty;
@@ -196,12 +202,30 @@ public class LoginSceneController : MonoBehaviour
             if (!connected)
             {
                 loginInflight = false;
+                SetStatus("无法连接服务器，请检查服务端是否启动后重试");
                 return;
             }
         }
 
         SetStatus("登录中...");
         _ = ClientNetworkManager.Instance.SendLogin(username, password, IsAutoLoginChecked);
+        StartCoroutine(LoginTimeoutRoutine());
+    }
+
+    /// <summary>
+    /// 回执超时兜底：连接已断开时登录请求会被传输层忽略（不会发出去），界面会一直停在"登录中..."。
+    /// 超时后解除在途标记并给出可见原因，让玩家能重试。
+    /// </summary>
+    private IEnumerator LoginTimeoutRoutine()
+    {
+        float deadline = Time.realtimeSinceStartup + LoginTimeoutSeconds;
+        while (loginInflight && Time.realtimeSinceStartup < deadline)
+            yield return null;
+
+        if (!loginInflight) yield break;
+        loginInflight = false;
+        tokenLoginAttempted = false;
+        SetStatus("登录超时，请检查网络或服务端后重试");
     }
 
     /// <summary>
@@ -223,7 +247,9 @@ public class LoginSceneController : MonoBehaviour
     /// 勾选了自动登录且本地存有未过期令牌 → 连服并发令牌登录，成功直进 zhuye；
     /// 失败清本地令牌并回到登录界面（令牌大概率已失效，避免每次启动都白试一次）
     /// </summary>
-    private async void TryAutoLogin()
+    private void TryAutoLogin() => TryAutoLoginAsync().Forget();
+
+    private async UniTaskVoid TryAutoLoginAsync()
     {
         // 被顶号后本轮不自动登录：TryAutoLogin 读的是 PlayerPrefs 里的令牌，光清内存凭据挡不住，
         // 否则回登录界面就立刻用令牌顶回对面 → 两端无限互踢 + 无限重载场景（玩家手动点登录后解除）
@@ -266,6 +292,7 @@ public class LoginSceneController : MonoBehaviour
             }
         }
         _ = ClientNetworkManager.Instance.SendTokenLogin(account, token);
+        StartCoroutine(LoginTimeoutRoutine());
     }
 
     // ──────────────────────────────
@@ -411,6 +438,6 @@ public class LoginSceneController : MonoBehaviour
     private void SetStatus(string message)
     {
         if (statusText != null) statusText.text = message;
-        Debug.Log($"[登录]{message}");
+        GameLog.Info($"[登录]{message}");
     }
 }

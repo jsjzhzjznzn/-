@@ -241,6 +241,12 @@ namespace SkierFramework
                 return null;
             }
 
+            // 增量下载进行中时本地还没有对应 bundle，此时加载必然失败；先等下载结束
+            if (YooAssetService.Instance.IsUpdating)
+            {
+                await YooAssetService.Instance.WaitUpdateCompletedAsync();
+            }
+
             _processingLoadCount++;
             try
             {
@@ -305,7 +311,7 @@ namespace SkierFramework
 
             if (_assetCaches.ContainsKey(location))
             {
-                Debug.Log(string.Format("[UnLoadAsset] 卸载资源：{0} ！", path));
+                GameLog.Info(string.Format("[UnLoadAsset] 卸载资源：{0} ！", path));
 
                 if (_spriteCache.TryGetValue(location, out SpriteAtlas spriteAtlas))
                 {

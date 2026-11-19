@@ -100,6 +100,7 @@ public class VfxManager : MonoBehaviour
         public VfxCatalog.Entry Entry;
         public Vector3 TemplateScale;   // prefab 根自带的缩放是美术设计的一部分，应用注册表缩放时要保住
         public readonly Stack<GameObject> Idle = new();
+        public readonly Dictionary<GameObject, ParticleSystem[]> SystemsByInstance = new();
         public int Rented;
         public int TotalCreated;
     }
@@ -170,7 +171,7 @@ public class VfxManager : MonoBehaviour
         if (catalog == null) catalog = Resources.Load<VfxCatalog>("VfxCatalog");
         if (catalog == null)
         {
-            Debug.LogWarning("[特效] 找不到注册表 Assets/Game/Resources/VfxCatalog.asset，Play 全部为空操作");
+            GameLog.Warn("[特效] 找不到注册表 Assets/Game/Resources/VfxCatalog.asset，Play 全部为空操作");
         }
         else
         {
@@ -371,7 +372,7 @@ public class VfxManager : MonoBehaviour
         if (catalog == null) { failReason = "注册表未加载"; return false; }
         if (!catalog.TryGet(key, out VfxCatalog.Entry entry) || entry.prefab == null)
         {
-            Debug.LogWarning($"[特效] 未注册的 key：{key}（注册表里没有或没拖 prefab）");
+            GameLog.Warn($"[特效] 未注册的 key：{key}（注册表里没有或没拖 prefab）");
             failReason = "key 未注册";
             return false;
         }
@@ -381,9 +382,22 @@ public class VfxManager : MonoBehaviour
         return true;
     }
 
-    private EntryPool GetOrCreatePool(VfxCatalog.Entry entry)
+    /// <summary>
+    /// 池化实例上的 ParticleSystem 组件在实例存活期间不会变，按实例缓存起来，
+    /// 避免每次播放都 GetComponentsInChildren 分配一个数组
+    /// </summary>
+    private static ParticleSystem[] GetPooledSystems(EntryPool pool, GameObject instance)
     {
-        if (!pools.TryGetValue(entry.key, out EntryPool pool))
+        if (pool.SystemsByInstance.TryGetValue(instance, out ParticleSystem[] cached) && cached != null && cached.Length > 0)
+            return cached;
+
+        cached = instance.GetComponentsInChildren<ParticleSystem>(true);
+        pool.SystemsByInstance[instance] = cached;
+        return cached;
+    }
+
+    private EntryPool GetOrCreatePool(VfxCatalog.Entry entry)
+    {        if (!pools.TryGetValue(entry.key, out EntryPool pool))
         {
             pool = new EntryPool { Entry = entry, TemplateScale = entry.prefab.transform.localScale };
             pools.Add(entry.key, pool);
@@ -403,7 +417,7 @@ public class VfxManager : MonoBehaviour
         instance.SetActive(true);
 
         // 重置粒子：清旧粒子 + 全系统重播（池化实例上一轮的残留必须归零；必须先激活再 Play）
-        ParticleSystem[] systems = instance.GetComponentsInChildren<ParticleSystem>(true);
+        ParticleSystem[] systems = GetPooledSystems(pool, instance);
         foreach (ParticleSystem ps in systems) ps.Clear(true);
         foreach (ParticleSystem ps in systems)
         {
@@ -447,6 +461,11 @@ public class VfxManager : MonoBehaviour
             record.Instance.transform.SetParent(transform, false);
             record.Instance.SetActive(false);
             record.Pool.Idle.Push(record.Instance);
+        }
+        else
+        {
+            // 实例已被销毁（如场景卸载），清掉它的组件缓存，避免池里留下死键
+            record.Pool.SystemsByInstance.Clear();
         }
         VfxFinished?.Invoke(new VfxHandle(record.Key, record.Id));
     }

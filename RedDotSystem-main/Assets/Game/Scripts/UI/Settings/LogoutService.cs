@@ -39,7 +39,7 @@ public static class LogoutService
         // 令牌必须清掉，否则回登录页会立刻被 TryAutoLogin 用旧令牌登回去
         LoginSceneController.ClearStoredLogin();
 
-        Debug.Log("[Logout] 已退出登录，返回登录场景");
+        GameLog.Info("[Logout] 已退出登录，返回登录场景");
         IsLoggingOut = false;
         await SceneLoader.LoadAsync(ClientNetworkManager.LoginSceneName);
     }

@@ -52,6 +52,7 @@ public class DialogueView : UIView, IView
 
     private DialogueViewModel vm;
     private Tweener typewriterTween;
+    private Tweener blockedHintTween;
     private int lastNodeFrame = -1;
     private bool typing;
 
@@ -266,6 +267,7 @@ public class DialogueView : UIView, IView
         vm.NodeChanged += OnNodeChanged;
         vm.OptionsChanged += OnOptionsChanged;
         vm.DialogEnded += OnDialogEnded;
+        vm.TransitionBlocked += OnTransitionBlocked;
     }
 
     public void Unbind()
@@ -275,6 +277,7 @@ public class DialogueView : UIView, IView
         vm.NodeChanged -= OnNodeChanged;
         vm.OptionsChanged -= OnOptionsChanged;
         vm.DialogEnded -= OnDialogEnded;
+        vm.TransitionBlocked -= OnTransitionBlocked;
         vm = null;
     }
 
@@ -375,6 +378,23 @@ public class DialogueView : UIView, IView
     private void OnDialogEnded()
     {
         HidePanel(false);
+    }
+
+    /// <summary>
+    /// 出口条件不满足：给出可感知的反馈并隐藏继续箭头，
+    /// 否则玩家会反复点击却什么都看不到（线上排查时也只能靠日志猜）
+    /// </summary>
+    private void OnTransitionBlocked(DialogueNodeData node)
+    {
+        StopArrowLoops();
+        if (continueArrow != null) continueArrow.gameObject.SetActive(false);
+
+        if (contentText != null)
+            contentText.text = "（此刻还无法继续）";
+
+        blockedHintTween?.Kill();
+        if (contentText != null)
+            blockedHintTween = contentText.DOFade(0.55f, 0.25f).SetLoops(2, LoopType.Yoyo).OnComplete(() => contentText.alpha = 1f);
     }
 
     private void SelectOption(int index)

@@ -26,7 +26,7 @@ namespace SkierFrameworkUIMigration
     public static class DashijieMapViewBuilder
     {
         private const string PrefabPath = "Assets/Game/UI/Dashijie/DashijieMapView.prefab";
-        private const string PanelSpritePath = "Assets/Game/Resources/ui/Theme/panel_round.png";
+        private const string PanelSpritePath = "Assets/Game/Art/UI/Theme/panel_round.png";
         private const string CircleSpritePath = "Assets/Game/UI/Dashijie/Icons/dashijie_circle.png";
         private const string ArrowSpritePath = "Assets/Game/UI/Dashijie/Icons/minimap_arrow.png";
         private const string QuestMarkSpritePath = "Assets/Game/UI/Dashijie/Icons/dashijie_quest_mark.png";

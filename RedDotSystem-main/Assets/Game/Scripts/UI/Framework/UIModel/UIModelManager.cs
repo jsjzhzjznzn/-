@@ -10,11 +10,11 @@ namespace SkierFramework
     {
         private Stack<Camera> m_CameraPool = new Stack<Camera>();
         private Stack<int> m_IndexPool = new Stack<int>();
+        private Dictionary<int, int> m_IndexLayers = new Dictionary<int, int>();
         private int m_PoolCount = 0;
         private Camera m_UICamera;
 
         private Transform m_UIModelRoot;
-        private Light m_UIModelLight;
 
         /// <summary>
         /// 预览点击命中时用来做屏幕坐标换算。框架启动后 UICamera 由 UIManager 持有，
@@ -33,8 +33,6 @@ namespace SkierFramework
             }
         }
 
-        public Light UILight => m_UIModelLight;
-
         public override void OnInitialize()
         {
             base.OnInitialize();
@@ -44,16 +42,38 @@ namespace SkierFramework
             m_UIModelRoot = new GameObject("UIModelRoot").transform;
             m_UIModelRoot.SetParentEx(null);
             GameObject.DontDestroyOnLoad(m_UIModelRoot);
+        }
 
-            m_UIModelLight = new GameObject("UIModelLight").GetOrAddComponent<Light>();
-            m_UIModelLight.transform.SetParentEx(m_UIModelRoot);
+        /// <summary>
+        /// 索引 → 独占层。索引 0 沿用 UIRenderToTarget（保持历史行为），
+        /// 其余索引各取一个空闲层，让每台预览相机只渲染自己那条隔离带。
+        /// </summary>
+        public int GetExclusiveLayer(int index)
+        {
+            if (index <= 0) return Layer.UIRenderToTarget;
+            if (m_IndexLayers.TryGetValue(index, out int cached)) return cached;
 
-            m_UIModelLight.transform.localEulerAngles = new Vector3(36, 180, 0);
-            m_UIModelLight.type = LightType.Directional;
-            m_UIModelLight.cullingMask = 1 << Layer.UI | 1 << Layer.UIRenderToTarget;
-            m_UIModelLight.shadows = LightShadows.None;
+            int layer = FindFreeLayer();
+            m_IndexLayers[index] = layer;
+            return layer;
+        }
 
-            m_UIModelLight.gameObject.SetActive(false);
+        private int FindFreeLayer()
+        {
+            // 0-7 是 Unity 内置层，8 起已被项目占用（ActivityStage），取名称为空的空闲层
+            for (int layer = Layer.UIRenderToTarget + 1; layer < 32; layer++)
+            {
+                if (layer < 8) continue;
+                if (!string.IsNullOrEmpty(UnityEngine.LayerMask.LayerToName(layer))) continue;
+
+                bool used = false;
+                foreach (var kv in m_IndexLayers)
+                {
+                    if (kv.Value == layer) { used = true; break; }
+                }
+                if (!used) return layer;
+            }
+            return -1;
         }
 
         /// <summary>
@@ -84,8 +104,8 @@ namespace SkierFramework
             {
                 UIRenderToTexture renderToTexture = rawImage.GetOrAddComponent<UIRenderToTexture>();
                 Vector3 pos;
-                int index = 0;
-                if (renderToTexture.Targets == null || renderToTexture.Targets.Count == 0)
+                int index;
+                if (renderToTexture.Index < 0)
                 {
                     index = m_IndexPool.Count > 0 ? m_IndexPool.Pop() : m_PoolCount++;
                 }
@@ -96,7 +116,6 @@ namespace SkierFramework
 
                 pos = new Vector3(100 * index, -10000, 0); 
                 renderToTexture.Init(pos, isOrth, orthSizeOrFOV, index, cameraDistance);
-                UpdateLight();
 
                 go.SetLayerRecursively(Layer.UIRenderToTarget);
                 go.transform.SetParent(m_UIModelRoot);
@@ -104,6 +123,7 @@ namespace SkierFramework
                 go.transform.localScale = scale == default ? Vector3.one : scale;
                 go.transform.rotation = rot;
                 renderToTexture.AddTarget(go, canDrag);
+                renderToTexture.ApplyLayerTo(go);
                 callback?.Invoke(renderToTexture, go);
             }
         }
@@ -126,7 +146,6 @@ namespace SkierFramework
                         m_IndexPool.Push(renderToTexture.Index);
                         renderToTexture.ResetTarget();
                     }
-                    UpdateLight();
                 }
             }
         }
@@ -156,18 +175,8 @@ namespace SkierFramework
                     }
                     m_IndexPool.Push(renderToTexture.Index);
                     renderToTexture.ResetTarget();
-                    UpdateLight();
                 }
             }
-        }
-
-        private void UpdateLight()
-        {
-            // 目标工程的角色使用"主光"（URP Lit / YSA Toon 都读 GetMainLight），
-            // 这里额外生成的平行光不会成为主光，反而会在预览里叠一层附加光。
-            // 预览统一使用场景主光（zhuye 的 Directional Light），因此常灯保持关闭。
-            if (m_UIModelLight != null && m_UIModelLight.gameObject.activeSelf)
-                m_UIModelLight.gameObject.SetActive(false);
         }
 
         public Camera SpawnCamera()
@@ -198,12 +207,10 @@ namespace SkierFramework
 
         public void RecyleCamera(Camera camera)
         {
-            if (camera != null)
-            {
-                camera.targetTexture = null;
-                camera.gameObject.SetActive(false);
-                m_CameraPool.Push(camera);
-            }
+            if (camera == null) return;
+            camera.targetTexture = null;
+            camera.gameObject.SetActive(false);
+            m_CameraPool.Push(camera);
         }
     }
 }

@@ -196,7 +196,7 @@ public sealed class WorldPrompt : MonoBehaviour
         bg.raycastTarget = false;
 
         // 圆角胶囊底（项目通用 panel_round；拿不到就退回方角，不影响可读性）
-        Sprite pill = Resources.Load<Sprite>("ui/Theme/panel_round");
+        Sprite pill = UITheme.LoadRounded();
         if (pill != null)
         {
             bg.sprite = pill;

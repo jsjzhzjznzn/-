@@ -1,5 +1,7 @@
 using Common.Network;
 
+using Game.Narrative.Quest;
+using MieMieFrameWork.Business;
 using UnityEngine;
 
 /// <summary>
@@ -13,31 +15,35 @@ using UnityEngine;
 /// </summary>
 public class WorldQuestDirector : MonoBehaviour
 {
-    private MmQuestRuntime runtime;
+    private IQuestService runtime;
+
+    /// <summary>任务提示订阅令牌</summary>
+    private System.IDisposable toastToken;
 
     private void OnEnable()
     {
-        runtime = MmQuestRuntime.Instance;
+        runtime = GameHub.Get<IQuestService>();
         if (runtime == null)
         {
             // 自举在 BeforeSceneLoad，正常已就绪；极端时序下延迟一帧再取
             StartCoroutine(SubscribeNextFrame());
             return;
         }
-        runtime.ToastReceived += OnToastReceived;
+        toastToken = MmQuestRuntime.Bus.Subscribe(QuestEvents.Toast, OnToastReceived);
     }
 
     private System.Collections.IEnumerator SubscribeNextFrame()
     {
         yield return null;
-        runtime = MmQuestRuntime.Instance;
+        runtime = GameHub.Get<IQuestService>();
         if (runtime == null) yield break;
-        runtime.ToastReceived += OnToastReceived;
+        toastToken = MmQuestRuntime.Bus.Subscribe(QuestEvents.Toast, OnToastReceived);
     }
 
     private void OnDisable()
     {
-        if (runtime != null) runtime.ToastReceived -= OnToastReceived;
+        toastToken?.Dispose();
+        toastToken = null;
         runtime = null;
     }
 
@@ -65,7 +71,7 @@ public class WorldQuestDirector : MonoBehaviour
         position = Vector3.zero;
         npcKey = null;
 
-        MmQuestRuntime quests = MmQuestRuntime.Instance;
+        IQuestService quests = GameHub.Get<IQuestService>();
         if (quests == null) return false;
 
         int tracked = quests.ResolveTrackedQuest();

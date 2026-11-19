@@ -37,18 +37,23 @@ public sealed class StickerInfo
 }
 
 /// <summary>
-/// 表情包目录（运行时资源目录 Assets/Game/Resources/biaoq）
-/// 约定式自动发现，不需要任何清单文件：
-///   · Assets/Game/Resources/biaoq/&lt;键&gt;.png|jpg          → 静态表情（文件名就是键）
-///   · Assets/Game/Resources/biaoq/&lt;键&gt;/&lt;键&gt;_NNN.png     → 动画表情的帧（由 extract_gif_frames.ps1 生成）
-///   · Assets/Game/Resources/biaoq/&lt;键&gt;/sticker.txt        → 动画播放帧率（可选）
-/// 因此「往 Resources/biaoq 丢图 = 多一个表情」，客户端零改动；GIF 本体留在 Assets/Game/Art/biaoq 不进包。
+/// 表情包目录（运行时资源目录 Assets/Game/Art/UI/biaoq）
+/// 约定式自动发现，清单由编辑器工具生成：
+///   · Assets/Game/Art/UI/biaoq/sticker_manifest.txt        → 每个表情的 location 与帧数清单
+///   · Assets/Game/Art/UI/biaoq/&lt;键&gt;.png|jpg            → 静态表情（文件名就是键）
+///   · Assets/Game/Art/UI/biaoq/&lt;键&gt;/&lt;键&gt;_NNN.png     → 动画表情的帧（由 extract_gif_frames.ps1 生成）
+///   · Assets/Game/Art/UI/biaoq/&lt;键&gt;/sticker.txt        → 动画播放帧率（可选）
+/// 资源走 YooAsset ui 包（可热更）；GIF 本体留在 Assets/Game/Art/biaoq 不进包。
+/// 「往目录丢图 = 多一个表情」后需重跑 Tools/UI/生成表情清单 更新 manifest。
 /// 聊天消息里只传「键」，客户端按键取图——服务端不关心表情长什么样，只透传内容类型。
 /// </summary>
 public static class StickerCatalog
 {
-    /// <summary>表情资源目录（Resources 相对路径，不含 Assets/Game/Resources 前缀）</summary>
-    public const string ResourceFolder = "biaoq";
+    /// <summary>表情资源目录（YooAsset location 前缀，末尾带 /）</summary>
+    public const string AssetRoot = "Assets/Game/Art/UI/biaoq/";
+
+    /// <summary>清单文件 location</summary>
+    public const string ManifestLocation = AssetRoot + "sticker_manifest.txt";
 
     /// <summary>动画帧的默认播放帧率（sticker.txt 缺失时用）</summary>
     public const float DefaultFps = 12f;
@@ -118,7 +123,7 @@ public static class StickerCatalog
         // 键 → (序号 → 帧)，序号用来给帧排序（文件名三位数补零，字典序即帧序）
         Dictionary<string, SortedDictionary<int, Sprite>> frameGroups = new(StringComparer.Ordinal);
 
-        foreach (Sprite sprite in Resources.LoadAll<Sprite>(ResourceFolder))
+        foreach (Sprite sprite in LoadAllSprites())
         {
             if (sprite == null) continue;
 
@@ -151,7 +156,35 @@ public static class StickerCatalog
         // 固定顺序：按键名排序，保证面板顺序稳定（换会话/重进游戏都一样）
         all.Sort((left, right) => string.CompareOrdinal(left.Key, right.Key));
 
-        Debug.Log($"[表情]目录加载完成：{all.Count} 个表情（其中动画 {animatedCount} 个），目录 Resources/{ResourceFolder}");
+        GameLog.Info($"[表情]目录加载完成：{all.Count} 个表情（其中动画 {animatedCount} 个），目录 {AssetRoot}");
+    }
+
+    /// <summary>
+    /// 读取全部表情 Sprite 的方法
+    /// 清单缺失或包未就绪时返回空数组（只算"没有表情"，不影响聊天本身）
+    /// </summary>
+    private static Sprite[] LoadAllSprites()
+    {
+        TextAsset manifest = GameAssets.GetAsset<TextAsset>(ManifestLocation);
+        if (manifest == null)
+        {
+            GameLog.Warn($"[表情]清单缺失：{ManifestLocation}（用 Tools/UI/生成表情清单 重新生成）");
+            return Array.Empty<Sprite>();
+        }
+
+        List<string> locations = new();
+        foreach (string rawLine in manifest.text.Split('\n'))
+        {
+            string line = rawLine.Trim();
+            if (line.Length == 0 || line[0] == '#') continue;
+            int split = line.IndexOf('|');
+            if (split < 0) continue;
+            if (line.Substring(0, split) != "A") continue;
+            string location = line.Substring(split + 1);
+            if (location.EndsWith(".sticker.txt", StringComparison.Ordinal)) continue;
+            locations.Add(location);
+        }
+        return GameAssets.LoadAllSprites(null, locations);
     }
 
     /// <summary>登记一个表情（同名键后到的覆盖先到的，避免半成品资源把已有表情顶掉）</summary>
@@ -178,7 +211,7 @@ public static class StickerCatalog
     /// </summary>
     private static float ReadFps(string key)
     {
-        TextAsset meta = Resources.Load<TextAsset>($"{ResourceFolder}/{key}/sticker");
+        TextAsset meta = GameAssets.GetAsset<TextAsset>($"{AssetRoot}{key}/sticker.txt");
         if (meta == null) return DefaultFps;
 
         foreach (string line in meta.text.Split('\n'))

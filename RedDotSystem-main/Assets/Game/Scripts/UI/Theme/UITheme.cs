@@ -1,7 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// UI 主题常量（原神风浅色手绘）。数值与 <c>Assets/Game/Resources/ui/Theme</c> 里的底图配套。
+/// UI 主题常量（原神风浅色手绘）。数值与 <c>Assets/Game/Art/UI/Theme</c> 里的底图配套。
+/// 贴图不在 Resources 下，统一经 <see cref="GameAssets"/> 取（YooAsset ui 包，可热更）。
 /// </summary>
 public static class UITheme
 {
@@ -13,26 +14,30 @@ public static class UITheme
     public static readonly Color RowTintStrong = new Color32(0xE4, 0xD9, 0xC2, 0xFF);
     public static readonly Color Backdrop = new Color(0f, 0f, 0f, 0.45f);
 
-    /// <summary>Resources 里的主题贴图目录（工程里实际目录是小写 ui）</summary>
-    public const string ThemeResourceDir = "ui/Theme";
+    /// <summary>主题贴图的完整资源路径前缀（YooAsset location 前缀）</summary>
+    public const string ThemeAssetRoot = "Assets/Game/Art/UI/Theme/";
 
-    public static Sprite LoadPanelBackground() => Resources.Load<Sprite>(ThemeResourceDir + "/panel_bg");
+    public static Sprite LoadPanelBackground() => LoadTheme("panel_bg");
 
     /// <summary>面板专属底图（bg_&lt;key&gt;）；键为空或图不存在时返回 null，由调用方退回通用底图</summary>
     public static Sprite LoadBackground(string key) =>
-        string.IsNullOrEmpty(key) ? null : Resources.Load<Sprite>(ThemeResourceDir + "/bg_" + key);
+        string.IsNullOrEmpty(key) ? null : LoadTheme("bg_" + key);
 
     public static Sprite LoadBanner(string key) =>
-        string.IsNullOrEmpty(key) ? null : Resources.Load<Sprite>(ThemeResourceDir + "/banner_" + key);
+        string.IsNullOrEmpty(key) ? null : LoadTheme("banner_" + key);
 
     /// <summary>
     /// 面板四周的虚化底：主页插画的模糊版（blur_home）。
     /// 用于非窗口面板——框架会把下层（主页）隐藏，没有它就会露出裸 3D 场景。
     /// </summary>
-    public static Sprite LoadHomeBackdrop() => Resources.Load<Sprite>(ThemeResourceDir + "/blur_home");
-    public static Sprite LoadRounded() => Resources.Load<Sprite>(ThemeResourceDir + "/panel_round");
-    public static Sprite LoadButton() => Resources.Load<Sprite>(ThemeResourceDir + "/btn_round");
-    public static Sprite LoadCircle() => Resources.Load<Sprite>(ThemeResourceDir + "/circle");
+    public static Sprite LoadHomeBackdrop() => LoadTheme("blur_home") ?? LoadTheme("home_bg");
+    public static Sprite LoadRounded() => LoadTheme("panel_round");
+    public static Sprite LoadButton() => LoadTheme("btn_round");
+    public static Sprite LoadCircle() => LoadTheme("circle");
+
+    /// <summary>按文件 stem 取 Theme 目录下的 Sprite（找不到返回 null）</summary>
+    public static Sprite LoadTheme(string fileName) =>
+        GameAssets.GetSprite(ThemeAssetRoot + fileName + ".png");
 
     /// <summary>相对亮度（用于把深色底/浅色字识别出来）</summary>
     public static float Luminance(Color c) => 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;

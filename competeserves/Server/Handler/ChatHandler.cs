@@ -110,7 +110,8 @@ namespace CompeteServer.Handler
             }
 
             // Mongo 不可用时 SaveMessage 返回 null：回执失败让客户端回滚乐观消息，绝不静默丢回执
-            ChatMessage? saved = new ChatRepository().SaveMessage(senderId, targetId, content, contentType);
+            ChatRepository chatRepository = new ChatRepository();
+            ChatMessage? saved = chatRepository.SaveMessage(senderId, targetId, content, contentType);
             if (saved == null)
             {
                 _ = session.Send(MessageID.ChatSendResponse,
@@ -130,12 +131,17 @@ namespace CompeteServer.Handler
             });
 
             // 接收方在线才推送；不在线则只落库，等其上线拉历史补齐
+            // 推送带服务端算出的权威未读数：客户端拿它覆盖写红点，避免长期靠本地 +1 累加而漂移
             ClientSession? targetSession = SessionManager.Instance.GetSessionByPlayerId(targetId);
             if (targetSession != null)
             {
+                // 刚落的这条一定是未读：计数查询在下一次查询里就会包含它
+                // -1 = 计数失败（Mongo 不可用），未读数是不确定值，客户端据此回退为本地 +1
+                int unreadCount = chatRepository.CountUnread(targetId, senderId);
                 _ = targetSession.Send(MessageID.ChatReceiveNotify, new ChatReceiveNotify
                 {
                     Message = ToChatItem(saved),
+                    UnreadCount = unreadCount,
                 });
             }
 
@@ -166,7 +172,12 @@ namespace CompeteServer.Handler
             // 用户真正打开会话时发的是 peek=false，才走置已读
             if (!request.Peek)
             {
-                repository.MarkConversationRead(session.PlayerId, request.TargetId);
+                // 失败不阻断本次返回，但必须留痕：客户端已经把角标清 0，
+                // 服务端没落已读的话未读数会一直计着，下次登录角标会"复活"，这里要能追到原因
+                if (!repository.MarkConversationRead(session.PlayerId, request.TargetId))
+                {
+                    Console.WriteLine($"已读标记写入失败（下次登录未读数会回弹）:{session.PlayerId} ↔ {request.TargetId}");
+                }
             }
 
             // 仓库按时间倒序返回（便于 limit 取最新），这里反转为正序（旧→新）再下发
@@ -362,6 +373,38 @@ namespace CompeteServer.Handler
 
             worldLastSendTicks[playerId] = now;
             return true;
+        }
+
+        // ──────────────────────────────
+        // 登录全量未读快照
+        // ──────────────────────────────
+
+        /// <summary>
+        /// 登录成功后推送全量未读快照的方法
+        /// 离线期间收到的消息只落库不推送，客户端本地累加也与真相会漂移，
+        /// 登录这一刻是唯一能拿到权威数字的时机：推一次全部好友的未读数，客户端整体覆盖红点
+        /// 与登录回执的顺序：无论回执先到还是快照先到，客户端都按"覆盖写"处理，不存在时序依赖
+        /// </summary>
+        /// <param name="session">参数名：session，类型：ClientSession，用途：刚登录成功的会话</param>
+        /// <param name="playerId">参数名：playerId，类型：int，用途：己方玩家ID</param>
+        public static void PushUnreadSnapshot(ClientSession session, int playerId)
+        {
+            List<(int FriendId, string Name)> friends = new FriendRepository().GetFriends(playerId);
+            if (friends.Count == 0) return;
+
+            // 一次聚合取回全部好友的未读（与好友列表同一批量入口，不是逐好友往返）
+            Dictionary<int, int> unreadMap = new ChatRepository()
+                .CountUnreadBatch(playerId, friends.Select(friend => friend.FriendId));
+
+            ChatUnreadSnapshotNotify notify = new();
+            foreach (KeyValuePair<int, int> pair in unreadMap)
+            {
+                if (pair.Value <= 0) continue;   // 只发有未读的，其余客户端按 0 处理
+                notify.Entries.Add(new ChatUnreadEntry { FriendId = pair.Key, UnreadCount = pair.Value });
+            }
+
+            Console.WriteLine($"推送未读快照:{playerId} | {notify.Entries.Count}个会话有未读");
+            _ = session.Send(MessageID.ChatUnreadSnapshotNotify, notify);
         }
 
         /// <summary>

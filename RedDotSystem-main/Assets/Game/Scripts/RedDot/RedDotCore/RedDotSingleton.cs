@@ -5,7 +5,7 @@ using UnityEngine;
 namespace MH
 {
     /// <summary>
-    /// 红点系统唯一入口（场景单例，需挂在常驻物体上并在 Inspector 拖入 RedDotConfigAsset 配置）。
+    /// 红点系统唯一入口（进程级单例，启动时自举，不依赖任何场景）。
     /// 职责：
     /// 1. 启动时根据配置资产（key + parentList）在内存中构建整棵红点树；
     /// 2. 对外提供运行时 API：Set（业务唯一写入口）、查询、回调注册/注销；
@@ -16,6 +16,9 @@ namespace MH
         private static RedDotSingleton _instance;
         /// <summary>全局唯一实例。系统未初始化时为 null，外部调用前需判空</summary>
         public static RedDotSingleton Instance => _instance;
+
+        /// <summary>配置资产在 Resources 下的路径（自举时加载，避免依赖场景实例上的 Inspector 拖拽）</summary>
+        public const string ConfigResourcePath = "RedDot/RedDotConfigAsset";
 
         /// <summary>节点数据变化时的回调签名：参数为发生变化的节点自身（可直接读取最新数据）</summary>
         public delegate void OnRdCountChange(RedDotNode node);
@@ -31,6 +34,26 @@ namespace MH
         private bool _isBatchMode = false;
         // 批量模式中被 Set 过的"脏节点"集合，EndBatch 时统一刷新它们的祖先链
         private HashSet<RedDotNode> _dirtyNodes = new HashSet<RedDotNode>();
+        // 批量嵌套深度：只有回到 0 才真正应用变更
+        private int _batchDepth;
+
+        /// <summary>
+        /// 进程级自举：在任意场景加载前建好红点树。
+        /// 此前红点树靠 zhuye 场景里手挂的实例，其它场景（登录/挑战/大世界）里 Instance 为 null，
+        /// 所有业务写入都会被静默丢弃，角标只有在主页才正常。
+        /// 配置资产通过 Resources 加载：场景实例上的 Inspector 引用在无场景自举时拿不到。
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Bootstrap()
+        {
+            if (_instance != null) return;
+
+            RedDotConfigAsset config = Resources.Load<RedDotConfigAsset>(ConfigResourcePath);
+
+            GameObject holder = new GameObject(nameof(RedDotSingleton));
+            RedDotSingleton created = holder.AddComponent<RedDotSingleton>();
+            created._config = config;
+        }
 
         /// <summary>初始化：单例保护 → 常驻不销毁 → 读取配置建树</summary>
         public void Awake()
@@ -44,8 +67,10 @@ namespace MH
             _instance = this;
             DontDestroyOnLoad(gameObject);  // 常驻场景，切场景不销毁
 
-            // todo 根据自己项目的资源管理进行加载就好 这里演示直接Inspector拖动了
-            // _config = Resources.Load<RedDotConfigAsset>(nameof(RedDotConfigAsset));
+            // 场景里手挂的旧实例可能带来 Inspector 引用；自举创建的实例靠 Resources 加载
+            if (_config == null)
+                _config = Resources.Load<RedDotConfigAsset>(ConfigResourcePath);
+
             InitRedDotTreeNode();
         }
 
@@ -131,6 +156,29 @@ namespace MH
         }
 
         /// <summary>
+        /// 业务写入入口的安全包装：红点系统未就绪时只告警一次，避免调用方到处判空。
+        /// 红点已改为进程级自举，正常不会走到这里；走到这里说明自举失败，值得暴露而不是静默吞掉。
+        /// </summary>
+        /// <param name="key">参数名：key，类型：ERedDotKeyType，用途：要写的红点Key</param>
+        /// <param name="count">参数名：count，类型：int，用途：绝对值（覆盖写，非累加）</param>
+        /// <param name="flags">参数名：flags，类型：RedDotFlags，用途：红点类型（只有 Number 会显示数字）</param>
+        public static void TrySet(ERedDotKeyType key, int count, RedDotFlags flags = RedDotFlags.Default)
+        {
+            if (_instance != null)
+            {
+                _instance.Set(key, count, flags);
+                return;
+            }
+            if (!_missingWarned)
+            {
+                _missingWarned = true;
+                GameLog.Warn($"[RedDot] 红点系统未就绪，写入被丢弃（后续同类告警不再重复）：{key}={count}");
+            }
+        }
+
+        private static bool _missingWarned;
+
+        /// <summary>
         /// 【业务唯一写入口】设置某个红点的数量和类型（覆盖式，不是累加）。
         /// 例：Set(Key8, 5, Number) 表示系统邮件有 5 封；Set(Key8, 0, Number) 表示清除。
         /// 只对叶子节点生效；变化会自动沿父链向上传播刷新，无需关心父级 UI。
@@ -208,6 +256,7 @@ namespace MH
             if (!AllRedDotNodes.TryGetValue(parentKey, out RedDotNode parent)) return;
 
             // 先经公开 API 清空所有类型计数：父链会立即重算（角标同步熄灭）
+            // 先拷出 key 再清：清的过程中 rdCounts 会被移除元素，不能边遍历边改
             List<RedDotFlags> flags = new List<RedDotFlags>(node.rdCounts.Keys);
             foreach (RedDotFlags flag in flags)
             {
@@ -217,6 +266,10 @@ namespace MH
             node.parents.Remove(parent);
             parent.rdChildrenDic.Remove(key);
             AllRedDotNodes.Remove(key);
+
+            // 摘链后父节点的子集合已变：批量模式下上面那次重算只登记了脏节点、尚未生效，
+            // 这里补一次重算，保证父节点汇总不含已移除的子节点
+            parent.CheckRedDotCountNoPropagation();
         }
 
         #region 批量更新API
@@ -224,11 +277,14 @@ namespace MH
         /// <summary>
         /// 开始批量更新模式，在此模式下 Set 调用不会立即向上传播
         /// 适用场景：一次要下发大量红点数据（如登录拉取全部红点），避免父节点被反复重算
+        /// 用引用计数而不是布尔量：嵌套的批量调用（如登录快照里再触发一次批量）不会提前结束外层批量，
+        /// 单次调用 Begin/End 的语义与之前完全一致
         /// </summary>
         public void BeginBatch()
         {
+            if (_batchDepth == 0) _dirtyNodes.Clear();
+            _batchDepth++;
             _isBatchMode = true;
-            _dirtyNodes.Clear();
         }
 
         /// <summary>
@@ -236,9 +292,15 @@ namespace MH
         /// 1. 收集所有脏节点的全部祖先（HashSet 去重，多个脏点共享的祖先只刷新一次）；
         /// 2. 按节点深度从大到小排序（离叶子近的祖先先算，保证算父节点时其子节点数据已最新）；
         /// 3. 依次重算，每个节点只计算一次。
+        /// 只在最外层 EndBatch（计数归零）时真正应用变更
         /// </summary>
         public void EndBatch()
         {
+            _batchDepth--;
+            if (_batchDepth > 0) return;
+
+            // 计数不允许为负：多调了 End 也只是回到非批量状态，不能把 _isBatchMode 卡在错误值上
+            _batchDepth = 0;
             _isBatchMode = false;
 
             if (_dirtyNodes.Count == 0) return;
@@ -319,6 +381,53 @@ namespace MH
         }
 
         #endregion
+
+        // ──────────────────────────────
+        // 一致性自检
+        // ──────────────────────────────
+
+        /// <summary>
+        /// 校验整棵树的一致性：每个父节点的汇总值必须等于其全部子节点之和。
+        /// 纯只读——不重算、不写入、不触发回调，也不会自动运行，只在需要时手动调用。
+        /// 用途：线上排查"角标与实际不符"时先跑一次，返回的就是传播断点所在节点。
+        /// </summary>
+        /// <param name="mismatches">输出：不一致的节点及原因（一致时为空表）</param>
+        /// <returns>返回值类型：bool，用途：true=整棵树一致</returns>
+        public bool ValidateConsistency(out List<string> mismatches)
+        {
+            mismatches = new List<string>();
+            foreach (KeyValuePair<ERedDotKeyType, RedDotNode> pair in AllRedDotNodes)
+            {
+                RedDotNode node = pair.Value;
+                if (node.rdChildrenDic.Count == 0) continue;   // 叶子由业务写入，不参与校验
+
+                int expectedCount = 0;
+                Dictionary<RedDotFlags, int> expectedFlags = new Dictionary<RedDotFlags, int>();
+                foreach (RedDotNode child in node.rdChildrenDic.Values)
+                {
+                    foreach (KeyValuePair<RedDotFlags, int> kv in child.rdCounts)
+                    {
+                        if (kv.Value <= 0) continue;
+                        expectedFlags.TryGetValue(kv.Key, out int existing);
+                        expectedFlags[kv.Key] = existing + kv.Value;
+                        expectedCount += kv.Value;
+                    }
+                }
+
+                if (node.rdCount != expectedCount)
+                {
+                    mismatches.Add($"{pair.Key} 总数={node.rdCount} 应为={expectedCount}（子节点之和）");
+                    continue;
+                }
+
+                foreach (KeyValuePair<RedDotFlags, int> kv in expectedFlags)
+                {
+                    if (node.GetCount(kv.Key) != kv.Value)
+                        mismatches.Add($"{pair.Key} 类型{kv.Key}计数={node.GetCount(kv.Key)} 应为={kv.Value}");
+                }
+            }
+            return mismatches.Count == 0;
+        }
 
         // ──────────────────────────────
         // 诊断（排查"父节点汇总与子节点不一致"类问题用）

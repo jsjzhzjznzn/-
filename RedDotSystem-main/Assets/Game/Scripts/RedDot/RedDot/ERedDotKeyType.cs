@@ -55,5 +55,8 @@ namespace MH
         [Description("任务入口")]
         Key16 = 16,
 
+        [Description("成就入口")]
+        Key17 = 17,
+
     }
 }

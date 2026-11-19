@@ -1,3 +1,5 @@
+#if UNITY_EDITOR
+// 测试脚手架：只服务编辑器内的战斗测试（BattleTestBuilder），不随正式包编译
 using UnityEngine;
 
 /// <summary>
@@ -15,6 +17,10 @@ public class BattleTestDummy : MonoBehaviour
     private float _timer;
     private HealthModel _health;
 
+    /// <summary>目标血量缓存（目标可能被替换，按 InstanceID 失效）</summary>
+    private HealthModel _targetHealth;
+    private int _targetHealthOwnerId;
+
     private void Awake()
     {
         _health = GetComponent<HealthModel>();
@@ -30,16 +36,41 @@ public class BattleTestDummy : MonoBehaviour
 
         if (Vector3.Distance(transform.position, target.transform.position) > attackRange) return;
 
-        var targetHealth = target.GetComponent<HealthModel>();
+        var targetHealth = ResolveTargetHealth();
         if (targetHealth == null || !targetHealth.IsAlive) return;
 
-        targetHealth.RequestDamage(new DamageRequest
+        // 无判定几何的来源：极小半径整球 + 只打一个目标，走同一套命中管线
+        var context = new AttackContext
         {
-            damage = attackDamage,
-            isCritical = false,
+            attacker = gameObject,
+            faction = CombatFaction.Enemy,
+            origin = target.transform.position,
+            forward = transform.forward,
+            radius = 0.05f,
+            arc = 360f,
+            layerMask = ~0,
+            delivery = AttackDelivery.Scripted,
+            requireLineOfSight = false,
+            maxTargets = 1,
+            flatDamage = attackDamage,
             sourceId = 0,
-            isDoT = false,
-        }, gameObject);
+        };
+
+        CombatPipeline.Resolve(context, _combatBuffer);
+    }
+
+    /// <summary>命中管线用的缓冲（复用避免每次出手分配）</summary>
+    private readonly Collider[] _combatBuffer = new Collider[8];
+
+    private HealthModel ResolveTargetHealth()
+    {
+        int targetId = target.GetInstanceID();
+        if (_targetHealth == null || _targetHealthOwnerId != targetId)
+        {
+            _targetHealth = target.GetComponent<HealthModel>();
+            _targetHealthOwnerId = targetId;
+        }
+        return _targetHealth;
     }
 
     public void ResetDummy(float maxHP = 300f)
@@ -48,3 +79,4 @@ public class BattleTestDummy : MonoBehaviour
         if (_health != null) _health.ResetHealth(maxHP, maxHP);
     }
 }
+#endif

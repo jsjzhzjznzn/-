@@ -51,17 +51,27 @@ namespace CompeteServer.Network
         /// </summary>
         private readonly object locker;
 
+        /// <summary>
+        /// 玩家ID → 会话的索引
+        /// 类型：Dictionary&lt;int, ClientSession&gt;
+        /// 用途：定向推送（私聊/邮件/邀请/成就/巡检）按玩家ID找会话；没有它就只能持全局锁线性扫描会话表
+        /// 一致性：会话的 PlayerId 只在 TryBindPlayer 里赋值（已登录会话禁止改绑），所以写入点只有绑定，
+        ///         移除点只有顶号摘册 / 断线移除 / 停机清空——三处都同步，否则会返回已摘册的僵尸会话
+        /// </summary>
+        private readonly Dictionary<int, ClientSession> byPlayerId;
+
         // ──────────────────────────────
         // 构造函数
         // ──────────────────────────────
 
         /// <summary>
         /// 私有构造函数
-        /// 初始化会话列表和线程锁，防止外部实例化
+        /// 初始化会话列表、玩家索引与线程锁，防止外部实例化
         /// </summary>
         private SessionManager()
         {
             sessions = new List<ClientSession>();
+            byPlayerId = new Dictionary<int, ClientSession>();
             locker = new object();
         }
 
@@ -103,15 +113,16 @@ namespace CompeteServer.Network
             {
                 if (!sessions.Contains(session) || session.PlayerId > 0) return false;
 
-                evicted = sessions.Find(other =>
-                    other != session && other.PlayerId == playerId);
-                if (evicted != null)
+                if (byPlayerId.TryGetValue(playerId, out ClientSession? previous))
                 {
-                    sessions.Remove(evicted);
-                    evicted.MarkEvicted();
+                    sessions.Remove(previous);
+                    byPlayerId.Remove(playerId);
+                    previous.MarkEvicted();
+                    evicted = previous;
                 }
 
                 session.PlayerId = playerId;
+                byPlayerId[playerId] = session;
                 return true;
             }
         }
@@ -127,7 +138,7 @@ namespace CompeteServer.Network
             if (playerId <= 0) return null;
             lock (locker)
             {
-                return sessions.Find(session => session.PlayerId == playerId);
+                return byPlayerId.TryGetValue(playerId, out ClientSession? session) ? session : null;
             }
         }
 
@@ -158,6 +169,16 @@ namespace CompeteServer.Network
             lock (locker)
             {
                 sessions.Remove(session);
+
+                // 只有索引里确实是本会话时才移除：被顶号摘册的旧会话 PlayerId 仍保留原值（见 MarkEvicted），
+                // 那时索引已指向新会话，误删会让新会话查不到
+                if (session.PlayerId > 0
+                    && byPlayerId.TryGetValue(session.PlayerId, out ClientSession? current)
+                    && current == session)
+                {
+                    byPlayerId.Remove(session.PlayerId);
+                }
+
                 Console.WriteLine($"当前在线:{sessions.Count}");
             }
         }
@@ -236,6 +257,7 @@ namespace CompeteServer.Network
             {
                 int count = sessions.Count;
                 sessions.Clear();
+                byPlayerId.Clear();
                 Console.WriteLine($"[SessionManager] 关闭全部会话，共 {count} 个（连接随进程退出回收）");
             }
         }

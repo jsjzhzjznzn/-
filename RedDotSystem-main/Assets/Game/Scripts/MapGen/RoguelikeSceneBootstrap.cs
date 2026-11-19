@@ -1,3 +1,4 @@
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 namespace Game.MapGen
@@ -11,14 +12,16 @@ namespace Game.MapGen
     {
         [SerializeField] private Canvas canvas;
 
-        private async void Start()
+        private void Start() => StartAsync().Forget();
+
+        private async UniTaskVoid StartAsync()
         {
             await MieMieFrameWork.ModuleHubBootstrap.EnsureAsync();
 
             var ui = SkierFramework.UIManager.Instance;
             if (ui == null)
             {
-                Debug.LogWarning("[Roguelike] UIManager 未就绪，画布保持场景默认渲染");
+                GameLog.Warn("[Roguelike] UIManager 未就绪，画布保持场景默认渲染");
                 return;
             }
 

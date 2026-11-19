@@ -183,6 +183,10 @@ namespace CompeteServer.Manager
             if (now - lastSweepMs < SweepIntervalMs) return;
             lastSweepMs = now;
 
+            // 两段式：先用内存闸筛出候选（不查库），再对候选做一次批量计数查询。
+            // 原来是对每个在线玩家各查一次邮件列表（开连接 + 撤回清理 + 读全部正文反序列化），只为拿两个整数；
+            // 现在整批一次拿齐，库往返数与在线人数解耦，且「过了闸才查库」的语义不变。
+            List<int> candidates = new();
             foreach (int playerId in SessionManager.Instance.GetOnlinePlayerIds())
             {
                 PlayerState state = states.GetOrAdd(playerId, _ => new PlayerState());
@@ -194,23 +198,25 @@ namespace CompeteServer.Manager
                     if (now - state.LastMailRemindMs < SweepRemindGapMs) continue;
                 }
 
-                int claimable = 0;
-                int unread = 0;
-                foreach (MailRepository.MailData mail in new MailRepository().GetMails(playerId))
-                {
-                    if (!mail.Read) unread++;
-                    if (!mail.Claimed && mail.Items.Count > 0) claimable++;
-                }
-                if (claimable <= 0) continue;
+                candidates.Add(playerId);
+            }
+            if (candidates.Count == 0) return;
 
+            Dictionary<int, (int Unread, int Claimable)> badges = new MailRepository().GetMailBadgeCounts(candidates);
+
+            foreach (int playerId in candidates)
+            {
+                if (!badges.TryGetValue(playerId, out (int Unread, int Claimable) badge) || badge.Claimable <= 0) continue;
+
+                PlayerState state = states.GetOrAdd(playerId, _ => new PlayerState());
                 lock (state)
                 {
                     state.SweepRemindCount++;
                     state.LastMailRemindMs = now;
                 }
 
-                Console.WriteLine($"[AgentReminder] 巡检触发 player={playerId} 未领附件{claimable}封 未读{unread}封（会话第{state.SweepRemindCount}次）");
-                _ = Task.Run(() => FireAsync(playerId, string.Empty, claimable, unread));
+                Console.WriteLine($"[AgentReminder] 巡检触发 player={playerId} 未领附件{badge.Claimable}封 未读{badge.Unread}封（会话第{state.SweepRemindCount}次）");
+                _ = Task.Run(() => FireAsync(playerId, string.Empty, badge.Claimable, badge.Unread));
             }
         }
 

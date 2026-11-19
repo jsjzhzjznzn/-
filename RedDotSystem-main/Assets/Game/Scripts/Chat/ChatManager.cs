@@ -6,6 +6,12 @@ using Common.Network;
 
 using MH;
 
+using Game.Chat;
+
+using MiMieEventBus;
+
+using MieMieFrameWork;
+
 using UnityEngine;
 
 /// <summary>
@@ -14,37 +20,35 @@ using UnityEngine;
 /// 订阅网络层聊天事件，把 推送/历史/回执 归位到对应的人——不管当前 UI 正在看谁
 /// UI（FriendUIController）只订阅 ConversationUpdated 渲染当前会话，不直接碰网络
 /// </summary>
-public class ChatManager : MonoBehaviour
+public class ChatManager : SingletonBehaviour<ChatManager>, IChatService
 {
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
+
     // ──────────────────────────────
     // 单例实现
     // ──────────────────────────────
 
-    /// <summary>全局唯一实例（UI 层访问会话缓存的入口）</summary>
-    public static ChatManager Instance { get; private set; }
 
-    /// <summary>
-    /// 运行时自举
-    /// 进入 Play 模式自动创建，无需手动挂载（与 ClientNetworkManager 相同模式）
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("ChatManager");
-        holder.AddComponent<ChatManager>();
-        DontDestroyOnLoad(holder);
-    }
 
     // ──────────────────────────────
     // 事件（主线程触发，UI 可安全订阅）
     // ──────────────────────────────
 
     /// <summary>某人的会话有更新（参数=对方ID）；UI 据此判断要不要重渲染当前打开的会话</summary>
-    public event Action<int> ConversationUpdated;
+    /// <summary>全局业务事件总线（私聊对外通知：ConversationUpdated / SendFailed）</summary>
+    public static readonly EventBusCore Bus = new();
 
     /// <summary>乐观消息发送失败（参数=对方ID），UI 提示"发送失败"用</summary>
-    public event Action<int> SendFailed;
 
     // ──────────────────────────────
     // 红点状态
@@ -142,31 +146,27 @@ public class ChatManager : MonoBehaviour
     // Unity 生命周期
     // ──────────────────────────────
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+
+        base.Awake();
     }
 
     private void Start()
     {
         // ClientNetworkManager 的自举同样发生在 BeforeSceneLoad，Start 时必已存在
-        if (ClientNetworkManager.Instance == null) return;
-        ClientNetworkManager.Instance.ChatSendResponseReceived += OnChatSendResponse;
-        ClientNetworkManager.Instance.ChatHistoryResponseReceived += OnChatHistoryResponse;
-        ClientNetworkManager.Instance.ChatReceiveNotifyReceived += OnChatReceiveNotify;
+        if (ClientNetworkManager.Instance == null || ClientNetworkManager.Instance.Network == null) return;
+        ClientNetworkManager.Instance.Network.Subscribe<ChatSendResponse>(OnChatSendResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<ChatHistoryResponse>(OnChatHistoryResponse);
+        ClientNetworkManager.Instance.Network.Subscribe<ChatReceiveNotify>(OnChatReceiveNotify);
+        ClientNetworkManager.Instance.Network.Subscribe<ChatUnreadSnapshotNotify>(OnUnreadSnapshot);
         ClientNetworkManager.Instance.LoginResponseReceived += OnLoginResponse;
         ClientNetworkManager.Instance.ConnectionBroken += OnConnectionBroken;
 
         // 红点种子的兜底数据源：好友/申请列表的响应不一定经过某个 UI 面板（面板可能没打开），
         // 所以在这里（常驻数据层）统一订阅，保证入口角标在未打开好友面板时也能点亮。
-        ClientNetworkManager.Instance.FriendListResponseReceived += OnFriendListResponseForBadges;
-        ClientNetworkManager.Instance.FriendRequestsResponseReceived += OnFriendRequestsResponseForBadge;
+        ClientNetworkManager.Instance.Network.Subscribe<FriendListResponse>(OnFriendListResponseForBadges);
+        ClientNetworkManager.Instance.Network.Subscribe<FriendRequestsResponse>(OnFriendRequestsResponseForBadge);
     }
 
     /// <summary>
@@ -196,20 +196,21 @@ public class ChatManager : MonoBehaviour
             {
                 loadStates[friendId] = ConversationLoadState.None;
             }
-            Debug.LogWarning($"[聊天]会话{friendId}历史请求超时，已回退为未加载（点开可重试）");
+            GameLog.Warn($"[聊天]会话{friendId}历史请求超时，已回退为未加载（点开可重试）");
         }
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         if (ClientNetworkManager.Instance == null) return;
-        ClientNetworkManager.Instance.ChatSendResponseReceived -= OnChatSendResponse;
-        ClientNetworkManager.Instance.ChatHistoryResponseReceived -= OnChatHistoryResponse;
-        ClientNetworkManager.Instance.ChatReceiveNotifyReceived -= OnChatReceiveNotify;
+
+
+
         ClientNetworkManager.Instance.LoginResponseReceived -= OnLoginResponse;
         ClientNetworkManager.Instance.ConnectionBroken -= OnConnectionBroken;
-        ClientNetworkManager.Instance.FriendListResponseReceived -= OnFriendListResponseForBadges;
-        ClientNetworkManager.Instance.FriendRequestsResponseReceived -= OnFriendRequestsResponseForBadge;
+
+
     }
 
     /// <summary>
@@ -272,14 +273,14 @@ public class ChatManager : MonoBehaviour
 
         if (state == ConversationLoadState.None)
         {
-            Debug.Log($"[聊天]会话{friendId}未加载，拉取历史");
+            GameLog.Info($"[聊天]会话{friendId}未加载，拉取历史");
             RequestHistory(friendId, peek: false);
         }
         else if (unreadBeforeOpen > 0)
         {
             // 有未读：即使已预热过也补发一次普通请求，让服务端置已读。
             // 此时内容已在缓存里并先渲染，用户看不到等待，只是补一次"已读"的权威写入。
-            Debug.Log($"[聊天]会话{friendId}有未读，补拉历史置已读");
+            GameLog.Info($"[聊天]会话{friendId}有未读，补拉历史置已读");
             RequestHistory(friendId, peek: false);
         }
 
@@ -417,7 +418,7 @@ public class ChatManager : MonoBehaviour
         }
 
         prewarmRoutine = null;
-        Debug.Log($"[聊天]消息预热完成：发起{sent}个会话（主页就绪={HomeViewLauncher.IsReady}，上限{prewarmMaxConversations}，每会话{prewarmLimit}条）");
+        GameLog.Info($"[聊天]消息预热完成：发起{sent}个会话（主页就绪={HomeViewLauncher.IsReady}，上限{prewarmMaxConversations}，每会话{prewarmLimit}条）");
     }
 
     // ──────────────────────────────
@@ -544,7 +545,7 @@ public class ChatManager : MonoBehaviour
         }
         history.Add(pending);
         inflight.Enqueue((friendId, pending.MessageId));
-        ConversationUpdated?.Invoke(friendId);
+        Bus.Publish(ChatEvents.ConversationUpdated, friendId);
 
         _ = ClientNetworkManager.Instance.SendChatSend(friendId, content, contentType);
     }
@@ -570,13 +571,13 @@ public class ChatManager : MonoBehaviour
         if (response.Success && response.Echo != null)
         {
             history[index] = response.Echo;
-            ConversationUpdated?.Invoke(friendId);
+            Bus.Publish(ChatEvents.ConversationUpdated, friendId);
         }
         else
         {
             history.RemoveAt(index);
-            Debug.Log($"[聊天]发送失败:{response.Message}");
-            SendFailed?.Invoke(friendId);
+            GameLog.Info($"[聊天]发送失败:{response.Message}");
+            Bus.Publish(ChatEvents.SendFailed, friendId);
         }
     }
 
@@ -614,8 +615,8 @@ public class ChatManager : MonoBehaviour
         local.AddRange(response.Messages);
         local.AddRange(pendingOnly);
 
-        Debug.Log($"[聊天]会话{friendId}历史到达:{response.Count}条");
-        ConversationUpdated?.Invoke(friendId);
+        GameLog.Info($"[聊天]会话{friendId}历史到达:{response.Count}条");
+        Bus.Publish(ChatEvents.ConversationUpdated, friendId);
     }
 
     /// <summary>
@@ -638,11 +639,60 @@ public class ChatManager : MonoBehaviour
         if (GameLog.VerboseEnabled) GameLog.Verbose($"[聊天]消息全文:{notify.Message.Content}");
 
         // 红点：不是正在查看的会话才累计未读（微信式——正聊着就不亮角标）
+        // 优先用服务端下发的权威未读数覆盖写：本地 +1 一旦与服务端漂移（漏推送/重复推送）就永不纠正
+        // 推送没带未读数（-1 = 服务端计数失败）时才回退为本地 +1
         if (friendId != CurrentConversation)
         {
-            SetUnread(friendId, GetUnread(friendId) + 1);
+            if (notify.UnreadCount >= 0)
+                SetUnread(friendId, notify.UnreadCount);
+            else
+                SetUnread(friendId, GetUnread(friendId) + 1);
         }
-        ConversationUpdated?.Invoke(friendId);
+        Bus.Publish(ChatEvents.ConversationUpdated, friendId);
+    }
+
+    /// <summary>
+    /// 登录全量未读快照处理
+    /// 服务端在登录成功后推一次全部好友的权威未读数：离线期间收到的消息只落库不推送，
+    /// 客户端本地累加也会漂移，这个快照是登录后唯一的对齐时机
+    /// 语义是"整体覆盖"：快照里没有的好友必须清零，否则上一个账号的未读或其他设备的旧值会残留
+    /// </summary>
+    private void OnUnreadSnapshot(ChatUnreadSnapshotNotify notify)
+    {
+        if (notify == null) return;
+        RedDotSingleton redDot = RedDotSingleton.Instance;
+        if (redDot == null) return;
+
+        Dictionary<int, int> snapshot = new();
+        foreach (ChatUnreadEntry entry in notify.Entries)
+        {
+            snapshot[entry.FriendId] = entry.UnreadCount;
+        }
+
+        // 批量写：一次登录会把所有好友的角标都改一遍，逐条传播会让父节点被反复重算
+        redDot.BeginBatch();
+        try
+        {
+            foreach (KeyValuePair<int, int> pair in snapshot)
+            {
+                // 正在查看的会话由实时逻辑管，快照不覆盖它（否则刚清 0 的角标会被拉回去）
+                if (pair.Key == CurrentConversation) continue;
+                SetUnread(pair.Key, pair.Value);
+            }
+
+            // 快照里没有的已建节点清零：保证与服务端真相一致，而不是只增不减
+            foreach (int friendId in boundFriendIds)
+            {
+                if (snapshot.ContainsKey(friendId) || friendId == CurrentConversation) continue;
+                SetUnread(friendId, 0);
+            }
+        }
+        finally
+        {
+            redDot.EndBatch();
+        }
+
+        GameLog.Info($"[聊天]未读快照已对齐:{snapshot.Count}个会话有未读");
     }
 
     /// <summary>
@@ -682,14 +732,14 @@ public class ChatManager : MonoBehaviour
             int index = history.FindIndex(message => message.MessageId == pendingId);
             if (index < 0) continue;
             history.RemoveAt(index);
-            ConversationUpdated?.Invoke(friendId);
+            Bus.Publish(ChatEvents.ConversationUpdated, friendId);
         }
 
         foreach (int friendId in affected)
         {
-            SendFailed?.Invoke(friendId);
+            Bus.Publish(ChatEvents.SendFailed, friendId);
         }
-        Debug.Log($"[聊天]连接断开，回滚 {affected.Count} 个会话的在途消息");
+        GameLog.Info($"[聊天]连接断开，回滚 {affected.Count} 个会话的在途消息");
     }
 
     /// <summary>

@@ -21,7 +21,7 @@ public static class AgentViewBeautifier
     private const string PrefabPath = "Assets/Game/UI/Agent/AgentView.prefab";
     private const string HomePrefabPath = "Assets/Game/UI/Home/HomeView.prefab";
 
-    private const string AvatarPng = "Assets/Game/Resources/Agent/shouanren_avatar.png";
+    private const string AvatarPng = "Assets/Game/Art/UI/Agent/shouanren_avatar.png";
     private const string HomeIconPng = "Assets/Game/UI/Home/Art/Icons/icon_shouanren.png";
 
     private const string DisplayName = "守岸人";
@@ -360,7 +360,7 @@ public static class AgentViewBeautifier
 
     private static Sprite LoadAgentSprite(string fileName)
     {
-        return AssetDatabase.LoadAssetAtPath<Sprite>($"Assets/Game/Resources/Agent/ui/{fileName}.png");
+        return AssetDatabase.LoadAssetAtPath<Sprite>($"Assets/Game/Art/UI/Agent/ui/{fileName}.png");
     }
 
     /// <summary>确保 PNG 按 UI Sprite 导入（新拷进来的素材默认可能是 Default）</summary>

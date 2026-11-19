@@ -1,3 +1,5 @@
+using System;
+
 using System.Collections.Generic;
 
 using Common.Network;
@@ -7,6 +9,8 @@ using Cysharp.Threading.Tasks;
 using SkierFramework;
 
 using TMPro;
+
+using Game.Chat;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -20,6 +24,15 @@ using UnityEngine.UI;
 /// </summary>
 public class WorldChatView : UIView
 {
+
+    /// <summary>世界频道更新订阅令牌</summary>
+    private IDisposable worldUpdatedToken;
+
+    /// <summary>世界频道发送失败订阅令牌</summary>
+    private IDisposable worldSendFailedToken;
+
+    /// <summary>上一次显示的冷却秒数（-1 = 还没写过）：只在秒数变化时写文本，省掉每帧一次字符串分配</summary>
+    private int lastCoolingSeconds = -1;
     // ──────────────────────────────
     // 序列化引用（编辑器搭建脚本注入）
     // ──────────────────────────────
@@ -115,8 +128,8 @@ public class WorldChatView : UIView
 
         if (WorldChatManager.Instance != null)
         {
-            WorldChatManager.Instance.WorldUpdated += OnWorldUpdated;
-            WorldChatManager.Instance.SendFailed += SetStatus;
+            worldUpdatedToken = WorldChatManager.Bus.Subscribe(WorldChatEvents.Updated, OnWorldUpdated);
+            worldSendFailedToken = WorldChatManager.Bus.Subscribe(WorldChatEvents.SendFailed, SetStatus);
         }
 
         SetupWorldList();
@@ -166,8 +179,8 @@ public class WorldChatView : UIView
     {
         if (worldScroll != null) worldScroll.onValueChanged.RemoveListener(OnWorldScrollChanged);
         if (WorldChatManager.Instance == null) return;
-        WorldChatManager.Instance.WorldUpdated -= OnWorldUpdated;
-        WorldChatManager.Instance.SendFailed -= SetStatus;
+        worldUpdatedToken?.Dispose();
+        worldSendFailedToken?.Dispose();
     }
 
     private void Update()
@@ -177,7 +190,13 @@ public class WorldChatView : UIView
         float remaining = WorldChatManager.Instance != null ? WorldChatManager.Instance.CooldownRemaining : 0f;
         bool cooling = remaining > 0.05f;
         sendButton.interactable = !cooling;
-        sendButtonLabel.text = cooling ? $"{Mathf.CeilToInt(remaining)}s" : "发送";
+
+        // 倒计时秒数一秒才变一次：只在变化时写文本（照 BattleInviteView 的等待秒数写法）
+        int coolingSeconds = cooling ? Mathf.CeilToInt(remaining) : 0;
+        if (coolingSeconds == lastCoolingSeconds) return;
+
+        lastCoolingSeconds = coolingSeconds;
+        sendButtonLabel.text = cooling ? $"{coolingSeconds}s" : "发送";
     }
 
     // ──────────────────────────────

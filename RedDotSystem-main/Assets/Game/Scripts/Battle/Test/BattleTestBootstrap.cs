@@ -20,6 +20,7 @@ public class BattleTestBootstrap : MonoBehaviour
     public bool logEverySecond = true;
 
     private float _logTimer;
+    private HealthModel _playerHealth;
 
     private void Start()
     {
@@ -40,6 +41,7 @@ public class BattleTestBootstrap : MonoBehaviour
         }
 
         if (player == null) player = FindObjectOfType<Player>();
+        if (player != null) _playerHealth = player.GetComponent<HealthModel>();
         if (dummy == null)
         {
             var dummyGo = GameObject.Find("Dummy");
@@ -47,7 +49,7 @@ public class BattleTestBootstrap : MonoBehaviour
         }
         if (dummy != null) dummy.InitStats(dummyMaxHP, dummyMaxHP);
 
-        Debug.Log($"[BattleTest] 就绪 player={(player != null)} dummy={(dummy != null)} dummyHP={(dummy != null ? dummy.CurrentHP.Value : -1)} uiCamera={(UIManager.Instance.UICamera != null)}");
+        GameLog.Info($"[BattleTest] 就绪 player={(player != null)} dummy={(dummy != null)} dummyHP={(dummy != null ? dummy.CurrentHP.Value : -1)} uiCamera={(UIManager.Instance.UICamera != null)}");
     }
 
     private void Update()
@@ -58,8 +60,8 @@ public class BattleTestBootstrap : MonoBehaviour
         if (_logTimer < 1f) return;
         _logTimer = 0f;
 
-        var playerHealth = player.GetComponent<HealthModel>();
-        Debug.Log($"[BattleTest] move={player.MovementStateMachine?.CurrentState?.GetType().Name} " +
+        var playerHealth = _playerHealth;
+        GameLog.Info($"[BattleTest] move={player.MovementStateMachine?.CurrentState?.GetType().Name} " +
                   $"combo={player.ComboStateMachine?.CurrentState?.GetType().Name} " +
                   $"hp={(playerHealth != null ? playerHealth.CurrentHP.Value : -1):F0} " +
                   $"dead={player.IsDead} pos={player.transform.position}");

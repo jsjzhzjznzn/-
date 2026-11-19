@@ -13,8 +13,46 @@ namespace CompeteServer.Handler
     /// 负责挑战成绩上报与排行榜查询的消息处理
     /// 身份一律取自会话绑定（session.PlayerId），客户端无法伪造他人成绩
     /// </summary>
-    public static class LeaderboardHandler
+        public static class LeaderboardHandler
     {
+        /// <summary>
+        /// 挑战最短结算耗时（毫秒）：低于该值的上报视为异常（脚本直接上报），拒绝入账
+        /// </summary>
+        private const long MinSettleMs = 1000;
+
+        /// <summary>
+        /// 挑战开局处理方法
+        /// 服务端记录开局时刻与局标识，成绩上报时据此校验耗时与分数；客户端不可伪造开局时刻
+        /// </summary>
+        /// <param name="session">参数名：session，类型：ClientSession，用途：客户端的会话连接对象</param>
+        /// <param name="body">参数名：body，类型：byte[]，用途：protobuf序列化的请求消息体</param>
+        public static void HandleChallengeStart(ClientSession session, ReadOnlySpan<byte> body)
+        {
+            if (session.PlayerId <= 0)
+            {
+                _ = session.Send(MessageID.ChallengeStartResponse,
+                    new ChallengeStartResponse { Success = false, Message = "请先登录" });
+                return;
+            }
+
+            ChallengeStartRequest request = ChallengeStartRequest.Parser.ParseFrom(body);
+            if (!LeaderboardRepository.IsValidChallengeId(request.ChallengeId))
+            {
+                _ = session.Send(MessageID.ChallengeStartResponse,
+                    new ChallengeStartResponse { Success = false, Message = "挑战ID非法" });
+                return;
+            }
+
+            string runId = session.BeginChallengeRun(request.ChallengeId);
+            Console.WriteLine($"挑战开局:{session.PlayerId} 挑战{request.ChallengeId} run={runId}");
+            _ = session.Send(MessageID.ChallengeStartResponse, new ChallengeStartResponse
+            {
+                Success = true,
+                Message = "OK",
+                RunId = runId,
+            });
+        }
+
         /// <summary>
         /// 成绩上报处理方法
         /// 身份取自会话（客户端无法伪造他人成绩）；按"只保留最高分"入账 MySQL，Valkey 实时榜同步刷新
@@ -44,8 +82,34 @@ namespace CompeteServer.Handler
                 return;
             }
 
+            // 开局记录校验：一次性消费，同时拿到服务端计时（客户端无法伪造）
+            if (!session.TryFinishChallengeRun(request.RunId, request.ChallengeId, out long elapsedMs, out string runMessage))
+            {
+                Console.WriteLine($"成绩上报被拒:{session.PlayerId} 挑战{request.ChallengeId} {runMessage}");
+                _ = session.Send(MessageID.ScoreSubmitResponse,
+                    new ScoreSubmitResponse { Success = false, Message = runMessage });
+                return;
+            }
+            if (elapsedMs < MinSettleMs)
+            {
+                Console.WriteLine($"成绩上报被拒:{session.PlayerId} 挑战{request.ChallengeId} 耗时仅{elapsedMs}ms");
+                _ = session.Send(MessageID.ScoreSubmitResponse,
+                    new ScoreSubmitResponse { Success = false, Message = "结算耗时异常，成绩不予记录" });
+                return;
+            }
+
+            // 分数以服务端推导值为准：用时型榜用服务端耗时换算，积分型榜以耗时给出上限
+            if (!LeaderboardRepository.TryResolveTrustedScore(
+                    request.ChallengeId, elapsedMs, request.Score, out long trustedScore, out string scoreMessage))
+            {
+                Console.WriteLine($"成绩上报被拒:{session.PlayerId} 挑战{request.ChallengeId} {scoreMessage}");
+                _ = session.Send(MessageID.ScoreSubmitResponse,
+                    new ScoreSubmitResponse { Success = false, Message = scoreMessage });
+                return;
+            }
+
             (bool success, string message, long best, long rank, bool newRecord) =
-                new LeaderboardRepository().SubmitScore(session.PlayerId, request.ChallengeId, request.Score);
+                new LeaderboardRepository().SubmitScore(session.PlayerId, request.ChallengeId, trustedScore);
 
             _ = session.Send(MessageID.ScoreSubmitResponse, new ScoreSubmitResponse
             {

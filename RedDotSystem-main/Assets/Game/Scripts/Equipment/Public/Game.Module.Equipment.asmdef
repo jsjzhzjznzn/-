@@ -1,0 +1,20 @@
+{
+    "name": "Game.Module.Equipment",
+    "rootNamespace": "Game.Equipment",
+    "references": [
+        "Game.Protocol",
+        "Game.Core",
+        "Game.Network",
+        "Game.Module.Bag",
+        "MiMieEventBus"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

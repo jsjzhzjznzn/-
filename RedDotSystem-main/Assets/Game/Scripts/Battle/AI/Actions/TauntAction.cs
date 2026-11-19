@@ -28,7 +28,7 @@ public sealed class TauntAction : EnemyAction
         brain.NotifyTaunt();
 
         if (brain.logActions)
-            Debug.Log($"[AI] {brain.name} 挑衅 {duration:F2}s（无霸体，可被打断）", brain);
+            GameLog.Info($"[AI] {brain.name} 挑衅 {duration:F2}s（无霸体，可被打断）", brain);
     }
 
     public override void Tick(float deltaTime)

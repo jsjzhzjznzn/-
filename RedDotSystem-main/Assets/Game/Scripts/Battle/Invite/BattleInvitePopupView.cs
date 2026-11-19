@@ -1,9 +1,13 @@
+using System;
+
 using Common.Network;
 
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using SkierFramework;
 using TMPro;
+using Game.Battle.Invite;
+using MieMieFrameWork.Business;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -20,6 +24,9 @@ using UnityEngine.UI;
 /// </summary>
 public class BattleInvitePopupView : UIView
 {
+
+    /// <summary>邀请提示订阅令牌</summary>
+    private IDisposable inviteNoticeToken;
     [ControlBinding] public RectTransform panel;
     [ControlBinding] public TMP_Text titleText;
     [ControlBinding] public TMP_Text fromNameText;
@@ -54,8 +61,8 @@ public class BattleInvitePopupView : UIView
         if (acceptButton != null) acceptButton.onClick.AddListener(OnClickAccept);
         if (declineButton != null) declineButton.onClick.AddListener(OnClickDecline);
 
-        if (BattleInviteManager.Instance != null)
-            BattleInviteManager.Instance.Notice += OnManagerNotice;
+        if (GameHub.Get<IBattleInviteService>() != null)
+            inviteNoticeToken = BattleInviteManager.Bus.Subscribe(BattleInviteEvents.Notice, OnManagerNotice);
     }
 
     public override void OnRemoveListener()
@@ -63,8 +70,9 @@ public class BattleInvitePopupView : UIView
         if (acceptButton != null) acceptButton.onClick.RemoveListener(OnClickAccept);
         if (declineButton != null) declineButton.onClick.RemoveListener(OnClickDecline);
 
-        if (BattleInviteManager.Instance != null)
-            BattleInviteManager.Instance.Notice -= OnManagerNotice;
+        if (GameHub.Get<IBattleInviteService>() != null)
+            inviteNoticeToken?.Dispose();
+            inviteNoticeToken = null;
 
         base.OnRemoveListener();
     }
@@ -101,7 +109,7 @@ public class BattleInvitePopupView : UIView
         StopCountdown();
 
         // 通知中枢：当前卡片结束，可以展示下一条排队中的邀请
-        BattleInviteManager.Instance?.OnPopupClosed();
+        GameHub.Get<IBattleInviteService>()?.OnPopupClosed();
         base.OnClose();
     }
 
@@ -166,7 +174,7 @@ public class BattleInvitePopupView : UIView
         finished = true;
         SetButtonsInteractable(false);
         SetStatus("邀请已过期");
-        BattleInviteManager.Instance?.Decline("已超时");
+        GameHub.Get<IBattleInviteService>()?.Decline("已超时");
     }
 
     // ──────────────────────────────
@@ -177,7 +185,7 @@ public class BattleInvitePopupView : UIView
     {
         if (finished || responding) return;
 
-        if (BattleInviteManager.Instance == null)
+        if (GameHub.Get<IBattleInviteService>() == null)
         {
             SetStatus("邀请服务未就绪");
             return;
@@ -187,7 +195,7 @@ public class BattleInvitePopupView : UIView
         SetButtonsInteractable(false);
         SetStatus("正在进入房间…");
         countdownTween?.Pause();
-        BattleInviteManager.Instance.Accept();
+        GameHub.Get<IBattleInviteService>().Accept();
     }
 
     private void OnClickDecline()
@@ -198,7 +206,7 @@ public class BattleInvitePopupView : UIView
         StopCountdown();
         SetButtonsInteractable(false);
         SetStatus("已拒绝");
-        BattleInviteManager.Instance?.Decline();
+        GameHub.Get<IBattleInviteService>()?.Decline();
     }
 
     private void OnManagerNotice(string message)

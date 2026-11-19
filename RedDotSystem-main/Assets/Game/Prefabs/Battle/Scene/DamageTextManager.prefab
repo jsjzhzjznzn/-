@@ -52,12 +52,40 @@ MonoBehaviour:
     shake: 0
     scaleMul: 1
     outlineWidth: 0.12
+    label: 
+    mergeWindow: 0
   criticalStyle:
     color: {r: 1, g: 0.61, b: 0.1, a: 1}
     fontSize: 76
     shake: 3
     scaleMul: 1.25
     outlineWidth: 0.26
+    label: 
+    mergeWindow: 0
+  dotStyle:
+    color: {r: 0.82, g: 0.55, b: 0.95, a: 1}
+    fontSize: 46
+    shake: 0
+    scaleMul: 0.9
+    outlineWidth: 0.2
+    label: 
+    mergeWindow: 0
+  dodgeStyle:
+    color: {r: 0.72, g: 0.86, b: 1, a: 1}
+    fontSize: 40
+    shake: 0
+    scaleMul: 1
+    outlineWidth: 0.22
+    label: MISS
+    mergeWindow: 0
+  healStyle:
+    color: {r: 0.45, g: 0.95, b: 0.55, a: 1}
+    fontSize: 52
+    shake: 0
+    scaleMul: 1
+    outlineWidth: 0.18
+    label: +
+    mergeWindow: 0
   duration: 1
   floatHeight: 80
   settleDrop: 12
@@ -75,4 +103,5 @@ MonoBehaviour:
   highLoadCount: 700
   maxSpawnPerFrame: 32
   capacity: 1024
+  onlyShowLocalPlayerInvolved: 1
   outlineColor: {r: 0, g: 0, b: 0, a: 0.8}

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -47,7 +47,7 @@ namespace MH
             if (m_RedDotType == ERedDotKeyType.None) return;  // 模板未 Bind，等运行时绑定后再订
             if (RedDotSingleton.Instance == null)
             {
-                Debug.LogWarning($"RedDotItem: RedDotSingleton 未初始化，无法注册 {m_RedDotType}");
+                GameLog.Warn($"RedDotItem: RedDotSingleton 未初始化，无法注册 {m_RedDotType}");
                 return;
             }
             RedDotSingleton.Instance.SetRedDotNodeCallBack(m_RedDotType, SetDotState);
@@ -78,6 +78,9 @@ namespace MH
         /// <summary>红点状态刷新（观察者回调）：根据节点当前最高优先级类型与计数，决定红点显隐和数字文本</summary>
         public void SetDotState(RedDotNode node)
         {
+            // 节点不存在或红点物体未配置时直接返回：模板复用/改版后漏配红点物体不该让整个 UI 报错
+            if (node == null || m_DotObj == null) return;
+
             // 获取当前最高优先级的红点类型
             RedDotFlags highestPriority = (RedDotFlags)node.rdPriority;
             int count = node.GetCount(highestPriority);  // 缓存结果，避免重复调用

@@ -26,8 +26,6 @@ public class HitReaction : MonoBehaviour
     [Tooltip("勾掉可只保留抖动/击退（例如材质没有 _HitFlash 属性时）")]
     public bool enableFlash = true;
 
-    private Renderer[] renderers;
-
     /// <summary>
     /// 每个 Renderer 的材质实例（Awake 时用 renderer.materials 克隆一份）。
     /// 为什么不用 MaterialPropertyBlock：本项目 URP 开了 SRP Batcher，`_HitFlash` 不在
@@ -35,6 +33,12 @@ public class HitReaction : MonoBehaviour
     /// 改材质实例则正常发白）。BOSS 只有 3 个 Renderer，克隆成本可忽略。
     /// </summary>
     private Material[][] instanceMaterials;
+
+    /// <summary>
+    /// 克隆前的共享材质（Awake 时的原样），销毁时只销毁"确实是克隆出来的"那些：
+    /// 每个 BOSS 实例各克隆一套，不销毁会让材质在进程内存里越积越多。
+    /// </summary>
+    private Material[][] originalMaterials;
 
     private Transform jitterRoot;
     private Vector3 jitterBase;
@@ -54,12 +58,22 @@ public class HitReaction : MonoBehaviour
     private void Awake()
     {
         brain = GetComponent<EnemyBrain>();
-        renderers = GetComponentsInChildren<Renderer>(true);
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
         instanceMaterials = new Material[renderers.Length][];
+        originalMaterials = new Material[renderers.Length][];
         for (int i = 0; i < renderers.Length; i++)
         {
             Renderer renderer = renderers[i];
-            instanceMaterials[i] = renderer != null ? renderer.materials : new Material[0];
+            if (renderer == null)
+            {
+                instanceMaterials[i] = new Material[0];
+                originalMaterials[i] = new Material[0];
+                continue;
+            }
+
+            Material[] originals = renderer.sharedMaterials;
+            originalMaterials[i] = originals;
+            instanceMaterials[i] = renderer.materials;
         }
 
         Transform root = null;
@@ -192,5 +206,34 @@ public class HitReaction : MonoBehaviour
         if (jitterRoot != null) jitterRoot.localPosition = jitterBase;
         flashApplied = false;
         jitterApplied = false;
+    }
+
+    private void OnDestroy()
+    {
+        DestroyClonedMaterials();
+    }
+
+    /// <summary>销毁 Awake 时克隆的材质实例本体（销毁 Renderer 不会连带销毁它们）</summary>
+    private void DestroyClonedMaterials()
+    {
+        if (instanceMaterials == null) return;
+
+        for (int i = 0; i < instanceMaterials.Length; i++)
+        {
+            Material[] materials = instanceMaterials[i];
+            if (materials == null) continue;
+
+            Material[] originals = originalMaterials != null ? originalMaterials[i] : null;
+            for (int j = 0; j < materials.Length; j++)
+            {
+                Material material = materials[j];
+                if (material == null) continue;
+                if (originals != null && j < originals.Length && material == originals[j]) continue;
+                Destroy(material);
+            }
+        }
+
+        instanceMaterials = null;
+        originalMaterials = null;
     }
 }

@@ -1,3 +1,5 @@
+using System;
+
 using System.Collections.Generic;
 
 using Common.Network;
@@ -6,6 +8,8 @@ using MH;
 using SkierFramework;
 
 using TMPro;
+using Game.Chat;
+
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
@@ -18,6 +22,12 @@ using UnityEngine.UI;
 /// </summary>
 public class FriendUIController : SkierFramework.UIView
 {
+
+    /// <summary>会话更新订阅令牌</summary>
+    private IDisposable chatConversationToken;
+
+    /// <summary>发送失败订阅令牌</summary>
+    private IDisposable chatSendFailedToken;
     [Header("面板")]
 
     /// <summary>面板关闭按钮</summary>
@@ -184,6 +194,23 @@ public class FriendUIController : SkierFramework.UIView
     /// <summary>池化好友条目→当前绑定索引（点击时反查，闭包里不存好友数据防止过期）</summary>
     private readonly Dictionary<RectTransform, int> friendIndexOf = new();
 
+    /// <summary>好友条目的子部件（条目在池里复用时部件不变，建一次缓存，换绑时不再逐次 Find）</summary>
+    private readonly Dictionary<RectTransform, FriendItemParts> friendItemParts = new();
+
+    private readonly struct FriendItemParts
+    {
+        public readonly TMP_Text NameText;
+        public readonly TMP_Text IdText;
+        public readonly Image OnlineDot;
+
+        public FriendItemParts(TMP_Text nameText, TMP_Text idText, Image onlineDot)
+        {
+            NameText = nameText;
+            IdText = idText;
+            OnlineDot = onlineDot;
+        }
+    }
+
     /// <summary>当前渲染的会话数据（虚拟列表按索引取用）</summary>
     private IReadOnlyList<ChatMessageItem> currentHistory;
 
@@ -287,7 +314,7 @@ public class FriendUIController : SkierFramework.UIView
         {
             GameObject eventSystemHolder = new GameObject("EventSystem_Persistent",
                 typeof(EventSystem), typeof(StandaloneInputModule));
-            Object.DontDestroyOnLoad(eventSystemHolder);
+            UnityEngine.Object.DontDestroyOnLoad(eventSystemHolder);
         }
 
         // 按钮接线
@@ -330,8 +357,8 @@ public class FriendUIController : SkierFramework.UIView
         // 聊天会话缓存事件订阅（渲染与数据分离：数据在 ChatManager，这里只管画）
         if (ChatManager.Instance != null)
         {
-            ChatManager.Instance.ConversationUpdated += OnConversationUpdated;
-            ChatManager.Instance.SendFailed += OnSendFailed;
+            chatConversationToken = ChatManager.Bus.Subscribe(ChatEvents.ConversationUpdated, OnConversationUpdated);
+            chatSendFailedToken = ChatManager.Bus.Subscribe(ChatEvents.SendFailed, OnSendFailed);
         }
 
         if (statusText != null) statusText.text = string.Empty;
@@ -362,8 +389,8 @@ public class FriendUIController : SkierFramework.UIView
         }
         if (ChatManager.Instance != null)
         {
-            ChatManager.Instance.ConversationUpdated -= OnConversationUpdated;
-            ChatManager.Instance.SendFailed -= OnSendFailed;
+            chatConversationToken?.Dispose();
+            chatSendFailedToken?.Dispose();
         }
     }
 
@@ -704,7 +731,7 @@ public class FriendUIController : SkierFramework.UIView
     {
         if (warnedRequestChildren.Add(childName))
         {
-            Debug.LogWarning($"[好友UI]申请条目模板缺少子件：{childName}，已跳过对应填充");
+            GameLog.Warn($"[好友UI]申请条目模板缺少子件：{childName}，已跳过对应填充");
         }
     }
 
@@ -1016,7 +1043,7 @@ public class FriendUIController : SkierFramework.UIView
         if (!stickerRows.TryGetValue(rowRect, out StickerRow view))
         {
             // 正常不会发生（行与视图一一对应）；真出现说明行少登记了，报警别静默跳过换绑
-            Debug.LogWarning($"[表情]行视图缺失，跳过换绑：{rowRect.name}");
+            GameLog.Warn($"[表情]行视图缺失，跳过换绑：{rowRect.name}");
             return;
         }
 
@@ -1192,11 +1219,15 @@ public class FriendUIController : SkierFramework.UIView
             {
                 RectTransform item = Instantiate(friendItemTemplate, friendListContent).GetComponent<RectTransform>();
                 item.GetComponent<Button>().onClick.AddListener(() => OnFriendItemClicked(item));
+                // 部件只在这一刻查一次：模板改版删掉某个部件时对应引用为 null，绑定侧跳过填充
+                friendItemParts[item] = new FriendItemParts(
+                    item.transform.Find("NameText")?.GetComponent<TMP_Text>(),
+                    item.transform.Find("IdText")?.GetComponent<TMP_Text>(),
+                    item.transform.Find("OnlineDot")?.GetComponent<Image>());
                 return item;
             };
             friendVirtual.BindItem = BindFriendItem;
-            friendVirtual.RecycleItem = item => friendIndexOf.Remove(item);
-        }
+            friendVirtual.RecycleItem = item => friendIndexOf.Remove(item);        }
 
         if (messageScroll != null)
         {
@@ -1244,11 +1275,12 @@ public class FriendUIController : SkierFramework.UIView
         if (dotItem != null) dotItem.Bind(RedDotKeys.FriendKey(friend.PlayerId));
 
         // 防御式查找：模板改版删掉某个部件（如 OnlineDot 已移除）时跳过对应填充，不空引用
-        TMP_Text nameText = item.transform.Find("NameText")?.GetComponent<TMP_Text>();
+        if (!friendItemParts.TryGetValue(item, out FriendItemParts parts)) return;
+        TMP_Text nameText = parts.NameText;
         if (nameText != null) nameText.text = friend.Name;
-        TMP_Text idText = item.transform.Find("IdText")?.GetComponent<TMP_Text>();
+        TMP_Text idText = parts.IdText;
         if (idText != null) idText.text = $"ID {friend.PlayerId}";
-        Image onlineDot = item.transform.Find("OnlineDot")?.GetComponent<Image>();
+        Image onlineDot = parts.OnlineDot;
         if (onlineDot != null)
         {
             onlineDot.color = friend.Online
@@ -1305,8 +1337,8 @@ public class FriendUIController : SkierFramework.UIView
 
     private static Sprite LoadRowSprite(bool selected)
     {
-        if (rowNormalSprite == null && !selected) rowNormalSprite = Resources.Load<Sprite>("ui/Friends/row");
-        if (rowSelectedSprite == null && selected) rowSelectedSprite = Resources.Load<Sprite>("ui/Friends/row_sel");
+        if (rowNormalSprite == null && !selected) rowNormalSprite = GameAssets.GetSprite("Assets/Game/Art/UI/Friends/row.png");
+        if (rowSelectedSprite == null && selected) rowSelectedSprite = GameAssets.GetSprite("Assets/Game/Art/UI/Friends/row_sel.png");
         return selected ? rowSelectedSprite : rowNormalSprite;
     }
 
@@ -1500,6 +1532,6 @@ public class FriendUIController : SkierFramework.UIView
     private void SetStatus(string message)
     {
         if (statusText != null) statusText.text = message;
-        Debug.Log($"[好友UI]{message}");
+        GameLog.Info($"[好友UI]{message}");
     }
 }

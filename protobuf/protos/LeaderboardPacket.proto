@@ -18,6 +18,35 @@ message ScoreSubmitRequest {
 
   /// <summary>本次挑战成绩（非负整数；高于历史最高才刷新纪录）</summary>
   int64 score = 2;
+
+  /// <summary>
+  /// 本局开局时由 ChallengeStartResponse 下发的局标识；
+  /// 服务端据此还原开局时刻，校验耗时与分数。缺失或失效则成绩不入账
+  /// </summary>
+  string run_id = 3;
+}
+
+/// <summary>
+/// 挑战开局请求
+/// 客户端进入挑战时发送；服务端记录本局开局时刻，成绩上报时据此校验
+/// </summary>
+message ChallengeStartRequest {
+  /// <summary>挑战ID</summary>
+  int32 challenge_id = 1;
+}
+
+/// <summary>
+/// 挑战开局响应
+/// </summary>
+message ChallengeStartResponse {
+  /// <summary>是否记录成功（false = 未登录/挑战ID非法）</summary>
+  bool success = 1;
+
+  /// <summary>结果说明</summary>
+  string message = 2;
+
+  /// <summary>本局标识，结算上报时必须回传</summary>
+  string run_id = 3;
 }
 
 /// <summary>

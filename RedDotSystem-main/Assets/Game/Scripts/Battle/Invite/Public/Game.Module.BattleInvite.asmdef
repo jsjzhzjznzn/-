@@ -1,0 +1,20 @@
+{
+    "name": "Game.Module.BattleInvite",
+    "rootNamespace": "Game.Battle.Invite",
+    "references": [
+        "Game.Protocol",
+        "Game.Core",
+        "Game.Network",
+        "UniTask",
+        "MiMieEventBus"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

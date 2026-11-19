@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using SkierFramework;
+using MieMieFrameWork;
+
 using UnityEngine;
 using XLua;
 using Common.Network;
@@ -16,21 +18,18 @@ using Common.Network;
 /// 与其它系统（背包/任务/邮件）的区别：本壳不含任何活动"内容"——
 /// 标题、文案、UI、规则全部来自热更包的 Lua 与资源，壳只提供稳定边界。
 /// </summary>
-public class ActivityShell : MonoBehaviour
+public class ActivityShell : SingletonBehaviour<ActivityShell>
 {
-    public static ActivityShell Instance { get; private set; }
-
     /// <summary>
-    /// 运行时自举：早于场景加载创建系统物体（与 BagManager 等同一模式）
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
     /// </summary>
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
+    private static void EnsureCreated()
     {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("ActivitySystem");
-        holder.AddComponent<ActivityShell>();
-        holder.AddComponent<LuaActivityHost>();
-        holder.AddComponent<ActivityLoadingTip>();   // 点入口后的可见反馈（热更层起来之前）
+        _ = Instance;
     }
 
     // ──────────────────────────────
@@ -96,15 +95,14 @@ public class ActivityShell : MonoBehaviour
     private LuaFunction pendingSignInClaimCallback;
     private int pendingSignInClaimId;
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+        base.Awake();
+
+        // 活动宿主与加载提示依附本壳物体（壳是 DDOL 单例，三个组件同一生命周期）。
+        // 旧版的自举里显式 AddComponent 过这两个，迁移到基类时丢了：宿主为 null → 活动永远"宿主未就绪"。
+        if (GetComponent<LuaActivityHost>() == null) gameObject.AddComponent<LuaActivityHost>();
+        if (GetComponent<ActivityLoadingTip>() == null) gameObject.AddComponent<ActivityLoadingTip>();
     }
 
     private void OnEnable()
@@ -121,14 +119,14 @@ public class ActivityShell : MonoBehaviour
     {
         if (subscribed) return;
         ClientNetworkManager network = ClientNetworkManager.Instance;
-        if (network == null) return;
+        if (network == null || network.Network == null) return;
 
         network.ActivityListResponseReceived += OnActivityListResponse;
         network.ActivityChangeNotifyReceived += OnActivityChangeNotify;
-        network.GachaDrawResponseReceived += OnGachaDrawResponse;
+        network.Network.Subscribe<GachaDrawResponse>(OnGachaDrawResponse);
         network.GachaHistoryResponseReceived += OnGachaHistoryResponse;
         network.SignInListResponseReceived += OnSignInListResponse;
-        network.SignInClaimResponseReceived += OnSignInClaimResponse;
+        network.Network.Subscribe<SignInClaimResponse>(OnSignInClaimResponse);
         network.LoginResponseReceived += OnLoginResponse;
         network.ConnectionBroken += OnConnectionBroken;
         subscribed = true;
@@ -137,17 +135,18 @@ public class ActivityShell : MonoBehaviour
     private bool subscribed;
 
     /// <summary>销毁时对称退订（与 TrySubscribe 的 5 个事件一一对应），并复位订阅标志</summary>
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         ClientNetworkManager network = ClientNetworkManager.Instance;
         if (network != null)
         {
             network.ActivityListResponseReceived -= OnActivityListResponse;
             network.ActivityChangeNotifyReceived -= OnActivityChangeNotify;
-            network.GachaDrawResponseReceived -= OnGachaDrawResponse;
+            
             network.GachaHistoryResponseReceived -= OnGachaHistoryResponse;
             network.SignInListResponseReceived -= OnSignInListResponse;
-            network.SignInClaimResponseReceived -= OnSignInClaimResponse;
+            
             network.LoginResponseReceived -= OnLoginResponse;
             network.ConnectionBroken -= OnConnectionBroken;
         }
@@ -228,20 +227,20 @@ public class ActivityShell : MonoBehaviour
         ClientNetworkManager network = ClientNetworkManager.Instance;
         if (network == null || network.MyPlayerId <= 0)
         {
-            Debug.LogWarning("[活动] 请先登录后再打开活动");
+            GameLog.Warn("[活动] 请先登录后再打开活动");
             ActivityLoadingTip.Show("请先登录后再打开活动", 2f);
             return;
         }
 
         if (IsPanelOpen)
         {
-            Debug.Log("[活动] 面板已打开，忽略本次入口点击");
+            GameLog.Info("[活动] 面板已打开，忽略本次入口点击");
             return;
         }
 
         if (opening)
         {
-            Debug.Log($"[活动] 正在打开中（已 {Time.realtimeSinceStartup - openingStartedAt:F1}s），忽略重复点击");
+            GameLog.Info($"[活动] 正在打开中（已 {Time.realtimeSinceStartup - openingStartedAt:F1}s），忽略重复点击");
             return;
         }
 
@@ -249,7 +248,7 @@ public class ActivityShell : MonoBehaviour
         openingStartedAt = Time.realtimeSinceStartup;
         openSession++;
         ActivityLoadingTip.Show("活动加载中…");
-        Debug.Log($"[活动] 点击入口，开始拉活动列表（t={openingStartedAt:F2}）");
+        GameLog.Info($"[活动] 点击入口，开始拉活动列表（t={openingStartedAt:F2}）");
 
         pendingOpen = true;
         _ = network.SendActivityListRequest();
@@ -265,7 +264,7 @@ public class ActivityShell : MonoBehaviour
         ReleasePendingCallbacks();
         IsPanelOpen = false;
         LuaActivityHost.Instance?.TearDown();
-        Debug.Log("[活动] 面板已关闭（UI 已拆；LuaEnv 待 Lua 调用栈退出后的下一帧释放）");
+        GameLog.Info("[活动] 面板已关闭（UI 已拆；LuaEnv 待 Lua 调用栈退出后的下一帧释放）");
     }
 
     /// <summary>登录成功：清上一账号的活动缓存（防串号）+ 后台预热资源包（让首次点入口几乎零等待）</summary>
@@ -281,7 +280,8 @@ public class ActivityShell : MonoBehaviour
         ServerNowMs = 0;
         CurrentActivities = new List<ActivityInfo>();
 
-        LuaActivityHost.Instance?.PrewarmPackage();
+        // 登录不再预热活动资源：活动内容单独打 activity 标签，登录只下 base（UI/Lua/图标）。
+        // 玩家不玩活动就不下载这 45MB；进入活动时按标签补齐，期间由 ActivityLoadingTip 显示进度。
     }
 
     // ──────────────────────────────
@@ -294,12 +294,12 @@ public class ActivityShell : MonoBehaviour
 
         if (!pendingOpen) return;             // 非本次开面板触发的列表（如热更层主动刷新）
         pendingOpen = false;
-        Debug.Log($"[活动] 活动列表到达（banner={CurrentBannerId} [{CurrentTitle}]，共 {CurrentActivities.Count} 个活动），耗时 {Time.realtimeSinceStartup - openingStartedAt:F2}s");
+        GameLog.Info($"[活动] 活动列表到达（banner={CurrentBannerId} [{CurrentTitle}]，共 {CurrentActivities.Count} 个活动），耗时 {Time.realtimeSinceStartup - openingStartedAt:F2}s");
 
         if (CurrentActivities.Count == 0)
         {
             opening = false;
-            Debug.Log("[活动] 当前没有进行中的活动");
+            GameLog.Info("[活动] 当前没有进行中的活动");
             ActivityLoadingTip.Show("当前没有进行中的活动", 2.5f);
             return;
         }
@@ -310,7 +310,7 @@ public class ActivityShell : MonoBehaviour
     private void OnActivityChangeNotify(ActivityChangeNotify notify)
     {
         ApplyActivityState(notify.Activities, notify.ServerNowMs);
-        Debug.Log($"[活动] 收到切换推送 → #{CurrentActivityId} [{CurrentTitle}]（内容版本 {CurrentContentVersion}）");
+        GameLog.Info($"[活动] 收到切换推送 → #{CurrentActivityId} [{CurrentTitle}]（内容版本 {CurrentContentVersion}）");
 
         // 面板打开中：自动换到新活动内容（热更层整套重建 = 本次功能的核心演示点）
         if (IsPanelOpen)
@@ -397,11 +397,11 @@ public class ActivityShell : MonoBehaviour
         if (!ready)
         {
             opening = false;
-            Debug.LogWarning($"[活动] 活动资源包未就绪，打开失败（资源包阶段耗时 {packageSeconds:F2}s，详见上方日志）");
+            GameLog.Warn($"[活动] 活动资源包未就绪，打开失败（资源包阶段耗时 {packageSeconds:F2}s，详见上方日志）");
             ActivityLoadingTip.Show("活动资源获取失败，请稍后重试", 3f);
             yield break;
         }
-        Debug.Log($"[活动] 资源包就绪，耗时 {packageSeconds:F2}s");
+        GameLog.Info($"[活动] 资源包就绪，耗时 {packageSeconds:F2}s");
 
         host.PrepareLuaEnvironment();
         yield return null;
@@ -419,7 +419,7 @@ public class ActivityShell : MonoBehaviour
         if (launched)
         {
             ActivityLoadingTip.Hide();
-            Debug.Log($"[活动] 面板已打开，总耗时 {Time.realtimeSinceStartup - openingStartedAt:F2}s（其中资源包 {packageSeconds:F2}s）");
+            GameLog.Info($"[活动] 面板已打开，总耗时 {Time.realtimeSinceStartup - openingStartedAt:F2}s（其中资源包 {packageSeconds:F2}s）");
         }
         else
         {
@@ -456,7 +456,7 @@ public class ActivityShell : MonoBehaviour
         if (!CanRetryDraw) return false;
         if (!TryGetNetwork(out ClientNetworkManager network, callback)) return true;
 
-        Debug.Log($"[活动] 重试唤取：卡池{lastDrawBannerId} ×{lastDrawCount} 请求{lastDrawRequestId}");
+        GameLog.Info($"[活动] 重试唤取：卡池{lastDrawBannerId} ×{lastDrawCount} 请求{lastDrawRequestId}");
         return StartDraw(network, lastDrawBannerId, lastDrawCount, lastDrawRequestId, callback);
     }
 
@@ -518,7 +518,7 @@ public class ActivityShell : MonoBehaviour
         if (callback == null) return;
 
         lastDrawRetryable = retryable && lastDrawRequestId.Length > 0;
-        Debug.LogWarning($"[活动] {message}（卡池{lastDrawBannerId} ×{lastDrawCount} 请求{lastDrawRequestId}）");
+        GameLog.Warn($"[活动] {message}（卡池{lastDrawBannerId} ×{lastDrawCount} 请求{lastDrawRequestId}）");
 
         GachaDrawResultData result = BuildDrawError(message);
         result.retryable = lastDrawRetryable;

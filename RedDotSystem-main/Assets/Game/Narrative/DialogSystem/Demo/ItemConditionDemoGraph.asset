@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6e0250bb1ed372d4989b5fa2d62966f5, type: 3}
   m_Name: ItemConditionDemoGraph
   m_EditorClassIdentifier: 
-  graphId: 9001
+  graphId: 9100
   graphName: "\u94C1\u5320\u94FA\u9053\u5177\u6761\u4EF6Demo"
   startNodeId: 1
   nodeList:

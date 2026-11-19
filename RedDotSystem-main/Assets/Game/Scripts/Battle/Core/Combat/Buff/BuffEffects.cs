@@ -91,6 +91,9 @@ public class BuffHoTEffect : BuffEffect
     public override void OnTick(BuffInstance buff, HealthModel health)
     {
         if (health == null) return;
-        health.Heal(_tickHeal * buff.stacks);
+        float amount = _tickHeal * buff.stacks;
+        health.Heal(amount);
+        // Heal 只结算血量、不派发表现事件，回血数字由效果自己飘
+        if (DamageTextManager.MainInstance != null) DamageTextManager.MainInstance.ShowHeal(health.gameObject, amount);
     }
 }

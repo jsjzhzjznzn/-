@@ -448,7 +448,7 @@ public class EnemyBrain : MonoBehaviour
             PoiseBreakCount++;
             if (controller.TryStart(new StaggerAction(this, true)))
             {
-                if (logActions) Debug.Log($"[AI] {name} 破防硬直（伤害 {data.amount:F1}）", this);
+                if (logActions) GameLog.Info($"[AI] {name} 破防硬直（伤害 {data.amount:F1}）", this);
             }
             return;
         }
@@ -459,7 +459,7 @@ public class EnemyBrain : MonoBehaviour
         // 其余情况伤害与削韧照常结算、但这一刀继续挥完（否则玩家平A可以把 BOSS 永远按在半招里）。
         if (!isHeavy && ShouldSwingThroughLightHit())
         {
-            if (logActions) Debug.Log($"[AI] {name} 轻击未打断前摇（伤害 {data.amount:F1}，韧性 {poiseCurrent:F0}）", this);
+            if (logActions) GameLog.Info($"[AI] {name} 轻击未打断前摇（伤害 {data.amount:F1}，韧性 {poiseCurrent:F0}）", this);
             return;
         }
 
@@ -489,7 +489,7 @@ public class EnemyBrain : MonoBehaviour
             if (!clipChanged)
             {
                 currentHurt.Refresh();
-                if (logActions) Debug.Log($"[AI] {name} 受击延长（伤害 {data.amount:F1}，韧性 {poiseCurrent:F0}）", this);
+                if (logActions) GameLog.Info($"[AI] {name} 受击延长（伤害 {data.amount:F1}，韧性 {poiseCurrent:F0}）", this);
                 return;
             }
 
@@ -499,7 +499,7 @@ public class EnemyBrain : MonoBehaviour
 
         if (controller.TryStart(new HurtAction(this, clip, seconds, speed)))
         {
-            if (logActions) Debug.Log($"[AI] {name} 进入受击（伤害 {data.amount:F1}，重击={isHeavy}，韧性 {poiseCurrent:F0}）", this);
+            if (logActions) GameLog.Info($"[AI] {name} 进入受击（伤害 {data.amount:F1}，重击={isHeavy}，韧性 {poiseCurrent:F0}）", this);
         }
     }
 
@@ -535,7 +535,7 @@ public class EnemyBrain : MonoBehaviour
         if (data.target != gameObject || dead) return;
         dead = true;
         controller?.TryStart(new DeadAction(this));
-        if (logActions) Debug.Log($"[AI] {name} 死亡", this);
+        if (logActions) GameLog.Info($"[AI] {name} 死亡", this);
     }
 
     private void RecoverPoise()
@@ -559,7 +559,7 @@ public class EnemyBrain : MonoBehaviour
             return;
 
         phase = next;
-        if (logActions) Debug.Log($"[AI] {name} 进入阶段 {phase}", this);
+        if (logActions) GameLog.Info($"[AI] {name} 进入阶段 {phase}", this);
 
         // 阶段演出不能打断手上的动作，但也不能丢——挂起，等当前动作结束立刻播
         pendingPhaseIntro = true;
@@ -640,7 +640,7 @@ public class EnemyBrain : MonoBehaviour
         blockedUntil = Time.time + 2f;
         blockedSide = UnityEngine.Random.value < 0.5f ? -1 : 1;
 
-        if (logActions) Debug.Log($"[AI] {name} 被障碍挡住，绕行 side={blockedSide}", this);
+        if (logActions) GameLog.Info($"[AI] {name} 被障碍挡住，绕行 side={blockedSide}", this);
     }
 
     /// <summary>
@@ -659,7 +659,7 @@ public class EnemyBrain : MonoBehaviour
         float interruptRate = AttacksFinished > 0 ? (float)(InterruptedByStagger + InterruptedByHurt) / AttacksFinished : 0f;
         float missRate = HitFramesResolved > 0 ? 1f - (float)HitsLanded / HitFramesResolved : 0f;
 
-        Debug.Log(
+        GameLog.Info(
             $"[AI-METRIC] {name} 出手={AttacksStarted}({perMinute:F1}/min) 完成={AttacksFinished} " +
             $"打断(硬直)={InterruptedByStagger} 打断(受击)={InterruptedByHurt} 打断率={interruptRate:P0} " +
             $"判定帧={HitFramesResolved} 命中={HitsLanded} 挥空率={missRate:P0} 破韧={PoiseBreakCount} 阶段={phase}",
@@ -711,7 +711,7 @@ public class EnemyBrain : MonoBehaviour
             else if (to == EnemyActionKind.Hurt) InterruptedByHurt++;
         }
 
-        if (logActions) Debug.Log($"[AI] {name} {from} → {to}（dist {targetDistance:F2}）", this);
+        if (logActions) GameLog.Info($"[AI] {name} {from} → {to}（dist {targetDistance:F2}）", this);
     }
 
     // ──────────────────────────────
@@ -902,45 +902,47 @@ public class EnemyBrain : MonoBehaviour
     }
 
     /// <summary>
-    /// 命中判定：在命中帧用扇形几何判定（照玩家 CharacterCombo.AttackDetection 的口径）。
+    /// 命中判定：命中帧交给命中管线（与玩家同一套口径：层 → 存活 → 阵营 → 遮挡 → 角度 → 上限）。
+    /// 几何与改造前一致：球心前移 range*0.5、半径 range*0.5、扇形 arc。
     /// 关键收益：玩家闪到侧后方/拉开距离能真的躲开，AI 也会"挥空"。
     /// </summary>
     public void ResolveAttackHit(AttackDef def)
     {
         if (def == null || dead) return;
 
-        Vector3 origin = transform.position + Vector3.up * 0.9f + transform.forward * (def.range * 0.5f);
         HitFramesResolved++;
-        int count = Physics.OverlapSphereNonAlloc(origin, def.range * 0.5f, hitBuffer, playerMask, QueryTriggerInteraction.Ignore);
 
-        for (int i = 0; i < count; i++)
+        var context = new AttackContext
         {
-            Collider hit = hitBuffer[i];
-            if (hit == null) continue;
-            if (hit.transform.IsChildOf(transform)) continue;
+            attacker = gameObject,
+            faction = CombatFaction.Enemy,
+            origin = transform.position + Vector3.up * 0.9f + transform.forward * (def.range * 0.5f),
+            forward = transform.forward,
+            radius = def.range * 0.5f,
+            arc = def.arc,
+            layerMask = playerMask,
+            delivery = AttackDelivery.EnemyAttack,
+            requireLineOfSight = false,
+            maxTargets = 0,
+            flatDamage = def.damage,
+            sourceId = 0,
+        };
 
-            Vector3 to = hit.transform.position - transform.position;
-            to.y = 0f;
-            if (to.sqrMagnitude > 0.0001f && Vector3.Angle(transform.forward, to) > def.arc * 0.5f) continue;
+        var report = CombatPipeline.Resolve(context, hitBuffer);
 
-            HealthModel targetHealth = hit.GetComponentInParent<HealthModel>();
-            if (targetHealth == null || !targetHealth.IsAlive) continue;
-
-            targetHealth.RequestDamage(new DamageRequest
-            {
-                damage = def.damage,
-                isCritical = false,
-                sourceId = 0,
-                isDoT = false,
-            }, gameObject);
-
+        var hits = report.hits;
+        for (int i = 0; i < hits.Count; i++)
+        {
             HitsLanded++;
 
             // 打击感统一入口：全局顿帧 + 震屏 + 受击特效/音效
             // （受击方的闪白/抖动/击退由 HitReaction 订阅 E_OnDamage 自己表现）
-            Player player = hit.GetComponentInParent<Player>();
-            HitFeelService.EnemyHitPlayer(this, player, hit.transform.position + Vector3.up * 0.7f,
-                def.damage >= 15f);
+            var collider = hits[i].collider;
+            Player player = hits[i].target.GetComponent<Player>();
+            Vector3 point = (collider != null ? collider.transform.position : hits[i].target.transform.position)
+                            + Vector3.up * 0.7f;
+            HitFeelService.EnemyHitPlayer(this, player, point,
+                profile != null && def.damage >= profile.heavyHitDamage);
         }
     }
 

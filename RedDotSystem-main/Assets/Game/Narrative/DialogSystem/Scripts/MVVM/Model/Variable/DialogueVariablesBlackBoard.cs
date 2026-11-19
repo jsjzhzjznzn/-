@@ -74,7 +74,7 @@ namespace Miemie.DialogSystem
             }
             catch (Exception exception)
             {
-                Debug.LogWarning($"[Dialogue] 存档变量解析失败，已忽略：{exception.Message}");
+                GameLog.Warn($"[Dialogue] 存档变量解析失败，已忽略：{exception.Message}");
             }
         }
 

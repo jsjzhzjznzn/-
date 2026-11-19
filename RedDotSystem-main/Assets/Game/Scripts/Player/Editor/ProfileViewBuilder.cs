@@ -21,14 +21,14 @@ public static class ProfileViewBuilder
     private const string PrefabPath = "Assets/Game/UI/Profile/ProfileView.prefab";
     private const string ArtDir = "Assets/Game/UI/Profile/Art";
     /// <summary>暂时用来冒充「影像」的整屏背景图（后续换视频只改这一个常量）</summary>
-    private const string BackdropPath = "Assets/Game/Resources/ui/Theme/home_bg.png";
+    private const string BackdropPath = "Assets/Game/Art/UI/Theme/home_bg.png";
     private const string FontPath = "Assets/Codely/Fonts/NotoSansSC-Regular SDF.asset";
 
     // 复用已有美术
-    private const string CirclePath = "Assets/Game/Resources/ui/Character/avatar_circle.png";
-    private const string PillPath = "Assets/Game/Resources/ui/Theme/panel_round.png";
-    private const string BarPath = "Assets/Game/Resources/ui/Character/ui_bar.png";
-    private const string BgPath = "Assets/Game/Resources/ui/Character/character_bg_haze.jpg";
+    private const string CirclePath = "Assets/Game/Art/UI/Character/avatar_circle.png";
+    private const string PillPath = "Assets/Game/Art/UI/Theme/panel_round.png";
+    private const string BarPath = "Assets/Game/Art/UI/Character/ui_bar.png";
+    private const string BgPath = "Assets/Game/Art/UI/Character/character_bg_haze.jpg";
     private const string PlayerAvatarPath = "Assets/Content/Resource/ui/mingchao/touxiang/T_IconRoleHeadCircle256_1_UI.png";
     private const string MingchaoHeadDir = "Assets/Content/Resource/ui/mingchao/touxiang";
 

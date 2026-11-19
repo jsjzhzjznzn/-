@@ -30,7 +30,7 @@ public class PlayerDodgeState : PlayerMovementState
        /* if (clip == null && playerMovementData?.dashData?.animationClip != null)
         {
             clip = playerMovementData.dashData.animationClip;
-            Debug.LogWarning($"[{player.name}] 未配置闪避动画（PlayerSO.movementData.dodgeData），回退使用冲刺动画");
+            GameLog.Warn($"[{player.name}] 未配置闪避动画（PlayerSO.movementData.dodgeData），回退使用冲刺动画");
         }*/
 
         if (clip != null)
@@ -45,7 +45,7 @@ public class PlayerDodgeState : PlayerMovementState
             // 被格挡触发 → HealthModel 在拦下伤害时授予闪避全程无敌。
             // 这里不再重复设置，保证单机/联网两种模式的无敌时长口径一致。
             if (player.GetComponent<HealthModel>() == null)
-                Debug.LogWarning($"[{player.name}] 未挂载 HealthModel，闪避无敌无效");
+                GameLog.Warn($"[{player.name}] 未挂载 HealthModel，闪避无敌无效");
         }
         
     }

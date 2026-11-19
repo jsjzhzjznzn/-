@@ -131,7 +131,7 @@ namespace Game.Activity
             Transform template = StageRoot.transform.Find(templateName);
             if (template == null)
             {
-                Debug.LogWarning("[ActivitySceneViewport] 舞台缺少模板节点：" + templateName);
+                GameLog.Warn("[ActivitySceneViewport] 舞台缺少模板节点：" + templateName);
                 return null;
             }
 

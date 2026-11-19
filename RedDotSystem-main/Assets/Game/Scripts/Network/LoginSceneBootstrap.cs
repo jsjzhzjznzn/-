@@ -18,7 +18,9 @@ using UnityEngine.EventSystems;
 /// </summary>
 public class LoginSceneBootstrap : MonoBehaviour
 {
-    private async void Start()
+    private void Start() => StartAsync().Forget();
+
+    private async UniTaskVoid StartAsync()
     {
         EnsureEventSystem();
 
@@ -47,6 +49,6 @@ public class LoginSceneBootstrap : MonoBehaviour
         GameObject go = new GameObject("EventSystem");
         go.AddComponent<EventSystem>();
         go.AddComponent<StandaloneInputModule>();
-        Debug.Log("[LoginSceneBootstrap] 场景缺少 EventSystem，已自动补建");
+        GameLog.Info("[LoginSceneBootstrap] 场景缺少 EventSystem，已自动补建");
     }
 }

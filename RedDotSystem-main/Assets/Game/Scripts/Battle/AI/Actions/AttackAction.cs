@@ -195,7 +195,7 @@ public sealed class AttackAction : EnemyAction
             Next = new AttackAction(brain, chainedDef, comboDepth + 1);
             IsFinished = true;
             if (brain.logActions)
-                Debug.Log($"[AI] {brain.name} 连段 {def.id} → {chainedDef.id}（第 {comboDepth + 2} 段）", brain);
+                GameLog.Info($"[AI] {brain.name} 连段 {def.id} → {chainedDef.id}（第 {comboDepth + 2} 段）", brain);
             return;
         }
 

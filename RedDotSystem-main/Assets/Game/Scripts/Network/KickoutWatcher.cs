@@ -1,6 +1,8 @@
 using Common.Network;
 
 using Cysharp.Threading.Tasks;
+using MieMieFrameWork;
+
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -9,37 +11,30 @@ using UnityEngine.SceneManagement;
 /// 必须跨场景常驻——被顶号时玩家已在主场景 zhuye，LoginSceneController 随场景销毁、来不及收事件；
 /// 断开连接与清凭据由 ClientNetworkManager 自己在收包分支内完成（那些字段都是私有的），本类只负责 UX
 /// </summary>
-public class KickoutWatcher : MonoBehaviour
+public class KickoutWatcher : SingletonBehaviour<KickoutWatcher>
 {
-    /// <summary>全局唯一实例</summary>
-    public static KickoutWatcher Instance { get; private set; }
-
+    /// <summary>
+    /// 场景加载前同步创建实例。
+    /// 必须有这一句：基类的 Instance 是懒创建，而启动链上第一个访问点发生在 await 之后（场景加载中），
+    /// 那时新建的 GameObject 会落在尚未加载完成的场景里、Awake 不会被调用（表现为字段全空、Console 报
+    /// "Some objects were not cleaned up when closing the scene"）。在 BeforeSceneLoad 同步创建才是安全时机。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureCreated()
+    {
+        _ = Instance;
+    }
     /// <summary>提示停留时长（秒）</summary>
     private const int TipSeconds = 3;
 
     /// <summary>是否已成功订阅（网络管理器自举顺序不定，未就绪时逐帧重试）</summary>
     private bool subscribed;
 
-    /// <summary>
-    /// 运行时自举：早于场景加载创建系统物体（与 ActivityShell / BagManager 同一模式）
-    /// </summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Bootstrap()
-    {
-        if (Instance != null) return;
-        GameObject holder = new GameObject("KickoutSystem");
-        holder.AddComponent<KickoutWatcher>();
-    }
 
-    private void Awake()
+    protected override void Awake()
     {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+
+        base.Awake();
     }
 
     private void OnEnable()
@@ -65,13 +60,13 @@ public class KickoutWatcher : MonoBehaviour
         if (!subscribed) TrySubscribe();
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         if (subscribed && ClientNetworkManager.Instance != null)
         {
             ClientNetworkManager.Instance.KickoutNotifyReceived -= OnKickout;
         }
-        if (Instance == this) Instance = null;
     }
 
     /// <summary>

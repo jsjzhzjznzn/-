@@ -36,7 +36,7 @@ public class PlayerHurtState : PlayerMovementState
         }
         else
         {
-            Debug.LogWarning($"[{player.name}] 未配置受击动画（PlayerSO.movementData.hurtData），受击状态无法自动结束");
+            GameLog.Warn($"[{player.name}] 未配置受击动画（PlayerSO.movementData.hurtData），受击状态无法自动结束");
         }
     }
 

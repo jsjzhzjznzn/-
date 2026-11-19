@@ -270,6 +270,16 @@ enum MessageID {
   /// </summary>
   WorldChatNotify = 2210;
 
+  /// <summary>
+  /// 全量未读快照推送
+  /// 类型：MessageID (枚举)
+  /// 用途：登录成功后服务端主动推一次该玩家全部好友的权威未读数（非请求的响应），
+  ///       用于补齐离线期间收到的消息，客户端整体覆盖红点而不是增量累加
+  /// 对应数据结构：ChatUnreadSnapshotNotify
+  /// 值：2211
+  /// </summary>
+  ChatUnreadSnapshotNotify = 2211;
+
   // ────────────────────────── 排行榜 ──────────────────────────
   /// <summary>
   /// 成绩上报请求
@@ -306,6 +316,24 @@ enum MessageID {
   /// 值：2304
   /// </summary>
   LeaderboardResponse = 2304;
+
+  /// <summary>
+  /// 挑战开局请求
+  /// 类型：MessageID (枚举)
+  /// 用途：客户端进入挑战时上报开局，服务端记录本局开局时刻与局标识
+  /// 对应数据结构：ChallengeStartRequest
+  /// 值：2305
+  /// </summary>
+  ChallengeStartRequest = 2305;
+
+  /// <summary>
+  /// 挑战开局响应
+  /// 类型：MessageID (枚举)
+  /// 用途：返回本局 run_id，结算上报时回传
+  /// 对应数据结构：ChallengeStartResponse
+  /// 值：2306
+  /// </summary>
+  ChallengeStartResponse = 2306;
 
   // ────────────────────────── 背包 ──────────────────────────
   /// <summary>

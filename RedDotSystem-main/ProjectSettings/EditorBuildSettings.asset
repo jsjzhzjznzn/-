@@ -32,6 +32,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Game/Scenes/roguelike.scene
     guid: 4146aef92d9f3b7438da1a88c4e3e999
+  - enabled: 1
+    path: Assets/Game/Scenes/biebao.scene
+    guid: 0ae0f94295d569a40ae1e7d5efb428ad
   m_BuildProfiles: []
   m_configObjects: {}
   m_SlimFeaturesWeixinMiniGame:

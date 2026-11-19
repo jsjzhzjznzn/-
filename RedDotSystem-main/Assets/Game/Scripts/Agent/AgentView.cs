@@ -1129,7 +1129,7 @@ public class AgentView : UIView, IBeginDragHandler, IDragHandler, IEndDragHandle
     private void ApplyAvatarSprite()
     {
         if (avatarImage == null || avatarImage.sprite != null) return;
-        Sprite sprite = Resources.Load<Sprite>("Agent/shouanren_avatar");
+        Sprite sprite = GameAssets.GetSprite("Assets/Game/Art/UI/Agent/shouanren_avatar.png");
         if (sprite == null) return;
         avatarImage.sprite = sprite;
         avatarImage.enabled = true;

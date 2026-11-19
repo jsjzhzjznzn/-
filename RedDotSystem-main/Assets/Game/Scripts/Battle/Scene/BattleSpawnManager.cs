@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Unity.Netcode;
+using Game.Equipment;
 using UnityEngine;
 
 /// <summary>
@@ -59,7 +60,7 @@ public class BattleSpawnManager : NetworkBehaviour
         foreach (var p in players)
             SpawnHeroFor(p);
 
-        Debug.Log($"[BattleSpawn] 生成汇总: 房间玩家={players.Count} 成功={_spawnedCount} 跳过={_skippedCount}，" +
+        GameLog.Info($"[BattleSpawn] 生成汇总: 房间玩家={players.Count} 成功={_spawnedCount} 跳过={_skippedCount}，" +
                   $"出生点数={SpawnPoints.Count} 英雄预制体数={HeroPrefabList.Count}");
     }
 
@@ -117,13 +118,13 @@ public class BattleSpawnManager : NetworkBehaviour
                 }
                 else
                 {
-                    Debug.LogWarning($"[BattleSpawn] 玩家 {info.ClientId} 的装备快照属于角色{snapshot.charId}，与当前角色{info.CharId}不符，跳过");
+                    GameLog.Warn($"[BattleSpawn] 玩家 {info.ClientId} 的装备快照属于角色{snapshot.charId}，与当前角色{info.CharId}不符，跳过");
                 }
             }
         }
 
         _spawnedCount++;
-        Debug.Log($"[BattleSpawn] 玩家 {info.ClientId} 座位 {info.Seat} 生成英雄 CharId={info.CharId}, " +
+        GameLog.Info($"[BattleSpawn] 玩家 {info.ClientId} 座位 {info.Seat} 生成英雄 CharId={info.CharId}, " +
                   $"OwnerClientId={netObj.OwnerClientId}");
     }
 }

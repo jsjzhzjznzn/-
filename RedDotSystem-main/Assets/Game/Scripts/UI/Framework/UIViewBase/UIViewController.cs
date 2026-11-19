@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
@@ -118,7 +118,7 @@ namespace SkierFramework
 
             if (loadWatch != null)
             {
-                Debug.Log($"[UITiming] load {uiId}: instantiate={msInstantiate}ms bind={msBind - msInstantiate}ms open={loadWatch.ElapsedMilliseconds - msBind}ms total={loadWatch.ElapsedMilliseconds}ms");
+                GameLog.Info($"[UITiming] load {uiId}: instantiate={msInstantiate}ms bind={msBind - msInstantiate}ms open={loadWatch.ElapsedMilliseconds - msBind}ms total={loadWatch.ElapsedMilliseconds}ms");
             }
         }
 
@@ -151,7 +151,7 @@ namespace SkierFramework
                 if (UIManager.LogOpenTiming)
                 {
                     double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - msBefore) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-                    Debug.Log($"[UITiming] reopen {uiId}: {ms:F1}ms");
+                    GameLog.Info($"[UITiming] reopen {uiId}: {ms:F1}ms");
                 }
             }
         }

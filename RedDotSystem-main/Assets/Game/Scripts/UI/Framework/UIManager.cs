@@ -1,4 +1,4 @@
-﻿using DG.Tweening;
+using DG.Tweening;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -453,11 +453,24 @@ namespace SkierFramework
         }
 
         /// <summary>
+        /// 枚举名缓存：枚举转字符串会走装箱路径产生分配，而 HUD 面板轮询、挑战计时这类逐帧调用点
+        /// 会反复问同一个枚举，缓存后每个枚举只转换一次。
+        /// </summary>
+        private static readonly Dictionary<UIType, string> _uiIdCache = new Dictionary<UIType, string>();
+
+        /// <summary>
         /// C# 枚举 UI 转注册表字符串键；UIType.Max 是“无 UI”哨兵，转成 null
         /// </summary>
         public static string ToUIId(UIType type)
         {
-            return type == UIType.Max ? null : type.ToString();
+            if (type == UIType.Max) return null;
+
+            if (_uiIdCache.TryGetValue(type, out string cachedId))
+                return cachedId;
+
+            cachedId = type.ToString();
+            _uiIdCache[type] = cachedId;
+            return cachedId;
         }
 
         /// <summary>
@@ -488,6 +501,15 @@ namespace SkierFramework
         private CancellationToken DestroyToken => this.GetCancellationTokenOnDestroy();
 
         /// <summary>
+        /// 主动拉起初始化（查询类接口在未就绪时调用）：已有流程在跑就不重复发起，底层异常自行吞掉以免成为未观察的 UniTask。
+        /// </summary>
+        private void KickInitialization()
+        {
+            if (_isInitializing || _isReloading) return;
+            EnsureInitializedAsync(DestroyToken).Forget();
+        }
+
+        /// <summary>
         /// 确保初始化完成：未就绪则等待；首个调用方触发 YooAsset + UI 配置初始化。
         /// </summary>
         private async UniTask EnsureInitializedAsync(CancellationToken cancellationToken)
@@ -507,6 +529,13 @@ namespace SkierFramework
             {
                 // 1) Resources 适配版无需异步初始化（活动热更仍走项目现有 YooAsset/LuaActivityHost）
                 await ResourceManager.Instance.InitializeAsync(cancellationToken);
+
+                // 登录后立即进主界面时增量下载可能尚未结束，此时按 location 加载会取到本地不存在的 bundle
+                if (YooAssetService.Instance != null && YooAssetService.Instance.IsUpdating)
+                {
+                    GameLog.Info("[UIManager] 等待资源热更下载完成后初始化界面");
+                    await YooAssetService.Instance.WaitUpdateCompletedAsync(cancellationToken);
+                }
                 long msResource = initWatch != null ? initWatch.ElapsedMilliseconds : 0;
 
                 // 2) UI 根节点/分层/相机
@@ -519,7 +548,7 @@ namespace SkierFramework
 
                 if (initWatch != null)
                 {
-                    Debug.Log($"[UITiming] init: resource={msResource}ms layers={msLayers - msResource}ms config={initWatch.ElapsedMilliseconds - msLayers}ms total={initWatch.ElapsedMilliseconds}ms");
+                    GameLog.Info($"[UITiming] init: resource={msResource}ms layers={msLayers - msResource}ms config={initWatch.ElapsedMilliseconds - msLayers}ms total={initWatch.ElapsedMilliseconds}ms");
                 }
             }
             finally
@@ -707,7 +736,9 @@ namespace SkierFramework
             {
                 // 查询类接口在初始化完成前被调用是正常时序（入口按钮/常驻脚本会先问），
                 // 用 Warning 而不是 Error：Error 会触发编辑器的 Error Pause 把游戏暂停（2026-10-21 踩过）
-                Debug.LogWarning("[UIManager] 尚未初始化完成，无法查询！");
+                // 这里主动拉起初始化：否则只有 Open/Close 才会初始化，纯查询的调用方（HUD 轮询）会永远停在未就绪
+                GameLog.Warn("[UIManager] 尚未初始化完成，无法查询，已主动发起初始化！");
+                KickInitialization();
                 return false;
             }
             return !string.IsNullOrEmpty(uiId) && _openViews.Contains(uiId);
@@ -728,7 +759,8 @@ namespace SkierFramework
         {
             if (!IsReady)
             {
-                Debug.LogWarning("[UIManager] 尚未初始化完成，无法获取视图！");
+                GameLog.Warn("[UIManager] 尚未初始化完成，无法获取视图，已主动发起初始化！");
+                KickInitialization();
                 return null;
             }
 
@@ -756,7 +788,8 @@ namespace SkierFramework
         {
             if (!IsReady)
             {
-                Debug.LogWarning("[UIManager] 尚未初始化完成，无法获取视图！");
+                GameLog.Warn("[UIManager] 尚未初始化完成，无法获取视图，已主动发起初始化！");
+                KickInitialization();
                 return null;
             }
 

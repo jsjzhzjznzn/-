@@ -35,8 +35,8 @@ MonoBehaviour:
         CollectorType: 0
         AddressRuleName: AddressByFileName
         PackRuleName: PackSeparately
-        FilterRuleName: CollectAll
-        AssetTags: 
+        FilterRuleName: CollectHotUpdateAsset
+        AssetTags: base
         UserData: 
     - GroupName: LuaScripts
       GroupDesc: "Lua \u6A21\u5757"
@@ -49,33 +49,33 @@ MonoBehaviour:
         AddressRuleName: AddressByFileName
         PackRuleName: PackSeparately
         FilterRuleName: CollectAll
-        AssetTags: 
+        AssetTags: base
         UserData: 
     - GroupName: ItemIcons
       GroupDesc: "\u7269\u54C1\u56FE\u6807"
       AssetTags: 
       ActiveRuleName: EnableGroup
       Collectors:
-      - CollectPath: Assets/Game/Resources/ui
+      - CollectPath: Assets/Game/Art/UI
         CollectorGUID: 51498a182d2e2164795a43bd24a3392c
         CollectorType: 0
         AddressRuleName: AddressByFileName
         PackRuleName: PackSeparately
         FilterRuleName: CollectAll
-        AssetTags: 
+        AssetTags: base
         UserData: 
-    - GroupName: Audio
-      GroupDesc: "\u97F3\u9891\uFF08BGM / \u73AF\u5883\u97F3 / \u7279\u6548\uFF09"
+    - GroupName: ActivityContent
+      GroupDesc: 
       AssetTags: 
       ActiveRuleName: EnableGroup
       Collectors:
-      - CollectPath: Assets/Content/Resource/audoi
-        CollectorGUID: dea735ab50ba2ac47abb941a8776cb94
+      - CollectPath: Assets/Content/HotContent
+        CollectorGUID: 
         CollectorType: 0
-        AddressRuleName: AddressDisable
+        AddressRuleName: AddressByFileName
         PackRuleName: PackSeparately
         FilterRuleName: CollectAll
-        AssetTags: 
+        AssetTags: activity
         UserData: 
   - PackageName: activity
     PackageDesc: "\u6D3B\u52A8\u70ED\u66F4\u5185\u5BB9\u5305\uFF08Lua + UI + \u56FE\u7247\uFF09"
@@ -85,21 +85,7 @@ MonoBehaviour:
     IncludeAssetGUID: 0
     AutoCollectShaders: 1
     IgnoreRuleName: NormalIgnoreRule
-    Groups:
-    - GroupName: content
-      GroupDesc: "HotContent \u5168\u76EE\u5F55\uFF08\u6BCF\u4E2A\u8D44\u6E90\u72EC\u7ACB\u5206\u5305
-        \u2192 \u589E\u91CF\u53D1\u5E03\u53EA\u4E0B\u8F7D\u53D8\u5316\u6587\u4EF6\uFF09"
-      AssetTags: 
-      ActiveRuleName: EnableGroup
-      Collectors:
-      - CollectPath: Assets/Content/HotContent
-        CollectorGUID: fd5caa6475b8ca643946b2d172655c1a
-        CollectorType: 0
-        AddressRuleName: AddressByFileName
-        PackRuleName: PackSeparately
-        FilterRuleName: CollectAll
-        AssetTags: 
-        UserData: 
+    Groups: []
   - PackageName: battle
     PackageDesc: "\u6218\u6597\u8D44\u6E90\uFF08\u89D2\u8272/\u52A8\u4F5C/\u97F3\u6548/VFX/\u914D\u7F6E\uFF09"
     EnableAddressable: 1

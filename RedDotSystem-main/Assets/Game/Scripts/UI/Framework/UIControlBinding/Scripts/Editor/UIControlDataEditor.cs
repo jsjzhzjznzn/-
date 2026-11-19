@@ -40,10 +40,10 @@ namespace SkierFramework
         {
             if(skin == null)
             {
-                if (EditorGUIUtility.isProSkin)
-                    skin = Resources.Load("Editor/UIControlDataSkinPro") as GUISkin;
-                else
-                    skin = Resources.Load("Editor/UIControlDataSkinPersonal") as GUISkin;
+                // 放非 Resources 目录：这些皮肤与字库只在编辑器绘制检查器时用，不该进安装包
+                const string skinDir = "Assets/Game/Scripts/UI/Framework/UIControlBinding/EditorArt/";
+                skin = AssetDatabase.LoadAssetAtPath<GUISkin>(
+                    skinDir + (EditorGUIUtility.isProSkin ? "UIControlDataSkinPro" : "UIControlDataSkinPersonal") + ".guiskin");
             }
 
             allTypeNames = UIControlData.GetAllTypeNames();

@@ -29,7 +29,7 @@ public sealed class PhaseIntroAction : EnemyAction
         brain.PlayClip(clip, 0.08f);
 
         if (brain.logActions)
-            Debug.Log($"[AI] {brain.name} 阶段演出 {duration:F2}s（阶段 {brain.Phase}）", brain);
+            GameLog.Info($"[AI] {brain.name} 阶段演出 {duration:F2}s（阶段 {brain.Phase}）", brain);
     }
 
     public override void Tick(float deltaTime)

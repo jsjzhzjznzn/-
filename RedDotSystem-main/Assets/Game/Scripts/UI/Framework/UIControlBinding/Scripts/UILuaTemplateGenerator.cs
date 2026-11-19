@@ -132,18 +132,18 @@ namespace SkierFramework
                     string merged = AppendMissingStubs(File.ReadAllText(relPath), moduleName, content);
                     if (merged == null)
                     {
-                        Debug.Log("[UILua生成] 无新增桩函数，已跳过: " + relPath);
+                        GameLog.Info("[UILua生成] 无新增桩函数，已跳过: " + relPath);
                         return null;
                     }
                     File.WriteAllText(relPath, merged);
-                    Debug.Log("[UILua生成] 已追加缺失桩: " + relPath);
+                    GameLog.Info("[UILua生成] 已追加缺失桩: " + relPath);
                 }
                 else
                 {
                     Directory.CreateDirectory(luaDir);
                     File.WriteAllText(relPath, content);
                     AssetDatabase.ImportAsset(relPath);
-                    Debug.Log("[UILua生成] 已生成: " + relPath);
+                    GameLog.Info("[UILua生成] 已生成: " + relPath);
                 }
                 AssetDatabase.SaveAssets();
                 return relPath;
